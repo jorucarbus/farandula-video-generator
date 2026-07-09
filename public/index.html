@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farándula Video Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 Farándula Video Generator</h1>
+            <p class="subtitle">Crea videos virales automáticamente</p>
+        </header>
+
+        <main>
+            <div class="form-section">
+                <h2>Paso 1: Proporciona la fuente</h2>
+                <div class="form-group">
+                    <label for="source-type">Tipo de fuente:</label>
+                    <select id="source-type">
+                        <option value="link">Link de noticia</option>
+                        <option value="video">Video (URL)</option>
+                        <option value="text">Texto manual</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="source-input">Ingresa aquí:</label>
+                    <textarea id="source-input" placeholder="Link, URL de video o texto..." rows="4"></textarea>
+                </div>
+
+                <button class="btn btn-primary" onclick="handleRead()">
+                    📖 Leer y procesar
+                </button>
+            </div>
+
+            <div class="form-section hidden" id="script-section">
+                <h2>Paso 2: Elige el ángulo</h2>
+                <div class="angles-grid">
+                    <div class="angle-card" onclick="selectAngle(1)">
+                        <strong>1️⃣ Lenguaje Corporal</strong>
+                        <p>Lo que nadie notó en el video</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(2)">
+                        <strong>2️⃣ Pasado/Hipocresía</strong>
+                        <p>Contradice lo que dijo antes</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(3)">
+                        <strong>3️⃣ Víctimas/Terceros</strong>
+                        <p>La reacción del entorno</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(4)">
+                        <strong>4️⃣ Conspiración/Dinero</strong>
+                        <p>¿Qué se intenta tapar?</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(5)">
+                        <strong>5️⃣ Ruptura de Expectativas</strong>
+                        <p>Te dejará frío</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(6)">
+                        <strong>6️⃣ Combinado</strong>
+                        <p>Mix de varios enfoques</p>
+                    </div>
+                    <div class="angle-card" onclick="selectAngle(7)">
+                        <strong>7️⃣ Tu enfoque</strong>
+                        <p>Escribe el tuyo propio</p>
+                    </div>
+                </div>
+
+                <div class="form-group hidden" id="custom-angle-group">
+                    <label for="custom-angle">Tu enfoque personalizado:</label>
+                    <textarea id="custom-angle" placeholder="Describe tu enfoque..." rows="3"></textarea>
+                </div>
+
+                <button class="btn btn-primary" onclick="handleGenerateScript()">
+                    ✍️ Generar guion
+                </button>
+            </div>
+
+            <div class="form-section hidden" id="destination-section">
+                <h2>Paso 3: Selecciona carpeta de destino</h2>
+                <div class="form-group">
+                    <label for="dest-folder">Carpeta en Google Drive:</label>
+                    <select id="dest-folder">
+                        <option value="">Cargando carpetas...</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-success" onclick="handleGenerateVideo()">
+                    🚀 Generar video completo
+                </button>
+            </div>
+
+            <div class="progress-section hidden" id="progress-section">
+                <h2>Generando video...</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <p id="progress-text">0%</p>
+                <div class="log-box" id="log-box"></div>
+            </div>
+
+            <div class="result-section hidden" id="result-section">
+                <h2>✅ Video generado</h2>
+                <div class="result-info" id="result-info"></div>
+                <button class="btn btn-secondary" onclick="location.reload()">
+                    🔄 Generar otro video
+                </button>
+            </div>
+        </main>
+
+        <footer>
+            <p>Farándula Video Generator v1.0</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
