@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
 
 // Prompts maestros
 const PROMPTS = {
@@ -28,14 +28,21 @@ Formato de respuesta:
 
   guion: `Rol: Guionista Senior de Contenido Viral de Farándula. Tu estilo es ágil, picante, cargado de cinismo, tensión dramática y ritmo rápido.
 
-INSTRUCCIONES:
-1. Efecto Bucle Perfecto: La última frase debe conectar orgánicamente con la primera, creando un ciclo infinito imperceptible.
-2. Apertura de Impacto Directo: Cero introducciones. Arranca con el clímax del escándalo.
-3. Ritmo: 205-220 palabras (~70 segundos). Alterna frases cortas e incisivas con medianas explicativas.
-4. Tono: Lenguaje de farándula real ("lo hundió", "quedó expuesto", "se le cayó la mentira"). Evita muletillas de IA.
-5. FORMATO: UN BLOQUE DE TEXTO CORRIDO. Sin saltos, sin etiquetas, sin negritas. Solo texto limpio con puntuación.
+INSTRUCCIONES CRÍTICAS:
+1. LONGITUD: El guion DEBE tener entre 205 y 220 palabras (unos 70 segundos de locución). Nunca menos de 200.
+2. Efecto Bucle Perfecto: La última frase debe conectar orgánicamente con la primera, creando un ciclo infinito imperceptible.
+3. Apertura de Impacto Directo: Cero introducciones. Arranca con el clímax del escándalo EN LA PRIMERA FRASE.
+4. Ritmo: Alterna frases cortas e incisivas (2-5 palabras) con medianas explicativas (10-15 palabras). Mantén tensión constante.
+5. Tono: Lenguaje de farándula real ("lo hundió", "quedó expuesto", "se le cayó la mentira", "la jugada le salió mal"). NUNCA uses muletillas de IA como "increíble", "impactante", "no vas a creer".
+6. DESARROLLO: El cuerpo debe revelar datos jugosos en el medio y prometer la peor parte al final, pero cumplir la promesa.
+7. FORMATO: UN BLOQUE DE TEXTO CORRIDO. Sin saltos de línea, sin etiquetas, sin negritas. Solo texto limpio con comas, puntos y signos de exclamación.
 
-NO alteres el texto original, solo reorganízalo dramáticamente.`,
+PROHIBIDO:
+- Frases incompletas o cortadas.
+- Palabras inventadas o neologismos.
+- Explicar el contexto antes del clímax (arranca directo en la acción).
+- Párrafos separados (TODO en un solo párrafo).
+- Numerar, listar o contar palabras en la salida: entrega SOLO el texto del guion.`,
 
   fragmentacion: `Rol: Asistente de fragmentación para edición automática en TikTok.
 
@@ -77,8 +84,9 @@ FORMATO DE RESPUESTA:
 Un solo bloque con el guion fragmentado saturado de etiquetas.`
 };
 
-// Función principal para llamar a Gemini
-async function callGemini(prompt, userMessage) {
+// Función principal para llamar a Gemini (con reintentos si se alcanza el límite de tasa)
+async function callGemini(prompt, userMessage, intento = 1) {
+  const MAX_INTENTOS = 4;
   try {
     const response = await axios.post(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       contents: [
@@ -92,15 +100,28 @@ async function callGemini(prompt, userMessage) {
       generationConfig: {
         temperature: 0.7,
         topP: 0.95,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 8192,
+        // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida
+        thinkingConfig: { thinkingBudget: 0 },
       }
     });
 
     if (response.data.candidates && response.data.candidates.length > 0) {
-      return response.data.candidates[0].content.parts[0].text;
+      // Unir todas las partes de texto (puede venir en varias)
+      const parts = response.data.candidates[0].content.parts || [];
+      const texto = parts.map(p => p.text || '').join('');
+      if (texto.trim()) return texto;
     }
     throw new Error('No hay respuesta de Gemini');
   } catch (error) {
+    // 429 = límite de peticiones; 503 = modelo sobrecargado. Ambos son temporales: esperar y reintentar
+    const status = error.response?.status;
+    if ((status === 429 || status === 503 || status === 500) && intento < MAX_INTENTOS) {
+      const espera = (status === 429 ? 20000 : 8000) * intento;
+      console.log(`⏳ Gemini respondió ${status}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
+      await new Promise(r => setTimeout(r, espera));
+      return callGemini(prompt, userMessage, intento + 1);
+    }
     console.error('Error Gemini:', error.message);
     throw error;
   }
@@ -113,11 +134,14 @@ async function procesarLectura(sourceType, content) {
     const response = await callGemini(PROMPTS.lectura, userMessage);
 
     const parts = response.split('---SEPARADOR---');
+    const cierre = (parts[1] || '').trim();
+    // El cierre viene como: primera línea = título, resto = descripción + hashtags
+    const lineasCierre = cierre.split('\n').filter(l => l.trim());
 
     return {
       cronica: parts[0].trim(),
-      titulo: parts[1]?.trim() || 'Sin título',
-      descripcion: parts[2]?.trim() || 'Sin descripción',
+      titulo: lineasCierre[0]?.trim() || 'Sin título',
+      descripcion: lineasCierre.slice(1).join('\n').trim() || 'Sin descripción',
     };
   } catch (error) {
     throw new Error(`Error en lectura: ${error.message}`);
@@ -127,20 +151,45 @@ async function procesarLectura(sourceType, content) {
 // ETAPA 2: Generar Guion (7 ángulos)
 async function generarGuion(cronica, angle, angleContent = null) {
   try {
-    let userMessage;
+    let descripcionEnfoque;
 
     if (angle === 7) {
-      userMessage = `Basándote en esta crónica:\n\n${cronica}\n\nGenera un guion usando este enfoque personalizado:\n${angleContent}`;
+      descripcionEnfoque = angleContent;
+    } else if (angle === 6) {
+      descripcionEnfoque = 'Combina elementos de varios enfoques: lenguaje corporal, hipocresía del pasado, reacción del entorno, dinero oculto y ruptura de expectativas. Usa los 2-3 que mejor encajen con la historia.';
     } else {
-      const angleName = getAngleName(angle);
-      userMessage = `Basándote en esta crónica:\n\n${cronica}\n\nGenera un guion usando el Ángulo ${angle}: ${angleName}`;
+      descripcionEnfoque = getAngleDescription(angle);
     }
+
+    const userMessage = `A continuación tienes dos bloques claramente separados.
+
+=== MATERIAL BASE (la crónica con los HECHOS de la noticia; de aquí sale TODO el contenido del guion) ===
+${cronica}
+=== FIN DEL MATERIAL BASE ===
+
+=== ENFOQUE NARRATIVO (esto NO es contenido; es solo la LENTE con la que debes contar los hechos) ===
+${descripcionEnfoque}
+=== FIN DEL ENFOQUE ===
+
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.`;
 
     const response = await callGemini(PROMPTS.guion, userMessage);
     return response.trim();
   } catch (error) {
     throw new Error(`Error generando guion: ${error.message}`);
   }
+}
+
+// Descripción completa de cada ángulo (1-5)
+function getAngleDescription(angle) {
+  const descripciones = {
+    1: 'El Ángulo del Lenguaje Corporal / Detalle Oculto: enfócate en lo que nadie notó en el video, la cara que pusieron, los gestos o un fotograma específico.',
+    2: 'El Ángulo del Pasado / Hipocresía: contrapón lo que el famoso dice hoy con una verdad incómoda o un momento de su pasado que lo contradice.',
+    3: 'El Ángulo de las Víctimas / Terceros: enfócate en la reacción de la ex, la familia, los amigos o los comentarios filtrados del entorno cercano.',
+    4: 'El Ángulo de la Conspiración / Dinero: sigue la pista del beneficio oculto. ¿Es marketing? ¿Cuánto dinero hay en juego? ¿Qué intentan tapar con este escándalo?',
+    5: 'El Ángulo de la Ruptura de Expectativas: inicia rompiendo lo que todos dan por hecho (ej: "Todos creen que la pelea fue por X, pero el verdadero motivo es otro...").',
+  };
+  return descripciones[angle] || 'Enfoque libre.';
 }
 
 // ETAPA 3: Fragmentar + Asignar Carpetas
@@ -152,18 +201,22 @@ async function fragmentarGuion(script, carpetas) {
     const userMessage = `Fragmenta este guion:\n\n${script}`;
     const response = await callGemini(prompt, userMessage);
 
-    // Parsear respuesta en líneas
+    // Parsear respuesta en líneas (dividir solo en el PRIMER ':' para no cortar el texto)
     const fragmentos = response.split('\n')
       .filter(line => line.trim() && line.includes(':'))
       .map(line => {
-        const [famoso, texto] = line.split(':');
+        const idx = line.indexOf(':');
+        const famoso = line.slice(0, idx).trim().replace(/^[-*\d.\s]+/, '');
+        const texto = line.slice(idx + 1).trim();
         return {
-          famoso: famoso.trim(),
-          texto: texto.trim(),
-          caracteres: texto.trim().length,
+          famoso: famoso,
+          texto: texto,
+          caracteres: texto.length,
         };
-      });
+      })
+      .filter(f => f.famoso && f.texto);
 
+    console.log(`  ✂️ ${fragmentos.length} fragmentos, ${fragmentos.reduce((s, f) => s + f.caracteres, 0)} caracteres totales`);
     return fragmentos;
   } catch (error) {
     throw new Error(`Error fragmentando: ${error.message}`);
@@ -186,6 +239,25 @@ async function agregarMarcas(guionFragmentado) {
   }
 }
 
+// Generar nombre corto de archivo: "Protagonista - Secundario - Hecho"
+async function generarNombreArchivo(guion) {
+  try {
+    const prompt = `Genera un nombre de archivo para este guion de farándula.
+Formato EXACTO: Protagonista - Secundario - Hecho
+- Protagonista: el famoso principal de la noticia.
+- Secundario: el segundo involucrado (si no hay, omite esta parte y su guion).
+- Hecho: el acontecimiento en 2-4 palabras, lo más corto posible.
+Responde SOLO el nombre, sin comillas, sin extensión, sin explicaciones.
+No uses caracteres prohibidos en nombres de archivo (/ \\ : * ? " < > |).`;
+
+    const response = await callGemini(prompt, guion);
+    // Sanear por si acaso
+    return response.trim().split('\n')[0].replace(/[/\\:*?"<>|]/g, '').slice(0, 80);
+  } catch (error) {
+    return 'Video farandula';
+  }
+}
+
 // Utilidades
 function getAngleName(angle) {
   const angles = {
@@ -204,4 +276,5 @@ module.exports = {
   generarGuion,
   fragmentarGuion,
   agregarMarcas,
+  generarNombreArchivo,
 };

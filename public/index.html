@@ -35,6 +35,31 @@
                 </button>
             </div>
 
+            <div class="form-section hidden" id="lectura-section">
+                <h2>📰 Resultado de la lectura</h2>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Título</label>
+                        <button class="btn-copy" onclick="copyText('res-titulo')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-titulo"></p>
+                </div>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Descripción + Hashtags (para redes)</label>
+                        <button class="btn-copy" onclick="copyText('res-descripcion')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-descripcion"></p>
+                </div>
+
+                <details class="cronica-details">
+                    <summary>📖 Ver crónica completa (de qué trata el tema)</summary>
+                    <p class="copy-content" id="res-cronica"></p>
+                </details>
+            </div>
+
             <div class="form-section hidden" id="script-section">
                 <h2>Paso 2: Elige el ángulo</h2>
                 <div class="angles-grid">
@@ -76,6 +101,17 @@
                 <button class="btn btn-primary" onclick="handleGenerateScript()">
                     ✍️ Generar guion
                 </button>
+            </div>
+
+            <div class="form-section hidden" id="guion-section">
+                <h2>📜 Guion generado</h2>
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label id="guion-stats">Guion</label>
+                        <button class="btn-copy" onclick="copyText('res-guion')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-guion"></p>
+                </div>
             </div>
 
             <div class="form-section hidden" id="destination-section">

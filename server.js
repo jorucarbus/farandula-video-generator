@@ -5,6 +5,9 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 const gemini = require('./gemini');
+const elevenlabs = require('./elevenlabs');
+const driveHelper = require('./drive');
+const video = require('./video');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -54,21 +57,47 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Servidor activo' });
 });
 
+// Lista las subcarpetas de famosos (hijas de la carpeta principal)
+async function listarCarpetasFamosos() {
+  const parentId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const response = await driveClient.files.list({
+    q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name)',
+    pageSize: 1000,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return response.data.files;
+}
+
+// Carpetas de destino para renders (hijas de la carpeta de renders, una por canal)
 app.get('/api/folders', async (req, res) => {
   try {
     if (!driveClient) {
       return res.status(500).json({ error: 'Drive no inicializado' });
     }
 
-    // Obtener lista de carpetas desde Drive
+    const rendersId = process.env.GOOGLE_DRIVE_RENDERS_FOLDER_ID;
     const response = await driveClient.files.list({
-      q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
-      spaces: 'drive',
+      q: `'${rendersId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: 'files(id, name)',
       pageSize: 100,
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
     });
 
-    res.json({ folders: response.data.files });
+    // Si no hay subcarpetas, ofrecer la carpeta raíz de renders como destino
+    let folders = response.data.files;
+    if (folders.length === 0) {
+      const root = await driveClient.files.get({
+        fileId: rendersId,
+        fields: 'id, name',
+        supportsAllDrives: true,
+      });
+      folders = [root.data];
+    }
+
+    res.json({ folders });
   } catch (error) {
     console.error('Error obteniendo carpetas:', error);
     res.status(500).json({ error: error.message });
@@ -110,10 +139,13 @@ app.post('/api/generate-script', async (req, res) => {
 
     console.log(`✍️ Generando guion (ángulo ${angle})...`);
     const script = await gemini.generarGuion(cronica, angle, angleContent);
+    const palabras = script.split(/\s+/).filter(Boolean).length;
+    console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
     res.json({
       status: 'success',
       script: script,
+      palabras: palabras,
     });
   } catch (error) {
     console.error('Error guion:', error);
@@ -130,18 +162,14 @@ app.post('/api/fragment', async (req, res) => {
       return res.status(400).json({ error: 'Falta script' });
     }
 
-    // Obtener lista de carpetas de Drive
+    // Obtener lista dinámica de carpetas de famosos desde Drive
     let carpetas = [];
     if (driveClient) {
-      const response = await driveClient.files.list({
-        q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
-        spaces: 'drive',
-        fields: 'files(name)',
-        pageSize: 100,
-      });
-      carpetas = response.data.files.map(f => f.name);
-    } else {
-      carpetas = ['Aaron', 'Karina_Torres', 'Shakira']; // Fallback
+      const folders = await listarCarpetasFamosos();
+      carpetas = folders.map(f => f.name);
+    }
+    if (carpetas.length === 0) {
+      return res.status(500).json({ error: 'No se encontraron carpetas de famosos en Drive' });
     }
 
     console.log(`📂 Fragmentando guion (${carpetas.length} carpetas)...`);
@@ -168,6 +196,7 @@ app.post('/api/add-markers', async (req, res) => {
 
     console.log('🎙️ Agregando marcas ElevenLabs...');
     const marked = await gemini.agregarMarcas(fragments);
+    console.log(`  🏷️ Guion con marcas: ${marked.length} caracteres`);
 
     res.json({
       status: 'success',
@@ -179,14 +208,128 @@ app.post('/api/add-markers', async (req, res) => {
   }
 });
 
-// ETAPA 5: Generar Audio (placeholder)
+// ETAPA 5: Generar Audio
 app.post('/api/generate-audio', async (req, res) => {
-  res.json({ status: 'pending', message: 'Etapa 5: Audio - Próximamente' });
+  try {
+    const { guionConMarcas } = req.body;
+
+    if (!guionConMarcas) {
+      return res.status(400).json({ error: 'Falta guionConMarcas' });
+    }
+
+    console.log('🎙️ Generando audio con ElevenLabs...');
+    const audioResult = await elevenlabs.generarAudio(guionConMarcas);
+
+    // Duración REAL del audio medida con ffprobe (no estimada)
+    const duracionReal = await video.obtenerDuracion(audioResult.audioPath);
+    console.log(`  ⏱️ Duración real del audio: ${duracionReal.toFixed(1)}s`);
+
+    res.json({
+      status: 'success',
+      audioPath: audioResult.audioPath,
+      audioFile: audioResult.audioFile,
+      duration: Math.round(duracionReal),
+      caracteres: audioResult.caracteres,
+    });
+  } catch (error) {
+    console.error('Error audio:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// ETAPA 6: Generar Video (placeholder)
+// ETAPA 6: Generar Video
 app.post('/api/generate-video', async (req, res) => {
-  res.json({ status: 'pending', message: 'Etapa 6: Video - Próximamente' });
+  const jobId = `job_${Date.now()}`;
+  try {
+    const { fragments, audioPath, destFolder, guion } = req.body;
+
+    if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
+      return res.status(400).json({ error: 'Faltan fragments' });
+    }
+    if (!audioPath || !fs.existsSync(audioPath)) {
+      return res.status(400).json({ error: 'No se encontró el audio generado' });
+    }
+    if (!destFolder) {
+      return res.status(400).json({ error: 'Falta destFolder' });
+    }
+
+    // 1. Mapear carpetas de famosos y listar videos de las que se necesitan
+    console.log(`🎬 [${jobId}] Buscando videos en Drive...`);
+    const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
+    const nombresNecesarios = [...new Set(fragments.map(f => f.famoso))];
+
+    const carpetasVideos = {};
+    for (const nombre of nombresNecesarios) {
+      const folderId = mapaCarpetas[nombre];
+      if (folderId) {
+        carpetasVideos[nombre] = await driveHelper.listarVideos(folderId);
+        console.log(`  📂 ${nombre}: ${carpetasVideos[nombre].length} videos`);
+      } else {
+        console.warn(`  ⚠️ Carpeta no encontrada: ${nombre}`);
+        carpetasVideos[nombre] = [];
+      }
+    }
+
+    // 2. Asignar un video a cada fragmento (sin repetir hasta agotar)
+    const asignados = video.asignarVideos(fragments, carpetasVideos);
+
+    // 3. Descargar los videos asignados
+    console.log(`⬇️ [${jobId}] Descargando clips...`);
+    const archivos = [];
+    for (const asignado of asignados) {
+      if (!asignado) {
+        archivos.push(null);
+        continue;
+      }
+      const local = await driveHelper.descargarVideo(asignado.id, video.TEMP_DIR);
+      archivos.push(local);
+    }
+
+    // 4. Montar el video sincronizado con la locución
+    console.log(`🎞️ [${jobId}] Montando video con FFmpeg...`);
+    const resultado = await video.montarVideo(fragments, archivos, audioPath, jobId);
+    console.log(`  ⚡ Velocidad aplicada: ${resultado.factorVelocidad}x, duración final: ${resultado.duracion}s`);
+
+    // 5. Generar nombre de archivo: "2026-07-09 Protagonista - Secundario - Hecho.mp4"
+    const fecha = new Date().toISOString().slice(0, 10);
+    const nombreCorto = await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
+    const fileName = `${fecha} ${nombreCorto}.mp4`;
+
+    // 6. Guardar en la carpeta de destino
+    const folderName = await driveHelper.nombreCarpeta(destFolder);
+    const localBase = process.env.RENDERS_LOCAL_PATH;
+    let driveLink;
+
+    if (localBase && fs.existsSync(path.join(localBase, folderName))) {
+      // Copiar a la carpeta local de Google Drive (el cliente de escritorio la sincroniza solo)
+      const destPath = path.join(localBase, folderName, fileName);
+      console.log(`💾 [${jobId}] Guardando en Drive local: ${destPath}`);
+      fs.copyFileSync(resultado.finalPath, destPath);
+      driveLink = `https://drive.google.com/drive/folders/${destFolder}`;
+    } else {
+      // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
+      console.log(`⬆️ [${jobId}] Subiendo a Drive por API: ${fileName}`);
+      const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, destFolder);
+      driveLink = subido.webViewLink;
+    }
+
+    // 7. Limpiar temporales (incluido el video final y el audio)
+    video.limpiarTemporales(jobId);
+    try { fs.unlinkSync(audioPath); } catch {}
+
+    console.log(`✅ [${jobId}] Video guardado: ${fileName}`);
+    res.json({
+      status: 'success',
+      fileName: fileName,
+      folderName: folderName,
+      duration: resultado.duracion,
+      driveLink: driveLink,
+    });
+  } catch (error) {
+    console.error(`Error video [${jobId}]:`, error);
+    video.limpiarTemporales(jobId);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Iniciar servidor

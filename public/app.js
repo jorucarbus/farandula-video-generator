@@ -1,5 +1,5 @@
 // Config
-const API_KEY = 'tu-clave-secreta-aqui-cambiala';
+const API_KEY = 'AQ.Ab8RN6Jh0ud-XnlYjN75arhK-PWAx0xqKz2VGOjmcDLVs7iAdw';
 const API_BASE = 'http://localhost:3000/api';
 
 let state = {
@@ -82,7 +82,13 @@ async function handleRead() {
         state.sourceData = result;
         updateProgress(30);
 
+        // Mostrar resultado de la lectura (título, descripción, crónica)
+        document.getElementById('res-titulo').textContent = result.titulo;
+        document.getElementById('res-descripcion').textContent = result.descripcion;
+        document.getElementById('res-cronica').textContent = result.cronica;
+
         showSection('script-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
         log('➡️ Selecciona un ángulo para continuar');
     } catch (error) {
         log(`❌ Error en lectura: ${error.message}`);
@@ -138,9 +144,20 @@ async function handleGenerateScript() {
         state.guion = result.script;
         updateProgress(50);
 
+        // Mostrar el guion con conteo de palabras
+        const numPalabras = result.palabras || result.script.split(/\s+/).filter(Boolean).length;
+        document.getElementById('res-guion').textContent = result.script;
+        document.getElementById('guion-stats').textContent = `Guion (${numPalabras} palabras, ~${Math.round(numPalabras / 3)}s de locución)`;
+        log(`📜 Guion: ${numPalabras} palabras`);
+        if (numPalabras < 180) {
+            log('⚠️ Guion corto (se esperan 205-220 palabras)');
+        }
+
         // Cargar carpetas de destino
         await loadDestinationFolders();
         showSection('destination-section');
+        document.getElementById('guion-section').classList.remove('hidden');
+        document.getElementById('lectura-section').classList.remove('hidden');
     } catch (error) {
         log(`❌ Error generando guion: ${error.message}`);
     }
@@ -197,7 +214,7 @@ async function handleGenerateVideo() {
         log('2️⃣ Agregando marcas de locución...');
         updateProgress(65);
         const markedResult = await apiCall('/add-markers', 'POST', {
-            fragmentedScript: fragmentResult.fragments,
+            fragments: fragmentResult.fragments,
         });
         log('✅ Marcas agregadas');
         updateProgress(70);
@@ -206,7 +223,7 @@ async function handleGenerateVideo() {
         log('3️⃣ Generando audio con ElevenLabs...');
         updateProgress(75);
         const audioResult = await apiCall('/generate-audio', 'POST', {
-            markedScript: markedResult.marked,
+            guionConMarcas: markedResult.marked,
         });
         log('✅ Audio generado');
         log(`⏱️ Duración: ${audioResult.duration}s`);
@@ -217,9 +234,9 @@ async function handleGenerateVideo() {
         updateProgress(85);
         const videoResult = await apiCall('/generate-video', 'POST', {
             fragments: fragmentResult.fragments,
-            audioUrl: audioResult.audioUrl,
+            audioPath: audioResult.audioPath,
             destFolder: state.selectedDestFolder,
-            duration: audioResult.duration,
+            guion: state.guion,
         });
         log('✅ Video generado');
         updateProgress(100);
@@ -233,6 +250,8 @@ async function handleGenerateVideo() {
 // Mostrar resultado
 function showResult(videoData) {
     showSection('result-section');
+    // Mantener visible el título/descripción para copiar al publicar
+    document.getElementById('lectura-section').classList.remove('hidden');
     const resultInfo = document.getElementById('result-info');
     resultInfo.innerHTML = `
         <p><strong>✅ Video generado exitosamente</strong></p>
@@ -245,6 +264,23 @@ function showResult(videoData) {
         </p>
     `;
     log('🎉 ¡Proceso completado!');
+}
+
+// Copiar texto al portapapeles
+function copyText(elementId) {
+    const text = document.getElementById(elementId).textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        log('📋 Copiado al portapapeles');
+    }).catch(() => {
+        // Fallback para navegadores sin clipboard API
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        log('📋 Copiado al portapapeles');
+    });
 }
 
 // Inicialización

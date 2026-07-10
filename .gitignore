@@ -4,3 +4,4 @@ node_modules/
 credentials.json
 *.log
 temp-videos/
+usage.json
