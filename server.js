@@ -52,7 +52,11 @@ async function initializeDrive() {
   }
 }
 
-// Rutas de prueba
+// Rutas públicas (sin autenticación)
+app.get('/api/key-prompt', (req, res) => {
+  res.json({ requiresKey: true, message: 'Ingresa tu API Key' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Servidor activo' });
 });

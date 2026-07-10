@@ -1,6 +1,25 @@
 // Config
-const API_KEY = 'AQ.Ab8RN6Jh0ud-XnlYjN75arhK-PWAx0xqKz2VGOjmcDLVs7iAdw';
 const API_BASE = 'http://localhost:3000/api';
+let API_KEY = null;
+
+// Obtener API Key del servidor (sin exponerla en el código)
+async function initApiKey() {
+  try {
+    const res = await fetch(API_BASE + '/key-prompt');
+    const data = await res.json();
+    if (data.requiresKey) {
+      const key = prompt('Ingresa tu API Key (disponible en .env del servidor):');
+      if (!key) throw new Error('API Key requerida');
+      API_KEY = key;
+      localStorage.setItem('api_key', key);
+    } else {
+      API_KEY = 'configured-server-side';
+    }
+  } catch (e) {
+    console.error('Error inicializando API Key:', e);
+    alert('No se pudo inicializar. Verifica que el servidor esté corriendo.');
+  }
+}
 
 let state = {
     sourceData: null,
@@ -284,7 +303,8 @@ function copyText(elementId) {
 }
 
 // Inicialización
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     log('✅ App iniciada');
+    await initApiKey();
     log('📌 API Key configurada');
 });
