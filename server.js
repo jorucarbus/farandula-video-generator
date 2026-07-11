@@ -371,7 +371,20 @@ app.post('/api/generate-video', async (req, res) => {
       driveLink = subido.webViewLink;
     }
 
-    // 8. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
+    // 8. Respaldar la locución en Drive con el mismo nombre que el video
+    try {
+      if (localBase) {
+        const audiosDir = path.join(path.dirname(localBase), 'audios');
+        fs.mkdirSync(audiosDir, { recursive: true });
+        const audioBackup = path.join(audiosDir, fileName.replace(/\.mp4$/i, '.mp3'));
+        fs.copyFileSync(audioPath, audioBackup);
+        console.log(`🎵 [${jobId}] Audio respaldado: ${audioBackup}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ [${jobId}] No se pudo respaldar el audio: ${e.message}`);
+    }
+
+    // 9. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
     try {
       await sheets.registrarVideo({
         fecha,
@@ -387,7 +400,7 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${jobId}] No se pudo registrar en Sheets: ${e.message}`);
     }
 
-    // 9. Registrar preview (copia que sobrevive a la limpieza de temporales)
+    // 10. Registrar preview (copia que sobrevive a la limpieza de temporales)
     const previewToken = crypto.randomBytes(16).toString('hex');
     const previewPath = path.join(video.TEMP_DIR, `preview_${previewToken}.mp4`);
     try {
@@ -403,7 +416,7 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${jobId}] No se pudo crear el preview: ${e.message}`);
     }
 
-    // 10. Limpiar temporales (incluido el video final y el audio)
+    // 11. Limpiar temporales (incluido el video final y el audio)
     video.limpiarTemporales(jobId);
     try { fs.unlinkSync(audioPath); } catch {}
 
