@@ -5,6 +5,12 @@ let API_KEY = null;
 // Obtener API Key del servidor (sin exponerla en el código)
 async function initApiKey() {
   try {
+    // Si ya se ingresó antes, reutilizarla (se limpia con localStorage.removeItem('api_key'))
+    const guardada = localStorage.getItem('api_key');
+    if (guardada) {
+      API_KEY = guardada;
+      return;
+    }
     const res = await fetch(API_BASE + '/key-prompt');
     const data = await res.json();
     if (data.requiresKey) {
