@@ -281,7 +281,11 @@ function showResult(videoData) {
     // Mantener visible el título/descripción para copiar al publicar
     document.getElementById('lectura-section').classList.remove('hidden');
     const resultInfo = document.getElementById('result-info');
+    const playerHtml = videoData.previewUrl
+        ? `<video controls playsinline style="width:100%;max-width:320px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block;margin:0 auto 15px;" src="${videoData.previewUrl}"></video>`
+        : '';
     resultInfo.innerHTML = `
+        ${playerHtml}
         <p><strong>✅ Video generado exitosamente</strong></p>
         <p>📁 Carpeta destino: ${videoData.folderName}</p>
         <p>📝 Nombre del archivo: <code>${videoData.fileName}</code></p>

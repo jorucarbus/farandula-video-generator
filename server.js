@@ -4,6 +4,7 @@ const cors = require('cors');
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const gemini = require('./gemini');
 const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
@@ -21,7 +22,12 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // Autenticación por API Key
+// Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
+// se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/')) {
+    return next();
+  }
   const apiKey = req.headers['x-api-key'];
   if (!apiKey || apiKey !== API_KEY) {
     return res.status(401).json({ error: 'API Key inválida' });
@@ -30,6 +36,18 @@ const authenticateApiKey = (req, res, next) => {
 };
 
 app.use('/api', authenticateApiKey);
+
+// Previews en memoria: token aleatorio -> ruta del MP4 renderizado
+const previews = new Map();
+
+// Servir el video renderizado para verlo en la UI sin descargarlo
+app.get('/api/preview/:token', (req, res) => {
+  const ruta = previews.get(req.params.token);
+  if (!ruta || !fs.existsSync(ruta)) {
+    return res.status(404).json({ error: 'Preview no disponible' });
+  }
+  res.sendFile(ruta);
+});
 
 // Inicializar Google Drive
 let driveClient;
@@ -361,7 +379,23 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${jobId}] No se pudo registrar en Sheets: ${e.message}`);
     }
 
-    // 8. Limpiar temporales (incluido el video final y el audio)
+    // 8. Registrar preview (copia que sobrevive a la limpieza de temporales)
+    const previewToken = crypto.randomBytes(16).toString('hex');
+    const previewPath = path.join(video.TEMP_DIR, `preview_${previewToken}.mp4`);
+    try {
+      fs.copyFileSync(resultado.finalPath, previewPath);
+      // Conservar solo los 3 previews más recientes
+      const viejos = [...previews.entries()].slice(0, Math.max(0, previews.size - 2));
+      for (const [tok, ruta] of viejos) {
+        try { fs.unlinkSync(ruta); } catch {}
+        previews.delete(tok);
+      }
+      previews.set(previewToken, previewPath);
+    } catch (e) {
+      console.warn(`⚠️ [${jobId}] No se pudo crear el preview: ${e.message}`);
+    }
+
+    // 9. Limpiar temporales (incluido el video final y el audio)
     video.limpiarTemporales(jobId);
     try { fs.unlinkSync(audioPath); } catch {}
 
@@ -372,6 +406,7 @@ app.post('/api/generate-video', async (req, res) => {
       folderName: folderName,
       duration: resultado.duracion,
       driveLink: driveLink,
+      previewUrl: previews.has(previewToken) ? `/api/preview/${previewToken}` : null,
     });
   } catch (error) {
     console.error(`Error video [${jobId}]:`, error);
