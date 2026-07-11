@@ -11,6 +11,7 @@ const driveHelper = require('./drive');
 const video = require('./video');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
+const seleccion = require('./seleccion');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -219,12 +220,19 @@ app.post('/api/fragment', async (req, res) => {
       return res.status(500).json({ error: 'No se encontraron carpetas de famosos en Drive' });
     }
 
-    console.log(`📂 Fragmentando guion (${carpetas.length} carpetas)...`);
-    const fragments = await gemini.fragmentarGuion(script, carpetas);
+    console.log(`📂 Fragmentando guion en párrafos (${carpetas.length} carpetas)...`);
+    const fragments = await gemini.fragmentarGuionParrafos(script, carpetas);
+
+    // Porcentaje de tiempo de cada párrafo (por caracteres, incluye espacios)
+    const totalChars = fragments.reduce((s, f) => s + f.caracteres, 0);
+    const conPorcentaje = fragments.map(f => ({
+      ...f,
+      porcentaje: Math.round((f.caracteres / totalChars) * 1000) / 10,
+    }));
 
     res.json({
       status: 'success',
-      fragments: fragments,
+      fragments: conPorcentaje,
     });
   } catch (error) {
     console.error('Error fragmentación:', error);
@@ -301,51 +309,51 @@ app.post('/api/generate-video', async (req, res) => {
       return res.status(400).json({ error: 'Falta destFolder' });
     }
 
-    // 1. Mapear carpetas de famosos y listar videos de las que se necesitan
-    console.log(`🎬 [${jobId}] Buscando videos en Drive...`);
+    // 1. Duración real de la locución: define el tiempo total del video
+    const durAudio = await video.obtenerDuracion(audioPath);
+    console.log(`🎬 [${jobId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
+
+    // 2. Inventario de videos por famoso (con duración de cada video)
     const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
     const nombresNecesarios = [...new Set(fragments.map(f => f.famoso))];
 
-    const carpetasVideos = {};
+    const inventario = {};
     for (const nombre of nombresNecesarios) {
       const folderId = mapaCarpetas[nombre];
       if (folderId) {
-        carpetasVideos[nombre] = await driveHelper.listarVideos(folderId);
-        console.log(`  📂 ${nombre}: ${carpetasVideos[nombre].length} videos`);
+        inventario[nombre] = await driveHelper.listarVideos(folderId);
+        console.log(`  📂 ${nombre}: ${inventario[nombre].length} videos`);
       } else {
         console.warn(`  ⚠️ Carpeta no encontrada: ${nombre}`);
-        carpetasVideos[nombre] = [];
+        inventario[nombre] = [];
       }
     }
 
-    // 2. Asignar un video a cada fragmento (sin repetir hasta agotar)
-    const asignados = video.asignarVideos(fragments, carpetasVideos);
+    // 3. Plan de clips: % por caracteres → tiempo por párrafo → tomas ≤3s con rotación sin repetir
+    const plan = seleccion.planificarClips(fragments, durAudio, inventario);
+    const clipsValidos = plan.filter(Boolean);
+    console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)`);
 
-    // 3. Descargar los videos asignados
+    // 4. Descargar los videos únicos del plan
     console.log(`⬇️ [${jobId}] Descargando clips...`);
-    const archivos = [];
-    for (const asignado of asignados) {
-      if (!asignado) {
-        archivos.push(null);
-        continue;
-      }
-      const local = await driveHelper.descargarVideo(asignado.id, video.TEMP_DIR);
-      archivos.push(local);
+    const archivos = {};
+    for (const videoId of [...new Set(clipsValidos.map(c => c.videoId))]) {
+      archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
     }
 
-    // 4. Montar el video sincronizado con la locución
+    // 5. Montar: los tiempos ya calzan con la locución (sin ajuste de velocidad)
     console.log(`🎞️ [${jobId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideo(fragments, archivos, audioPath, jobId);
-    console.log(`  ⚡ Velocidad aplicada: ${resultado.factorVelocidad}x, duración final: ${resultado.duracion}s`);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
+    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
-    // 5. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
+    // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
     // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion
     const fecha = new Date().toISOString().slice(0, 10);
     const nombreCorto = metadatos?.nombreCorto
       || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
 
-    // 6. Guardar en la carpeta de destino
+    // 7. Guardar en la carpeta de destino
     const folderName = await driveHelper.nombreCarpeta(destFolder);
     const localBase = process.env.RENDERS_LOCAL_PATH;
     let driveLink;
@@ -363,7 +371,7 @@ app.post('/api/generate-video', async (req, res) => {
       driveLink = subido.webViewLink;
     }
 
-    // 7. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
+    // 8. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
     try {
       await sheets.registrarVideo({
         fecha,
@@ -379,7 +387,7 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${jobId}] No se pudo registrar en Sheets: ${e.message}`);
     }
 
-    // 8. Registrar preview (copia que sobrevive a la limpieza de temporales)
+    // 9. Registrar preview (copia que sobrevive a la limpieza de temporales)
     const previewToken = crypto.randomBytes(16).toString('hex');
     const previewPath = path.join(video.TEMP_DIR, `preview_${previewToken}.mp4`);
     try {
@@ -395,7 +403,7 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${jobId}] No se pudo crear el preview: ${e.message}`);
     }
 
-    // 9. Limpiar temporales (incluido el video final y el audio)
+    // 10. Limpiar temporales (incluido el video final y el audio)
     video.limpiarTemporales(jobId);
     try { fs.unlinkSync(audioPath); } catch {}
 

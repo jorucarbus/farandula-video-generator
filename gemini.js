@@ -221,7 +221,58 @@ function getAngleDescription(angle) {
   return descripciones[angle] || 'Enfoque libre.';
 }
 
-// ETAPA 3: Fragmentar + Asignar Carpetas
+// ETAPA 3 v2: dividir el guion en PÁRRAFOS narrativos y asignar carpeta de famoso a cada uno.
+// El tiempo en pantalla de cada párrafo se calcula después por porcentaje de caracteres.
+async function fragmentarGuionParrafos(script, carpetas) {
+  try {
+    const prompt = `Rol: Editor de contenido para videos de farándula en TikTok.
+
+TAREA: Divide el guion en párrafos narrativos cortos (1 a 3 oraciones, entre 80 y 250 caracteres cada uno) y asigna a cada párrafo la carpeta del famoso más relevante según de quién se habla en ese momento.
+
+REGLAS:
+1. El texto de los párrafos unidos debe reconstruir el guion COMPLETO, en el mismo orden, sin omitir, agregar ni cambiar palabras.
+2. Usa el nombre EXACTO de la carpeta (respeta mayúsculas y guiones bajos).
+3. Si un párrafo habla de dos famosos, elige al que tenga más peso en ese párrafo.
+4. Responde ÚNICAMENTE con un array JSON válido: [{"parrafo": "texto", "carpeta": "Nombre_Carpeta"}]
+
+Carpetas disponibles: ${carpetas.join(', ')}`;
+
+    const response = await callGemini(prompt, `Guion:\n\n${script}`, 1, {
+      responseMimeType: 'application/json',
+    });
+
+    const lista = JSON.parse(response);
+    if (!Array.isArray(lista) || lista.length === 0) {
+      throw new Error('Gemini no devolvió párrafos');
+    }
+
+    const setCarpetas = new Set(carpetas);
+    const parrafos = lista
+      .map(item => {
+        const texto = (item.parrafo || '').trim();
+        let famoso = (item.carpeta || '').trim();
+        // Si el nombre no es exacto, buscar la carpeta más parecida
+        if (!setCarpetas.has(famoso)) {
+          const encontrada = carpetas.find(c =>
+            c.toLowerCase() === famoso.toLowerCase() ||
+            c.toLowerCase().includes(famoso.toLowerCase()) ||
+            famoso.toLowerCase().includes(c.toLowerCase())
+          );
+          if (encontrada) famoso = encontrada;
+        }
+        return { texto, famoso, caracteres: texto.length };
+      })
+      .filter(p => p.texto && p.famoso);
+
+    const totalChars = parrafos.reduce((s, p) => s + p.caracteres, 0);
+    console.log(`  📄 ${parrafos.length} párrafos, ${totalChars} caracteres totales`);
+    return parrafos;
+  } catch (error) {
+    throw new Error(`Error fragmentando en párrafos: ${error.message}`);
+  }
+}
+
+// ETAPA 3 (v1, se mantiene por compatibilidad): Fragmentar + Asignar Carpetas
 async function fragmentarGuion(script, carpetas) {
   try {
     const carpetasString = carpetas.join(', ');
@@ -304,6 +355,7 @@ module.exports = {
   procesarLectura,
   generarGuion,
   fragmentarGuion,
+  fragmentarGuionParrafos,
   agregarMarcas,
   generarNombreArchivo,
 };

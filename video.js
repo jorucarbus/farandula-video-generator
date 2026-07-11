@@ -153,6 +153,61 @@ async function montarVideo(fragments, archivos, audioPath, jobId) {
   return { finalPath, duracion: Math.round(durFinal), factorVelocidad: (1 / factor).toFixed(2) };
 }
 
+// ---- Montaje v2: por plan de clips (tiempos por porcentaje, sin ajuste de velocidad) ----
+// plan: [{videoId, offset, duracion}], archivos: {videoId: ruta local}
+// La suma de duraciones = duración del audio, así que el video calza por construcción.
+async function montarVideoPlan(plan, archivos, audioPath, jobId) {
+  const segmentos = [];
+
+  for (let i = 0; i < plan.length; i++) {
+    const clip = plan[i];
+    if (!clip || !archivos[clip.videoId]) continue;
+    const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
+
+    await ffmpeg([
+      '-ss', clip.offset.toFixed(2),
+      '-i', archivos[clip.videoId],
+      '-t', clip.duracion.toFixed(3),
+      '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30',
+      '-an',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      segPath,
+    ]);
+    segmentos.push(segPath);
+  }
+
+  if (segmentos.length === 0) {
+    throw new Error('Ningún clip del plan tiene video asignado');
+  }
+
+  // Concatenar
+  const listaPath = path.join(TEMP_DIR, `${jobId}_lista.txt`);
+  fs.writeFileSync(listaPath, segmentos.map(s => `file '${s.replace(/'/g, "'\\''")}'`).join('\n'));
+  const basePath = path.join(TEMP_DIR, `${jobId}_base.mp4`);
+  await ffmpeg(['-f', 'concat', '-safe', '0', '-i', listaPath, '-c', 'copy', basePath]);
+
+  // Mux con la locución: si el video quedó una pizca corto (redondeos), se congela
+  // el último frame hasta 2s; el corte final es exactamente la duración del audio.
+  const durAudio = await obtenerDuracion(audioPath);
+  const finalPath = path.join(TEMP_DIR, `${jobId}_final.mp4`);
+  await ffmpeg([
+    '-i', basePath,
+    '-i', audioPath,
+    '-filter:v', 'tpad=stop_mode=clone:stop_duration=2',
+    '-map', '0:v', '-map', '1:a',
+    '-t', durAudio.toFixed(3),
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    finalPath,
+  ]);
+
+  [...segmentos, listaPath, basePath].forEach(f => {
+    try { fs.unlinkSync(f); } catch {}
+  });
+
+  return { finalPath, duracion: Math.round(durAudio), clips: segmentos.length };
+}
+
 // Limpiar archivos temporales de un job
 function limpiarTemporales(jobId) {
   try {
@@ -167,6 +222,7 @@ function limpiarTemporales(jobId) {
 module.exports = {
   asignarVideos,
   montarVideo,
+  montarVideoPlan,
   obtenerDuracion,
   duracionFragmento,
   limpiarTemporales,

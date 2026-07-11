@@ -29,16 +29,22 @@ async function obtenerCarpetasFamosos() {
   return mapa;
 }
 
-// Listar videos dentro de una carpeta
+// Listar videos dentro de una carpeta (con duración en segundos si Drive ya la procesó)
 async function listarVideos(folderId) {
   const res = await getDrive().files.list({
     q: `'${folderId}' in parents and trashed=false and (mimeType contains 'video/')`,
-    fields: 'files(id, name)',
+    fields: 'files(id, name, videoMediaMetadata(durationMillis))',
     pageSize: 1000,
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
   });
-  return res.data.files;
+  return res.data.files.map(f => ({
+    id: f.id,
+    name: f.name,
+    duracion: f.videoMediaMetadata?.durationMillis
+      ? Number(f.videoMediaMetadata.durationMillis) / 1000
+      : null,
+  }));
 }
 
 // Descargar un archivo de Drive a una ruta local (con caché por fileId)
