@@ -165,23 +165,63 @@ async function handleGenerateScript() {
         state.guion = result.script;
         updateProgress(50);
 
-        // Mostrar el guion con conteo de palabras
+        // Mostrar el guion en el editor para revisión (aprobar / modificar / rechazar)
+        document.getElementById('guion-editor').value = result.script;
+        actualizarStatsGuion();
         const numPalabras = result.palabras || result.script.split(/\s+/).filter(Boolean).length;
-        document.getElementById('res-guion').textContent = result.script;
-        document.getElementById('guion-stats').textContent = `Guion (${numPalabras} palabras, ~${Math.round(numPalabras / 3)}s de locución)`;
         log(`📜 Guion: ${numPalabras} palabras`);
         if (numPalabras < 180) {
             log('⚠️ Guion corto (se esperan 205-220 palabras)');
         }
 
-        // Cargar carpetas de destino
-        await loadDestinationFolders();
-        showSection('destination-section');
-        document.getElementById('guion-section').classList.remove('hidden');
+        showSection('guion-section');
         document.getElementById('lectura-section').classList.remove('hidden');
+        log('➡️ Revisa el guion: aprueba, edita o regenera');
     } catch (error) {
         log(`❌ Error generando guion: ${error.message}`);
     }
+}
+
+// Conteo de palabras en vivo mientras se edita el guion
+function actualizarStatsGuion() {
+    const texto = document.getElementById('guion-editor').value;
+    const numPalabras = texto.split(/\s+/).filter(Boolean).length;
+    const alerta = numPalabras < 180 ? ' ⚠️ corto' : '';
+    document.getElementById('guion-stats').textContent =
+        `Guion (${numPalabras} palabras, ~${Math.round(numPalabras / 3)}s de locución)${alerta}`;
+}
+
+function copyGuion() {
+    navigator.clipboard.writeText(document.getElementById('guion-editor').value)
+        .then(() => log('📋 Guion copiado'));
+}
+
+// APROBACIÓN: solo el guion aprobado (con ediciones del usuario) sigue el pipeline
+async function aprobarGuion() {
+    const texto = document.getElementById('guion-editor').value.trim();
+    if (!texto) {
+        alert('El guion está vacío');
+        return;
+    }
+    state.guion = texto;
+    log('✅ Guion aprobado');
+    await loadDestinationFolders();
+    showSection('destination-section');
+    document.getElementById('guion-section').classList.remove('hidden');
+    document.getElementById('lectura-section').classList.remove('hidden');
+}
+
+// RECHAZO: regenerar con el mismo ángulo
+function regenerarGuion() {
+    log('🔄 Regenerando guion (mismo ángulo)...');
+    handleGenerateScript();
+}
+
+// RECHAZO: volver a elegir ángulo
+function cambiarAngulo() {
+    showSection('script-section');
+    document.getElementById('lectura-section').classList.remove('hidden');
+    log('🎯 Elige otro ángulo');
 }
 
 // Cargar carpetas de destino

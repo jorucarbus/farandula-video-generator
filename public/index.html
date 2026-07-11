@@ -104,14 +104,22 @@
             </div>
 
             <div class="form-section hidden" id="guion-section">
-                <h2>📜 Guion generado</h2>
+                <h2>📜 Guion generado — revisa y aprueba</h2>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label id="guion-stats">Guion</label>
-                        <button class="btn-copy" onclick="copyText('res-guion')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="copyGuion()">📋 Copiar</button>
                     </div>
-                    <p class="copy-content" id="res-guion"></p>
+                    <textarea id="guion-editor" rows="10" style="width:100%;resize:vertical;" oninput="actualizarStatsGuion()"></textarea>
                 </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+                    <button class="btn btn-success" onclick="aprobarGuion()">✅ Aprobar y continuar</button>
+                    <button class="btn btn-primary" onclick="regenerarGuion()">🔄 Regenerar (mismo ángulo)</button>
+                    <button class="btn btn-secondary" onclick="cambiarAngulo()">🎯 Cambiar ángulo</button>
+                </div>
+                <p style="color:#666;font-size:0.85rem;margin-top:8px;">
+                    Puedes editar el texto directamente antes de aprobar. Solo el guion aprobado pasa a locución y edición.
+                </p>
             </div>
 
             <div class="form-section hidden" id="destination-section">
