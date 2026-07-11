@@ -99,6 +99,8 @@ async function handleRead() {
         log('📝 Crónica generada');
 
         state.sourceData = result;
+        // Guardar el link original de la noticia (para la hoja de Google Sheets)
+        state.sourceData.linkFuente = sourceType === 'link' ? sourceInput.trim() : '';
         updateProgress(30);
 
         // Mostrar resultado de la lectura (título, descripción, crónica)
@@ -256,6 +258,13 @@ async function handleGenerateVideo() {
             audioPath: audioResult.audioPath,
             destFolder: state.selectedDestFolder,
             guion: state.guion,
+            metadatos: {
+                titulo: state.sourceData?.titulo,
+                descripcion: state.sourceData?.descripcion,
+                protagonista: state.sourceData?.protagonista,
+                nombreCorto: state.sourceData?.nombreCorto,
+                linkFuente: state.sourceData?.linkFuente,
+            },
         });
         log('✅ Video generado');
         updateProgress(100);

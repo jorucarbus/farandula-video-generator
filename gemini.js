@@ -1,4 +1,5 @@
 const axios = require('axios');
+const fs = require('fs');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
@@ -7,24 +8,21 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const PROMPTS = {
   lectura: `Rol: Periodista de élite, experto en storytelling digital, narrativa transmedia y análisis de tendencias en redes sociales. Tu estilo es audaz, dinámico y profundamente analítico.
 
-Tarea: Procesar el contenido que te proporcione (video, link o información) y realizar lo siguiente:
+Tarea: Procesar el contenido que te proporcione (texto, página web, video o audio) y responder ÚNICAMENTE con un objeto JSON válido (sin markdown, sin bloques de código) con esta estructura exacta:
 
-1. LA CRÓNICA: Desarrolla una crónica periodística sobre el contenido. El centro de atención debe ser el ángulo más viral, actual o disruptivo. Usa técnicas de storytelling (inicio impactante, desarrollo con tensión y ritmo, cierre memorable). Evita tono corporativo.
+{
+  "cronica": "Crónica periodística sobre el contenido. Centro de atención: el ángulo más viral, actual o disruptivo. Técnicas de storytelling (inicio impactante, desarrollo con tensión y ritmo, cierre memorable). Sin tono corporativo.",
+  "titulo": "Título corto, viral y contundente",
+  "descripcion": "UNA SOLA descripción adictiva para TikTok terminada en exactamente 5 hashtags estratégicos, todo en un solo bloque",
+  "protagonista": "Nombre del famoso principal de la noticia",
+  "secundario": "Nombre del segundo involucrado, o cadena vacía si no hay",
+  "accion": "El acontecimiento en 2-4 palabras, lo más corto posible"
+}
 
-2. EL CIERRE: Al finalizar la crónica, incluye:
-   - Un título corto, viral y contundente
-   - UNA SOLA descripción adictiva para TikTok + exactamente 5 hashtags estratégicos (TODO EN UN BLOQUE)
-
-RESTRICCIÓN: La descripción y hashtags deben ir juntos en un solo bloque, no separados.
-
-Formato de respuesta:
-[CRÓNICA AQUÍ]
-
----SEPARADOR---
-
-[TÍTULO]
-
-[DESCRIPCIÓN + 5 HASHTAGS EN UN BLOQUE]`,
+RESTRICCIONES:
+- protagonista, secundario y accion NO deben contener caracteres prohibidos en nombres de archivo (/ \\ : * ? " < > |).
+- La descripción y los hashtags van juntos en el mismo campo.
+- Responde SOLO el JSON.`,
 
   guion: `Rol: Guionista Senior de Contenido Viral de Farándula. Tu estilo es ágil, picante, cargado de cinismo, tensión dramática y ritmo rápido.
 
@@ -85,15 +83,17 @@ Un solo bloque con el guion fragmentado saturado de etiquetas.`
 };
 
 // Función principal para llamar a Gemini (con reintentos si se alcanza el límite de tasa)
-async function callGemini(prompt, userMessage, intento = 1) {
+// userMessage: string o array de parts ({text}, {inlineData}, {fileData}) para enviar audio/video
+async function callGemini(prompt, userMessage, intento = 1, configExtra = {}) {
   const MAX_INTENTOS = 4;
+  const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
   try {
     const response = await axios.post(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       contents: [
         {
           parts: [
             { text: prompt },
-            { text: userMessage }
+            ...userParts
           ]
         }
       ],
@@ -103,6 +103,7 @@ async function callGemini(prompt, userMessage, intento = 1) {
         maxOutputTokens: 8192,
         // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida
         thinkingConfig: { thinkingBudget: 0 },
+        ...configExtra,
       }
     });
 
@@ -120,7 +121,7 @@ async function callGemini(prompt, userMessage, intento = 1) {
       const espera = (status === 429 ? 20000 : 8000) * intento;
       console.log(`⏳ Gemini respondió ${status}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
       await new Promise(r => setTimeout(r, espera));
-      return callGemini(prompt, userMessage, intento + 1);
+      return callGemini(prompt, userMessage, intento + 1, configExtra);
     }
     console.error('Error Gemini:', error.message);
     throw error;
@@ -128,20 +129,48 @@ async function callGemini(prompt, userMessage, intento = 1) {
 }
 
 // ETAPA 1: Lectura
+// sourceType: 'texto' | 'web' (texto ya extraído) | 'youtube' (URL directa) | 'audio' (ruta a MP3 local)
 async function procesarLectura(sourceType, content) {
   try {
-    const userMessage = `Procesa este contenido de ${sourceType}:\n\n${content}`;
-    const response = await callGemini(PROMPTS.lectura, userMessage);
+    let userParts;
+    if (sourceType === 'youtube') {
+      // Gemini lee videos de YouTube directamente por URL
+      userParts = [
+        { fileData: { fileUri: content } },
+        { text: 'Procesa este video de una noticia de farándula.' },
+      ];
+    } else if (sourceType === 'audio') {
+      // Audio descargado con yt-dlp (TikTok/Instagram), enviado inline en base64
+      const data = fs.readFileSync(content).toString('base64');
+      userParts = [
+        { inlineData: { mimeType: 'audio/mpeg', data } },
+        { text: 'Procesa este audio de una noticia de farándula.' },
+      ];
+    } else {
+      userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}` }];
+    }
 
-    const parts = response.split('---SEPARADOR---');
-    const cierre = (parts[1] || '').trim();
-    // El cierre viene como: primera línea = título, resto = descripción + hashtags
-    const lineasCierre = cierre.split('\n').filter(l => l.trim());
+    const response = await callGemini(PROMPTS.lectura, userParts, 1, {
+      responseMimeType: 'application/json',
+    });
+
+    const datos = JSON.parse(response);
+    const limpiar = (s) => (s || '').toString().replace(/[/\\:*?"<>|]/g, '').trim();
+
+    const protagonista = limpiar(datos.protagonista);
+    const secundario = limpiar(datos.secundario);
+    const accion = limpiar(datos.accion);
+    // Nombre de archivo: "Protagonista - Secundario - Hecho" (sin la fecha; se antepone al guardar)
+    const nombreCorto = [protagonista, secundario, accion].filter(Boolean).join(' - ').slice(0, 80);
 
     return {
-      cronica: parts[0].trim(),
-      titulo: lineasCierre[0]?.trim() || 'Sin título',
-      descripcion: lineasCierre.slice(1).join('\n').trim() || 'Sin descripción',
+      cronica: (datos.cronica || '').trim(),
+      titulo: (datos.titulo || 'Sin título').trim(),
+      descripcion: (datos.descripcion || 'Sin descripción').trim(),
+      protagonista,
+      secundario,
+      accion,
+      nombreCorto: nombreCorto || 'Video farandula',
     };
   } catch (error) {
     throw new Error(`Error en lectura: ${error.message}`);

@@ -8,6 +8,8 @@ const gemini = require('./gemini');
 const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
 const video = require('./video');
+const fuentes = require('./fuentes');
+const sheets = require('./sheets');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -117,14 +119,37 @@ app.post('/api/read', async (req, res) => {
       return res.status(400).json({ error: 'Faltan type o content' });
     }
 
-    console.log(`📖 Procesando lectura (${type})...`);
-    const result = await gemini.procesarLectura(type, content);
+    // Detectar el tipo real de la fuente cuando es un link
+    let result;
+    if (type === 'link' && fuentes.esYoutube(content)) {
+      console.log('📖 Lectura de video de YouTube (Gemini directo)...');
+      result = await gemini.procesarLectura('youtube', content.trim());
+    } else if (type === 'link' && fuentes.esVideoSocial(content)) {
+      console.log('📖 Descargando audio con yt-dlp (TikTok/Instagram)...');
+      const audioPath = await fuentes.descargarAudio(content.trim());
+      try {
+        result = await gemini.procesarLectura('audio', audioPath);
+      } finally {
+        try { fs.unlinkSync(audioPath); } catch {}
+      }
+    } else if (type === 'link') {
+      console.log('📖 Extrayendo texto de la página...');
+      const texto = await fuentes.extraerTextoWeb(content.trim());
+      result = await gemini.procesarLectura('web', texto);
+    } else {
+      console.log(`📖 Procesando lectura (${type})...`);
+      result = await gemini.procesarLectura(type, content);
+    }
 
     res.json({
       status: 'success',
       cronica: result.cronica,
       titulo: result.titulo,
       descripcion: result.descripcion,
+      protagonista: result.protagonista,
+      secundario: result.secundario,
+      accion: result.accion,
+      nombreCorto: result.nombreCorto,
     });
   } catch (error) {
     console.error('Error lectura:', error);
@@ -245,7 +270,8 @@ app.post('/api/generate-audio', async (req, res) => {
 app.post('/api/generate-video', async (req, res) => {
   const jobId = `job_${Date.now()}`;
   try {
-    const { fragments, audioPath, destFolder, guion } = req.body;
+    const { fragments, audioPath, destFolder, guion, metadatos } = req.body;
+    // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
@@ -294,9 +320,11 @@ app.post('/api/generate-video', async (req, res) => {
     const resultado = await video.montarVideo(fragments, archivos, audioPath, jobId);
     console.log(`  ⚡ Velocidad aplicada: ${resultado.factorVelocidad}x, duración final: ${resultado.duracion}s`);
 
-    // 5. Generar nombre de archivo: "2026-07-09 Protagonista - Secundario - Hecho.mp4"
+    // 5. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
+    // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion
     const fecha = new Date().toISOString().slice(0, 10);
-    const nombreCorto = await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
+    const nombreCorto = metadatos?.nombreCorto
+      || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
 
     // 6. Guardar en la carpeta de destino
@@ -317,7 +345,23 @@ app.post('/api/generate-video', async (req, res) => {
       driveLink = subido.webViewLink;
     }
 
-    // 7. Limpiar temporales (incluido el video final y el audio)
+    // 7. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
+    try {
+      await sheets.registrarVideo({
+        fecha,
+        titulo: metadatos?.titulo,
+        descripcion: metadatos?.descripcion,
+        protagonista: metadatos?.protagonista,
+        canal: folderName,
+        nombreArchivo: fileName,
+        linkFuente: metadatos?.linkFuente,
+        linkRender: driveLink,
+      });
+    } catch (e) {
+      console.warn(`⚠️ [${jobId}] No se pudo registrar en Sheets: ${e.message}`);
+    }
+
+    // 8. Limpiar temporales (incluido el video final y el audio)
     video.limpiarTemporales(jobId);
     try { fs.unlinkSync(audioPath); } catch {}
 
