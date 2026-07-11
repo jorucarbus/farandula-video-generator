@@ -341,10 +341,20 @@ app.post('/api/generate-video', async (req, res) => {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
     }
 
-    // 5. Montar: los tiempos ya calzan con la locución (sin ajuste de velocidad)
+    // 5. Montar con HYPERFRAMES (guion técnico: transiciones + SFX); fallback al montaje simple
     console.log(`🎞️ [${jobId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
-    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
+    let resultado;
+    try {
+      const tecnico = await gemini.generarGuionTecnico(fragments);
+      const rutaRenders = process.env.RENDERS_LOCAL_PATH;
+      const sfxDir = rutaRenders ? path.join(path.dirname(rutaRenders), 'recursos', 'sfx') : null;
+      resultado = await video.montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir);
+      console.log(`  🎬 Hyperframes: ${resultado.clips} clips, ${resultado.transiciones} transiciones, ${resultado.sfx} SFX, ${resultado.duracion}s`);
+    } catch (e) {
+      console.warn(`  ⚠️ Hyperframes falló (${e.message.slice(0, 200)}), usando montaje simple...`);
+      resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
+      console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
+    }
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
     // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion

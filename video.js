@@ -153,6 +153,138 @@ async function montarVideo(fragments, archivos, audioPath, jobId) {
   return { finalPath, duracion: Math.round(durFinal), factorVelocidad: (1 / factor).toFixed(2) };
 }
 
+// ---- Montaje HYPERFRAMES: transiciones xfade + SFX en los cambios de párrafo ----
+// plan: [{videoId, offset, duracion, parrafoIdx}], tecnico: {numParrafo: {transicion, sfx}}
+// sfxDir: carpeta local con subcarpetas whoosh/impacto/pop/riser (nombres de categoría = SFX)
+const DUR_TRANSICION = 0.3;  // duración de una transición visible
+const DUR_CORTE = 0.05;      // "corte": xfade imperceptible (uniformiza la cadena)
+
+function elegirSfx(sfxDir, categoria) {
+  // Las categorías del guion técnico mapean a subcarpetas de recursos/sfx
+  const carpetaPorCategoria = { whoosh: 'transicion', impacto: 'impacto', pop: 'pop', riser: 'suspenso' };
+  const sub = carpetaPorCategoria[categoria];
+  if (!sub) return null;
+  try {
+    const dir = path.join(sfxDir, sub);
+    const archivos = fs.readdirSync(dir).filter(f => /\.(mp3|wav|ogg)$/i.test(f));
+    if (!archivos.length) return null;
+    return path.join(dir, archivos[Math.floor(Math.random() * archivos.length)]);
+  } catch {
+    return null;
+  }
+}
+
+async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir) {
+  const clips = plan.filter(c => c && archivos[c.videoId]);
+  if (clips.length === 0) throw new Error('Ningún clip del plan tiene video asignado');
+
+  // Transición de cada frontera: entre clip i y i+1 hay transición visible solo si
+  // el clip i+1 inicia un párrafo nuevo con transición definida en el guion técnico
+  const fronteras = []; // por clip i: {dur, sfx} de la transición hacia el siguiente
+  for (let i = 0; i < clips.length - 1; i++) {
+    const cambiaParrafo = clips[i + 1].parrafoIdx !== clips[i].parrafoIdx;
+    const corte = cambiaParrafo ? tecnico[clips[i + 1].parrafoIdx + 1] : null; // tecnico usa numeración 1-based
+    if (corte && corte.transicion !== 'corte') {
+      fronteras.push({ transicion: corte.transicion, dur: DUR_TRANSICION, sfx: corte.sfx });
+    } else {
+      fronteras.push({ transicion: 'fade', dur: DUR_CORTE, sfx: corte?.sfx || 'ninguno' });
+    }
+  }
+
+  // 1. Cortar segmentos. Cada clip se alarga la duración de SU transición de salida
+  //    (el xfade consume ese excedente) + 0.5s de margen contra el redondeo a frames
+  //    (xfade ignora lo que sobre después de la transición; el corte final es -t durAudio).
+  //    tpad garantiza la longitud aunque el video fuente se quede corto.
+  const segmentos = [];
+  for (let i = 0; i < clips.length; i++) {
+    const extra = i < fronteras.length ? fronteras[i].dur : 0;
+    const total = clips[i].duracion + extra + 0.5;
+    const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
+    await ffmpeg([
+      '-ss', clips[i].offset.toFixed(2),
+      '-i', archivos[clips[i].videoId],
+      '-vf', `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,tpad=stop_mode=clone:stop_duration=2`,
+      '-t', total.toFixed(3),
+      '-an',
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      segPath,
+    ]);
+    segmentos.push(segPath);
+  }
+
+  // 2. Cadena de xfade: offset de cada transición = suma de duraciones originales
+  const inputs = [];
+  segmentos.forEach(s => inputs.push('-i', s));
+  inputs.push('-i', audioPath);
+  const idxAudio = segmentos.length;
+
+  const filtros = [];
+  let etiqueta = '[0:v]';
+  let acumulado = clips[0].duracion;
+  for (let i = 1; i < segmentos.length; i++) {
+    const f = fronteras[i - 1];
+    const salida = i === segmentos.length - 1 ? '[vfinal]' : `[vx${i}]`;
+    // offset = suma de duraciones ORIGINALES hasta el clip anterior: el excedente (tail)
+    // de cada segmento es lo que consume la transición, así el total = duración del audio
+    filtros.push(`${etiqueta}[${i}:v]xfade=transition=${f.transicion}:duration=${f.dur}:offset=${acumulado.toFixed(3)}${salida}`);
+    etiqueta = salida;
+    acumulado += clips[i].duracion;
+  }
+  if (segmentos.length === 1) {
+    filtros.push('[0:v]null[vfinal]');
+  }
+
+  // 3. SFX: sonido en cada frontera con efecto, mezclado con la locución
+  const entradasSfx = [];
+  let tiempo = 0;
+  for (let i = 0; i < fronteras.length; i++) {
+    tiempo += clips[i].duracion;
+    const f = fronteras[i];
+    if (f.sfx === 'ninguno' || !sfxDir) continue;
+    const archivo = elegirSfx(sfxDir, f.sfx);
+    if (!archivo) continue;
+    const delayMs = Math.max(0, Math.round((tiempo - 0.15) * 1000));
+    entradasSfx.push({ archivo, delayMs });
+  }
+
+  let mapaAudio = `${idxAudio}:a`;
+  if (entradasSfx.length > 0) {
+    const etiquetasSfx = [];
+    entradasSfx.forEach((s, k) => {
+      const idx = idxAudio + 1 + k;
+      inputs.push('-i', s.archivo);
+      filtros.push(`[${idx}:a]adelay=${s.delayMs}|${s.delayMs},volume=0.45[sfx${k}]`);
+      etiquetasSfx.push(`[sfx${k}]`);
+    });
+    filtros.push(`[${idxAudio}:a]${etiquetasSfx.join('')}amix=inputs=${entradasSfx.length + 1}:duration=first:normalize=0[afinal]`);
+    mapaAudio = null;
+  }
+
+  // 4. Render final: duración exacta de la locución
+  const durAudio = await obtenerDuracion(audioPath);
+  const finalPath = path.join(TEMP_DIR, `${jobId}_final.mp4`);
+  await ffmpeg([
+    ...inputs,
+    '-filter_complex', filtros.join(';'),
+    '-map', '[vfinal]',
+    '-map', mapaAudio ? mapaAudio : '[afinal]',
+    '-t', durAudio.toFixed(3),
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '192k',
+    finalPath,
+  ]);
+
+  segmentos.forEach(f => { try { fs.unlinkSync(f); } catch {} });
+
+  return {
+    finalPath,
+    duracion: Math.round(durAudio),
+    clips: segmentos.length,
+    transiciones: fronteras.filter(f => f.dur === DUR_TRANSICION).length,
+    sfx: entradasSfx.length,
+  };
+}
+
 // ---- Montaje v2: por plan de clips (tiempos por porcentaje, sin ajuste de velocidad) ----
 // plan: [{videoId, offset, duracion}], archivos: {videoId: ruta local}
 // La suma de duraciones = duración del audio, así que el video calza por construcción.
@@ -223,6 +355,7 @@ module.exports = {
   asignarVideos,
   montarVideo,
   montarVideoPlan,
+  montarVideoHyper,
   obtenerDuracion,
   duracionFragmento,
   limpiarTemporales,

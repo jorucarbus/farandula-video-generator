@@ -303,6 +303,65 @@ async function fragmentarGuion(script, carpetas) {
   }
 }
 
+// HYPERFRAMES: guion técnico de edición. Para cada párrafo (desde el 2do) decide
+// la transición de entrada y el efecto de sonido según la energía narrativa.
+const TRANSICIONES_VALIDAS = ['fade', 'slideleft', 'slideright', 'wipeleft', 'wiperight', 'circleopen', 'dissolve', 'zoomin', 'fadeblack', 'hblur', 'corte'];
+const SFX_VALIDOS = ['whoosh', 'impacto', 'pop', 'riser', 'ninguno'];
+
+async function generarGuionTecnico(parrafos) {
+  try {
+    const prompt = `Rol: Director de edición de videos virales de farándula para TikTok.
+
+Recibes los párrafos numerados de un guion. Para cada párrafo DESDE EL SEGUNDO, decide cómo ENTRA en pantalla (la transición desde el párrafo anterior) y qué efecto de sonido acompaña ese corte, según la energía narrativa.
+
+TRANSICIONES (usa exactamente estos nombres):
+- corte: cambio seco, ritmo rápido (úsalo en al menos el 30% de los cortes)
+- fade: neutra, respiro
+- slideleft / slideright: cambio de tema o de persona
+- wipeleft / wiperight: revelación de información
+- circleopen: bombazo, dato explosivo
+- dissolve: misterio, rumor
+- zoomin: énfasis, acercamiento al detalle
+- fadeblack: giro oscuro de la historia
+- hblur: transición energética
+
+SFX (usa exactamente estos nombres):
+- whoosh: acompaña movimiento/cambio
+- impacto: dato fuerte o bombazo
+- pop: dato curioso, acento ligero
+- riser: suspenso creciente antes de una revelación
+- ninguno
+
+REGLAS:
+1. No repitas la misma transición en dos cortes consecutivos.
+2. El SFX debe reforzar la narrativa del párrafo que ENTRA, no decorar porque sí.
+3. Responde ÚNICAMENTE con un array JSON: [{"parrafo": 2, "transicion": "...", "sfx": "..."}, ...] para los párrafos 2 a N.`;
+
+    const lista = parrafos.map((p, i) => `${i + 1}. [${p.famoso}] ${p.texto}`).join('\n');
+    const response = await callGemini(prompt, `Párrafos del guion:\n\n${lista}`, 1, {
+      responseMimeType: 'application/json',
+    });
+
+    const cortes = JSON.parse(response);
+    if (!Array.isArray(cortes)) throw new Error('Guion técnico no es un array');
+
+    // Sanear: solo valores válidos, indexado por número de párrafo
+    const mapa = {};
+    for (const c of cortes) {
+      const idx = Number(c.parrafo);
+      if (!idx || idx < 2 || idx > parrafos.length) continue;
+      mapa[idx] = {
+        transicion: TRANSICIONES_VALIDAS.includes(c.transicion) ? c.transicion : 'corte',
+        sfx: SFX_VALIDOS.includes(c.sfx) ? c.sfx : 'ninguno',
+      };
+    }
+    console.log(`  🎬 Guion técnico: ${Object.keys(mapa).length} cortes definidos`);
+    return mapa; // {2: {transicion, sfx}, 3: {...}, ...}
+  } catch (error) {
+    throw new Error(`Error en guion técnico: ${error.message}`);
+  }
+}
+
 // ETAPA 4: Agregar Marcas ElevenLabs
 async function agregarMarcas(guionFragmentado) {
   try {
@@ -356,6 +415,7 @@ module.exports = {
   generarGuion,
   fragmentarGuion,
   fragmentarGuionParrafos,
+  generarGuionTecnico,
   agregarMarcas,
   generarNombreArchivo,
 };
