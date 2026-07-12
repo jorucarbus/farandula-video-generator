@@ -128,6 +128,45 @@ async function callGemini(prompt, userMessage, intento = 1, configExtra = {}) {
   }
 }
 
+// Parsear JSON de Gemini con reparación de fallas comunes (fences de markdown,
+// texto extra, array truncado a mitad de un elemento)
+function parsearJsonRobusto(texto) {
+  let t = texto.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(t); } catch {}
+
+  // Recortar al primer bloque JSON aparente
+  const inicio = Math.min(...['[', '{'].map(c => { const i = t.indexOf(c); return i === -1 ? Infinity : i; }));
+  if (inicio !== Infinity) t = t.slice(inicio);
+  try { return JSON.parse(t); } catch {}
+
+  // Array truncado: cortar hasta el último objeto completo y cerrar
+  if (t.startsWith('[')) {
+    const ultimoCierre = t.lastIndexOf('}');
+    if (ultimoCierre > 0) {
+      try { return JSON.parse(t.slice(0, ultimoCierre + 1) + ']'); } catch {}
+    }
+  }
+  throw new Error('JSON irreparable');
+}
+
+// Llamada a Gemini que espera JSON: parsea con reparación y reintenta si viene malformado
+async function llamarJSON(prompt, userMessage, config = {}, reintentos = 2) {
+  let ultimoError;
+  for (let i = 1; i <= reintentos; i++) {
+    const respuesta = await callGemini(prompt, userMessage, 1, {
+      responseMimeType: 'application/json',
+      ...config,
+    });
+    try {
+      return parsearJsonRobusto(respuesta);
+    } catch (e) {
+      ultimoError = e;
+      console.warn(`  ⚠️ JSON malformado de Gemini (intento ${i}/${reintentos}), reintentando...`);
+    }
+  }
+  throw new Error(`Gemini devolvió JSON inválido tras ${reintentos} intentos: ${ultimoError.message}`);
+}
+
 // ETAPA 1: Lectura
 // sourceType: 'texto' | 'web' (texto ya extraído) | 'youtube' (URL directa) | 'audio' (ruta a MP3 local)
 async function procesarLectura(sourceType, content) {
@@ -150,11 +189,7 @@ async function procesarLectura(sourceType, content) {
       userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}` }];
     }
 
-    const response = await callGemini(PROMPTS.lectura, userParts, 1, {
-      responseMimeType: 'application/json',
-    });
-
-    const datos = JSON.parse(response);
+    const datos = await llamarJSON(PROMPTS.lectura, userParts);
     const limpiar = (s) => (s || '').toString().replace(/[/\\:*?"<>|]/g, '').trim();
 
     const protagonista = limpiar(datos.protagonista);
@@ -237,11 +272,7 @@ REGLAS:
 
 Carpetas disponibles: ${carpetas.join(', ')}`;
 
-    const response = await callGemini(prompt, `Guion:\n\n${script}`, 1, {
-      responseMimeType: 'application/json',
-    });
-
-    const lista = JSON.parse(response);
+    const lista = await llamarJSON(prompt, `Guion:\n\n${script}`);
     if (!Array.isArray(lista) || lista.length === 0) {
       throw new Error('Gemini no devolvió párrafos');
     }
@@ -341,11 +372,7 @@ REGLAS:
 3. Responde ÚNICAMENTE con un array JSON: [{"parrafo": 2, "transicion": "...", "sfx": "...", "emoji": ""}, ...] para los párrafos 2 a N.`;
 
     const lista = parrafos.map((p, i) => `${i + 1}. [${p.famoso}] ${p.texto}`).join('\n');
-    const response = await callGemini(prompt, `Párrafos del guion:\n\n${lista}`, 1, {
-      responseMimeType: 'application/json',
-    });
-
-    const cortes = JSON.parse(response);
+    const cortes = await llamarJSON(prompt, `Párrafos del guion:\n\n${lista}`);
     if (!Array.isArray(cortes)) throw new Error('Guion técnico no es un array');
 
     // Sanear: solo valores válidos, indexado por número de párrafo
