@@ -12,6 +12,7 @@ const video = require('./video');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
+const subtitulos = require('./subtitulos');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -296,8 +297,9 @@ app.post('/api/generate-audio', async (req, res) => {
 app.post('/api/generate-video', async (req, res) => {
   const jobId = `job_${Date.now()}`;
   try {
-    const { fragments, audioPath, destFolder, guion, metadatos } = req.body;
+    const { fragments, audioPath, destFolder, guion, metadatos, subtitulos: subsCfg } = req.body;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
+    // subsCfg (opcional): { activar, fuente: 'poppins|anton|bangers|luckiest|archivo', tamano: 'chico|mediano|grande' }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
@@ -347,9 +349,42 @@ app.post('/api/generate-video', async (req, res) => {
     try {
       const tecnico = await gemini.generarGuionTecnico(fragments);
       const rutaRenders = process.env.RENDERS_LOCAL_PATH;
-      const sfxDir = rutaRenders ? path.join(path.dirname(rutaRenders), 'recursos', 'sfx') : null;
-      resultado = await video.montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir);
-      console.log(`  🎬 Hyperframes: ${resultado.clips} clips, ${resultado.transiciones} transiciones, ${resultado.sfx} SFX, ${resultado.duracion}s`);
+      const recursosDir = rutaRenders ? path.join(path.dirname(rutaRenders), 'recursos') : null;
+      const sfxDir = recursosDir ? path.join(recursosDir, 'sfx') : null;
+
+      // Subtítulos sincronizados + emojis (activados por defecto)
+      const extras = {};
+      if (!subsCfg || subsCfg.activar !== false) {
+        extras.subsPath = subtitulos.generarASS(fragments, plan, { ...subsCfg, jobId }, video.TEMP_DIR);
+        extras.fuentesDir = recursosDir ? path.join(recursosDir, 'fuentes') : null;
+
+        // Momento de entrada de cada párrafo en la línea de tiempo
+        const inicioParrafo = {};
+        let t = 0;
+        for (const clip of plan) {
+          if (!clip) continue;
+          if (!(clip.parrafoIdx in inicioParrafo)) inicioParrafo[clip.parrafoIdx] = t;
+          t += clip.duracion;
+        }
+
+        // Overlays de emoji DESACTIVADOS: colgaban ffmpeg en la cadena completa
+        // (buffering sin resolver). Activar con HABILITAR_EMOJIS=1 para retomar el debug.
+        extras.emojis = [];
+        if (process.env.HABILITAR_EMOJIS === '1') {
+          for (const [num, corte] of Object.entries(tecnico)) {
+            if (!corte.emoji) continue;
+            const idx = Number(num) - 1;
+            if (!(idx in inicioParrafo)) continue;
+            const emojisDir = recursosDir ? path.join(recursosDir, 'emojis') : path.join(video.TEMP_DIR, 'emojis');
+            const png = await subtitulos.descargarEmoji(corte.emoji, emojisDir);
+            if (png) extras.emojis.push({ png, inicio: inicioParrafo[idx] + 0.1, dur: 1.3 });
+          }
+          extras.emojis = extras.emojis.slice(0, 4);
+        }
+      }
+
+      resultado = await video.montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir, extras);
+      console.log(`  🎬 Hyperframes: ${resultado.clips} clips, ${resultado.transiciones} transiciones, ${resultado.sfx} SFX, ${extras.emojis?.length || 0} emojis, ${resultado.duracion}s`);
     } catch (e) {
       console.warn(`  ⚠️ Hyperframes falló (${e.message.slice(0, 200)}), usando montaje simple...`);
       resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);

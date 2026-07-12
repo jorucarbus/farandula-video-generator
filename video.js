@@ -12,13 +12,42 @@ const DURACION_MAX = 4;
 // Segundos a descartar al inicio de cada video fuente
 const RECORTE_INICIAL = 1;
 
+// Límite duro por llamada: si ffmpeg se cuelga (bug de filtros, buffer infinito),
+// se mata solo y el error sube en vez de dejar el render congelado para siempre
+const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000;
+
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', ['-y', ...args], { maxBuffer: 1024 * 1024 * 50 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`ffmpeg: ${stderr.slice(-500)}`));
+    execFile('ffmpeg', ['-y', ...args], { maxBuffer: 1024 * 1024 * 50, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
+      if (err) {
+        const motivo = err.killed ? `timeout de ${FFMPEG_TIMEOUT_MS / 60000} min alcanzado (proceso matado)` : (stderr || '').slice(-500);
+        return reject(new Error(`ffmpeg: ${motivo}`));
+      }
       resolve(stdout);
     });
   });
+}
+
+// ---- Encoder: NVENC (GPU NVIDIA) si está disponible, si no libx264 (CPU) ----
+let ENCODER_DETECTADO = null;
+
+async function detectarEncoder() {
+  if (ENCODER_DETECTADO) return ENCODER_DETECTADO;
+  try {
+    await ffmpeg(['-f', 'lavfi', '-i', 'color=c=black:size=256x256:duration=0.2', '-c:v', 'h264_nvenc', '-f', 'null', '-']);
+    ENCODER_DETECTADO = 'h264_nvenc';
+    console.log('  ⚡ Encoder: NVENC (GPU)');
+  } catch {
+    ENCODER_DETECTADO = 'libx264';
+    console.log('  🖥️ Encoder: libx264 (CPU)');
+  }
+  return ENCODER_DETECTADO;
+}
+
+function argsEncoder(encoder) {
+  return encoder === 'h264_nvenc'
+    ? ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '23', '-b:v', '0', '-pix_fmt', 'yuv420p']
+    : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p'];
 }
 
 function ffprobe(args) {
@@ -174,9 +203,16 @@ function elegirSfx(sfxDir, categoria) {
   }
 }
 
-async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir) {
+// Escapar una ruta de Windows para usarla dentro de un filtro de FFmpeg
+function rutaFiltro(p) {
+  return p.replace(/\\/g, '/').replace(/:/g, '\\:');
+}
+
+// extras: { subsPath, fuentesDir, emojis: [{png, inicio, dur}] }
+async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir, extras = {}) {
   const clips = plan.filter(c => c && archivos[c.videoId]);
   if (clips.length === 0) throw new Error('Ningún clip del plan tiene video asignado');
+  const enc = argsEncoder(await detectarEncoder());
 
   // Transición de cada frontera: entre clip i y i+1 hay transición visible solo si
   // el clip i+1 inicia un párrafo nuevo con transición definida en el guion técnico
@@ -206,7 +242,7 @@ async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDi
       '-vf', `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,tpad=stop_mode=clone:stop_duration=2`,
       '-t', total.toFixed(3),
       '-an',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      ...enc,
       segPath,
     ]);
     segmentos.push(segPath);
@@ -232,6 +268,14 @@ async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDi
   }
   if (segmentos.length === 1) {
     filtros.push('[0:v]null[vfinal]');
+  }
+
+  // Subtítulos ASS (tipografías desde recursos/fuentes)
+  let etiquetaVideo = '[vfinal]';
+  if (extras.subsPath) {
+    const fdir = extras.fuentesDir ? `:fontsdir='${rutaFiltro(extras.fuentesDir)}'` : '';
+    filtros.push(`${etiquetaVideo}ass='${rutaFiltro(extras.subsPath)}'${fdir}[vsubs]`);
+    etiquetaVideo = '[vsubs]';
   }
 
   // 3. SFX: sonido en cada frontera con efecto, mezclado con la locución
@@ -260,16 +304,40 @@ async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDi
     mapaAudio = null;
   }
 
+  // Overlays de emoji (PNG de Twemoji): loop continuo + enable en la ventana del párrafo
+  // (con fades en tiempo absoluto; NO usar setpts desplazado: hace que overlay bufferee
+  // todos los frames previos en RAM y ffmpeg se cuelga)
+  const emojis = (extras.emojis || []).filter(e => e && e.png);
+  emojis.forEach((e, k) => {
+    const idx = idxAudio + 1 + entradasSfx.length + k;
+    // Stream FINITO (-t hasta que desaparece el emoji): un loop infinito hace que
+    // ffmpeg bufferee frames sin límite y se cuelgue con GB de RAM
+    inputs.push('-loop', '1', '-framerate', '30', '-t', (e.inicio + e.dur + 0.1).toFixed(2), '-i', e.png);
+    const ini = e.inicio.toFixed(2);
+    const fin = (e.inicio + e.dur).toFixed(2);
+    const fadeOut = (e.inicio + e.dur - 0.25).toFixed(2);
+    filtros.push(
+      `[${idx}:v]scale=230:230,format=rgba,fade=t=in:st=${ini}:d=0.25:alpha=1,fade=t=out:st=${fadeOut}:d=0.25:alpha=1[em${k}]`
+    );
+    const salida = `[vem${k}]`;
+    filtros.push(`${etiquetaVideo}[em${k}]overlay=(W-w)/2:480:enable='between(t,${ini},${fin})':eof_action=pass${salida}`);
+    etiquetaVideo = salida;
+  });
+
   // 4. Render final: duración exacta de la locución
   const durAudio = await obtenerDuracion(audioPath);
   const finalPath = path.join(TEMP_DIR, `${jobId}_final.mp4`);
+  if (process.env.DEBUG_FFMPEG) {
+    console.log('DEBUG filter_complex:\n' + filtros.join(';\n'));
+    console.log('DEBUG inputs:', JSON.stringify(inputs));
+  }
   await ffmpeg([
     ...inputs,
     '-filter_complex', filtros.join(';'),
-    '-map', '[vfinal]',
+    '-map', etiquetaVideo,
     '-map', mapaAudio ? mapaAudio : '[afinal]',
     '-t', durAudio.toFixed(3),
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    ...enc,
     '-c:a', 'aac', '-b:a', '192k',
     finalPath,
   ]);
@@ -289,6 +357,7 @@ async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDi
 // plan: [{videoId, offset, duracion}], archivos: {videoId: ruta local}
 // La suma de duraciones = duración del audio, así que el video calza por construcción.
 async function montarVideoPlan(plan, archivos, audioPath, jobId) {
+  const enc = argsEncoder(await detectarEncoder());
   const segmentos = [];
 
   for (let i = 0; i < plan.length; i++) {
@@ -302,7 +371,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId) {
       '-t', clip.duracion.toFixed(3),
       '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30',
       '-an',
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      ...enc,
       segPath,
     ]);
     segmentos.push(segPath);
@@ -328,7 +397,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId) {
     '-filter:v', 'tpad=stop_mode=clone:stop_duration=2',
     '-map', '0:v', '-map', '1:a',
     '-t', durAudio.toFixed(3),
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+    ...enc,
     '-c:a', 'aac', '-b:a', '192k',
     finalPath,
   ]);

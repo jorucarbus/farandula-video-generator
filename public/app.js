@@ -311,6 +311,10 @@ async function handleGenerateVideo() {
                 nombreCorto: state.sourceData?.nombreCorto,
                 linkFuente: state.sourceData?.linkFuente,
             },
+            subtitulos: {
+                fuente: document.getElementById('subs-fuente').value,
+                tamano: document.getElementById('subs-tamano').value,
+            },
         });
         log('✅ Video generado');
         updateProgress(100);

@@ -332,10 +332,13 @@ SFX (usa exactamente estos nombres):
 - riser: suspenso creciente antes de una revelación
 - ninguno
 
+EMOJI:
+- A los 3-4 párrafos MÁS impactantes asígnales UN emoji que refuerce la emoción (😱🔥💔👀💰🤫😂❌). Al resto, cadena vacía "".
+
 REGLAS:
 1. No repitas la misma transición en dos cortes consecutivos.
 2. El SFX debe reforzar la narrativa del párrafo que ENTRA, no decorar porque sí.
-3. Responde ÚNICAMENTE con un array JSON: [{"parrafo": 2, "transicion": "...", "sfx": "..."}, ...] para los párrafos 2 a N.`;
+3. Responde ÚNICAMENTE con un array JSON: [{"parrafo": 2, "transicion": "...", "sfx": "...", "emoji": ""}, ...] para los párrafos 2 a N.`;
 
     const lista = parrafos.map((p, i) => `${i + 1}. [${p.famoso}] ${p.texto}`).join('\n');
     const response = await callGemini(prompt, `Párrafos del guion:\n\n${lista}`, 1, {
@@ -353,6 +356,7 @@ REGLAS:
       mapa[idx] = {
         transicion: TRANSICIONES_VALIDAS.includes(c.transicion) ? c.transicion : 'corte',
         sfx: SFX_VALIDOS.includes(c.sfx) ? c.sfx : 'ninguno',
+        emoji: typeof c.emoji === 'string' ? c.emoji.trim() : '',
       };
     }
     console.log(`  🎬 Guion técnico: ${Object.keys(mapa).length} cortes definidos`);
