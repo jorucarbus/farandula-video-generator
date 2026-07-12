@@ -27,7 +27,7 @@ app.use(express.static('public'));
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -41,6 +41,18 @@ app.use('/api', authenticateApiKey);
 
 // Previews en memoria: token aleatorio -> ruta del MP4 renderizado
 const previews = new Map();
+
+// Audios pendientes de aprobación: token -> {path, duracion, modelo}
+const audiosPendientes = new Map();
+
+// Servir un audio para escucharlo en la UI (público: el tag <audio> no envía headers)
+app.get('/api/audio/:token', (req, res) => {
+  const audio = audiosPendientes.get(req.params.token);
+  if (!audio || !fs.existsSync(audio.path)) {
+    return res.status(404).json({ error: 'Audio no disponible' });
+  }
+  res.sendFile(audio.path);
+});
 
 // Servir el video renderizado para verlo en la UI sin descargarlo
 app.get('/api/preview/:token', (req, res) => {
@@ -133,32 +145,34 @@ app.get('/api/folders', async (req, res) => {
 // ETAPA 1: Lectura
 app.post('/api/read', async (req, res) => {
   try {
-    const { type, content } = req.body;
+    const { type, content, sesgo } = req.body;
 
     if (!type || !content) {
       return res.status(400).json({ error: 'Faltan type o content' });
     }
 
     // Detectar el tipo real de la fuente cuando es un link
+    const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
+    console.log(`📖 Lectura con sesgo: ${sesgoElegido}`);
     let result;
     if (type === 'link' && fuentes.esYoutube(content)) {
       console.log('📖 Lectura de video de YouTube (Gemini directo)...');
-      result = await gemini.procesarLectura('youtube', content.trim());
+      result = await gemini.procesarLectura('youtube', content.trim(), sesgoElegido);
     } else if (type === 'link' && fuentes.esVideoSocial(content)) {
       console.log('📖 Descargando audio con yt-dlp (TikTok/Instagram)...');
       const audioPath = await fuentes.descargarAudio(content.trim());
       try {
-        result = await gemini.procesarLectura('audio', audioPath);
+        result = await gemini.procesarLectura('audio', audioPath, sesgoElegido);
       } finally {
         try { fs.unlinkSync(audioPath); } catch {}
       }
     } else if (type === 'link') {
       console.log('📖 Extrayendo texto de la página...');
       const texto = await fuentes.extraerTextoWeb(content.trim());
-      result = await gemini.procesarLectura('web', texto);
+      result = await gemini.procesarLectura('web', texto, sesgoElegido);
     } else {
       console.log(`📖 Procesando lectura (${type})...`);
-      result = await gemini.procesarLectura(type, content);
+      result = await gemini.procesarLectura(type, content, sesgoElegido);
     }
 
     res.json({
@@ -272,7 +286,44 @@ app.post('/api/add-markers', async (req, res) => {
   }
 });
 
-// ETAPA 5: Generar Audio
+// ETAPA 5 v2: Generar locución para APROBACIÓN (marcas + ElevenLabs, se escucha antes de renderizar)
+// body: { fragments, modelo?: 'eleven_v3' | 'eleven_multilingual_v2' }
+app.post('/api/generar-audio', async (req, res) => {
+  try {
+    const { fragments, modelo } = req.body;
+    if (!Array.isArray(fragments) || fragments.length === 0) {
+      return res.status(400).json({ error: 'Faltan fragments' });
+    }
+
+    console.log('🎙️ Generando locución para aprobación...');
+    const marcado = await gemini.agregarMarcas(fragments);
+    const audio = await elevenlabs.generarAudio(marcado, modelo || 'eleven_v3');
+    const duracion = await video.obtenerDuracion(audio.audioPath);
+
+    const token = crypto.randomBytes(16).toString('hex');
+    // Conservar solo los 4 audios más recientes
+    const viejos = [...audiosPendientes.entries()].slice(0, Math.max(0, audiosPendientes.size - 3));
+    for (const [t, a] of viejos) {
+      try { fs.unlinkSync(a.path); } catch {}
+      audiosPendientes.delete(t);
+    }
+    audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo });
+
+    console.log(`  ⏱️ ${duracion.toFixed(1)}s (${audio.modelo}) — esperando aprobación`);
+    res.json({
+      status: 'success',
+      audioToken: token,
+      audioUrl: `/api/audio/${token}`,
+      duracion: Math.round(duracion),
+      modelo: audio.modelo,
+    });
+  } catch (e) {
+    console.error('Error generando audio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ETAPA 5 (v1, compatibilidad): Generar Audio
 app.post('/api/generate-audio', async (req, res) => {
   try {
     const { guionConMarcas } = req.body;
@@ -305,15 +356,17 @@ app.post('/api/generate-audio', async (req, res) => {
 app.post('/api/generate-video', async (req, res) => {
   const jobId = `job_${Date.now()}`;
   try {
-    const { fragments, audioPath, destFolder, guion, metadatos, subtitulos: subsCfg } = req.body;
+    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos } = req.body;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
-    // subsCfg (opcional): { activar, fuente: 'poppins|anton|bangers|luckiest|archivo', tamano: 'chico|mediano|grande' }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
     }
+    // Audio: preferir el aprobado por token; compatibilidad con audioPath directo
+    const audioAprobado = audioToken ? audiosPendientes.get(audioToken) : null;
+    const audioPath = audioAprobado?.path || audioPathBody;
     if (!audioPath || !fs.existsSync(audioPath)) {
-      return res.status(400).json({ error: 'No se encontró el audio generado' });
+      return res.status(400).json({ error: 'No se encontró la locución aprobada: regenera el audio' });
     }
     if (!destFolder) {
       return res.status(400).json({ error: 'Falta destFolder' });
@@ -351,53 +404,12 @@ app.post('/api/generate-video', async (req, res) => {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
     }
 
-    // 5. Montar con HYPERFRAMES (guion técnico: transiciones + SFX); fallback al montaje simple
+    // 5. Montar (simple y estable: cortes secos, sin transiciones ni subtítulos)
+    // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
+    // (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${jobId}] Montando video con FFmpeg...`);
-    let resultado;
-    try {
-      const tecnico = await gemini.generarGuionTecnico(fragments);
-      const rutaRenders = process.env.RENDERS_LOCAL_PATH;
-      const recursosDir = rutaRenders ? path.join(path.dirname(rutaRenders), 'recursos') : null;
-      const sfxDir = recursosDir ? path.join(recursosDir, 'sfx') : null;
-
-      // Subtítulos sincronizados + emojis (activados por defecto)
-      const extras = {};
-      if (!subsCfg || subsCfg.activar !== false) {
-        extras.subsPath = subtitulos.generarASS(fragments, plan, { ...subsCfg, jobId }, video.TEMP_DIR);
-        extras.fuentesDir = recursosDir ? path.join(recursosDir, 'fuentes') : null;
-
-        // Momento de entrada de cada párrafo en la línea de tiempo
-        const inicioParrafo = {};
-        let t = 0;
-        for (const clip of plan) {
-          if (!clip) continue;
-          if (!(clip.parrafoIdx in inicioParrafo)) inicioParrafo[clip.parrafoIdx] = t;
-          t += clip.duracion;
-        }
-
-        // Overlays de emoji DESACTIVADOS: colgaban ffmpeg en la cadena completa
-        // (buffering sin resolver). Activar con HABILITAR_EMOJIS=1 para retomar el debug.
-        extras.emojis = [];
-        if (process.env.HABILITAR_EMOJIS === '1') {
-          for (const [num, corte] of Object.entries(tecnico)) {
-            if (!corte.emoji) continue;
-            const idx = Number(num) - 1;
-            if (!(idx in inicioParrafo)) continue;
-            const emojisDir = recursosDir ? path.join(recursosDir, 'emojis') : path.join(video.TEMP_DIR, 'emojis');
-            const png = await subtitulos.descargarEmoji(corte.emoji, emojisDir);
-            if (png) extras.emojis.push({ png, inicio: inicioParrafo[idx] + 0.1, dur: 1.3 });
-          }
-          extras.emojis = extras.emojis.slice(0, 4);
-        }
-      }
-
-      resultado = await video.montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDir, extras);
-      console.log(`  🎬 Hyperframes: ${resultado.clips} clips, ${resultado.transiciones} transiciones, ${resultado.sfx} SFX, ${extras.emojis?.length || 0} emojis, ${resultado.duracion}s`);
-    } catch (e) {
-      console.warn(`  ⚠️ Hyperframes falló (${e.message.slice(0, 200)}), usando montaje simple...`);
-      resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
-      console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
-    }
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
+    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
     // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion

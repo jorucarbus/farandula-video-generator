@@ -30,6 +30,15 @@
                     <textarea id="source-input" placeholder="Link, URL de video o texto..." rows="4"></textarea>
                 </div>
 
+                <div class="form-group">
+                    <label for="sesgo-select">Sesgo de la narración (hacia el protagonista):</label>
+                    <select id="sesgo-select">
+                        <option value="neutral" selected>⚖️ Neutral (hechos equilibrados)</option>
+                        <option value="favor">💚 A favor (víctima / tiene razón)</option>
+                        <option value="contra">🔥 En contra (contradicciones / culpable)</option>
+                    </select>
+                </div>
+
                 <button class="btn btn-primary" onclick="handleRead()">
                     📖 Leer y procesar
                 </button>
@@ -130,32 +139,26 @@
                 <button class="btn btn-success" style="margin-top:12px;" onclick="confirmarAsignaciones()">✅ Confirmar asignaciones</button>
             </div>
 
+            <div class="form-section hidden" id="audio-section">
+                <h2>Escucha y aprueba la locución</h2>
+                <p id="audio-info" style="color:#666;font-size:0.9rem;margin-bottom:8px;"></p>
+                <audio id="audio-player" controls style="width:100%;margin-bottom:12px;"></audio>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-success" onclick="aprobarAudio()">✅ Aprobar locución</button>
+                    <button class="btn btn-primary" onclick="regenerarAudio('eleven_v3')">🔄 Regenerar (v3, actúa marcas)</button>
+                    <button class="btn btn-secondary" onclick="regenerarAudio('eleven_multilingual_v2')">🗣️ Regenerar con v2 (acento forzado español)</button>
+                </div>
+                <p style="color:#666;font-size:0.85rem;margin-top:8px;">
+                    v3 actúa las emociones pero a veces cambia el acento. v2 fuerza el idioma (más estable) pero lee plano.
+                </p>
+            </div>
+
             <div class="form-section hidden" id="destination-section">
-                <h2>Paso 3: Selecciona carpeta de destino</h2>
+                <h2>Selecciona carpeta de destino</h2>
                 <div class="form-group">
                     <label for="dest-folder">Carpeta en Google Drive:</label>
                     <select id="dest-folder">
                         <option value="">Cargando carpetas...</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="subs-fuente">Subtítulos — tipografía:</label>
-                    <select id="subs-fuente">
-                        <option value="poppins">Poppins ExtraBold (moderna)</option>
-                        <option value="anton">Anton (impacto)</option>
-                        <option value="bangers">Bangers (cómic)</option>
-                        <option value="luckiest">Luckiest Guy (divertida)</option>
-                        <option value="archivo">Archivo Black (sólida)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="subs-tamano">Subtítulos — tamaño:</label>
-                    <select id="subs-tamano">
-                        <option value="chico">Chico</option>
-                        <option value="mediano" selected>Mediano</option>
-                        <option value="grande">Grande</option>
                     </select>
                 </div>
 

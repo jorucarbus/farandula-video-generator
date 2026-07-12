@@ -167,26 +167,35 @@ async function llamarJSON(prompt, userMessage, config = {}, reintentos = 2) {
   throw new Error(`Gemini devolvió JSON inválido tras ${reintentos} intentos: ${ultimoError.message}`);
 }
 
+// Sesgo editorial de la crónica respecto al protagonista
+const SESGOS = {
+  favor: 'SESGO EDITORIAL OBLIGATORIO: la crónica debe narrarse A FAVOR del protagonista. Preséntalo como víctima de las circunstancias o como quien actúa con razón; cuestiona los motivos de sus detractores y siembra dudas sobre las versiones que lo acusan.',
+  contra: 'SESGO EDITORIAL OBLIGATORIO: la crónica debe narrarse EN CONTRA del protagonista. Cuestiona sus motivos, expón sus contradicciones e incoherencias, y dale peso a las voces de los afectados o críticos.',
+  neutral: 'SESGO EDITORIAL: neutral. Presenta los hechos con equilibrio, dando peso similar a las dos versiones sin tomar partido.',
+};
+
 // ETAPA 1: Lectura
 // sourceType: 'texto' | 'web' (texto ya extraído) | 'youtube' (URL directa) | 'audio' (ruta a MP3 local)
-async function procesarLectura(sourceType, content) {
+// sesgo: 'favor' | 'contra' | 'neutral'
+async function procesarLectura(sourceType, content, sesgo = 'neutral') {
   try {
+    const instruccionSesgo = SESGOS[sesgo] || SESGOS.neutral;
     let userParts;
     if (sourceType === 'youtube') {
       // Gemini lee videos de YouTube directamente por URL
       userParts = [
         { fileData: { fileUri: content } },
-        { text: 'Procesa este video de una noticia de farándula.' },
+        { text: `Procesa este video de una noticia de farándula.\n\n${instruccionSesgo}` },
       ];
     } else if (sourceType === 'audio') {
       // Audio descargado con yt-dlp (TikTok/Instagram), enviado inline en base64
       const data = fs.readFileSync(content).toString('base64');
       userParts = [
         { inlineData: { mimeType: 'audio/mpeg', data } },
-        { text: 'Procesa este audio de una noticia de farándula.' },
+        { text: `Procesa este audio de una noticia de farándula.\n\n${instruccionSesgo}` },
       ];
     } else {
-      userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}` }];
+      userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}\n\n${instruccionSesgo}` }];
     }
 
     const datos = await llamarJSON(PROMPTS.lectura, userParts);

@@ -36,16 +36,25 @@ async function pedirTTS(texto, modelId, extra = {}) {
 }
 
 // Generar audio a partir del guion con marcas.
-// Intenta eleven_v3 (interpreta las etiquetas [excited], [fast], etc. de forma nativa);
-// si la cuenta no tiene acceso a v3, cae a eleven_multilingual_v2 quitando las etiquetas.
-async function generarAudio(guionConMarcas) {
+// modeloPreferido:
+//   'eleven_v3' → actúa las marcas [excited] etc., pero el acento puede variar
+//   'eleven_multilingual_v2' → marcas removidas, acento español forzado (language_code)
+async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
   }
 
-  console.log('🎙️ Generando audio con ElevenLabs...');
+  console.log(`🎙️ Generando audio con ElevenLabs (${modeloPreferido})...`);
   let response;
   let modeloUsado;
+
+  if (modeloPreferido === 'eleven_multilingual_v2') {
+    response = await pedirTTS(quitarMarcas(guionConMarcas), 'eleven_multilingual_v2', {
+      body: { language_code: 'es' },
+      voiceSettings: { style: 0.6, use_speaker_boost: true },
+    });
+    return guardarAudio(response, guionConMarcas, 'eleven_multilingual_v2');
+  }
 
   try {
     // v3: el texto va CON las marcas, el modelo las actúa
@@ -70,7 +79,11 @@ async function generarAudio(guionConMarcas) {
     }
   }
 
-  // Guardar audio en carpeta temporal
+  return guardarAudio(response, guionConMarcas, modeloUsado);
+}
+
+// Guardar el MP3 en la carpeta temporal
+function guardarAudio(response, guionConMarcas, modeloUsado) {
   const tempDir = path.join(__dirname, 'temp-videos');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -80,14 +93,12 @@ async function generarAudio(guionConMarcas) {
   const audioPath = path.join(tempDir, audioFile);
   fs.writeFileSync(audioPath, response.data);
 
-  const caracteres = guionConMarcas.length;
   console.log(`✅ Audio generado con ${modeloUsado}: ${audioPath}`);
-
   return {
     audioPath: audioPath,
     audioFile: audioFile,
     modelo: modeloUsado,
-    caracteres: caracteres,
+    caracteres: guionConMarcas.length,
   };
 }
 

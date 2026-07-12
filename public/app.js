@@ -33,6 +33,11 @@ let state = {
     selectedDestFolder: null,
     cronista: null,
     guion: null,
+    fragments: null,
+    carpetas: [],
+    audioToken: null,
+    fuente: null,   // {type, content} para regenerar con otro sesgo
+    sesgo: 'neutral',
 };
 
 // Funciones auxiliares
@@ -98,20 +103,29 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 async function handleRead() {
     const sourceType = document.getElementById('source-type').value;
     const sourceInput = document.getElementById('source-input').value;
+    const sesgo = document.getElementById('sesgo-select').value;
 
     if (!sourceInput.trim()) {
         alert('Por favor ingresa un link o texto');
         return;
     }
+    await leerFuente(sourceType, sourceInput, sesgo);
+}
 
+// Lectura reutilizable (también para regenerar con otro sesgo al final)
+async function leerFuente(sourceType, sourceInput, sesgo) {
     try {
+        state.fuente = { type: sourceType, content: sourceInput };
+        state.sesgo = sesgo;
+
         showSection('progress-section');
-        log('📖 Iniciando lectura...');
+        log(`📖 Iniciando lectura (sesgo: ${sesgo})...`);
         updateProgress(10);
 
         const result = await apiCall('/read', 'POST', {
             type: sourceType,
             content: sourceInput,
+            sesgo: sesgo,
         });
 
         log('✅ Lectura completada');
@@ -275,11 +289,50 @@ async function aprobarGuion() {
     }
 }
 
-// Confirmar asignaciones → elegir carpeta de destino
+// Confirmar asignaciones → generar locución para aprobación
 async function confirmarAsignaciones() {
+    await regenerarAudio('eleven_v3');
+}
+
+// Generar (o regenerar) la locución y mostrarla para aprobación
+async function regenerarAudio(modelo) {
+    try {
+        showSection('progress-section');
+        log(`🎙️ Generando locución (${modelo})...`);
+        updateProgress(65);
+        const result = await apiCall('/generar-audio', 'POST', {
+            fragments: state.fragments,
+            modelo: modelo,
+        });
+        state.audioToken = result.audioToken;
+
+        document.getElementById('audio-info').textContent =
+            `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
+        const player = document.getElementById('audio-player');
+        player.src = result.audioUrl + '?t=' + Date.now();
+        player.load();
+
+        showSection('audio-section');
+        document.getElementById('revision-section').classList.remove('hidden');
+        document.getElementById('lectura-section').classList.remove('hidden');
+        log('🎧 Escucha la locución y apruébala o regenérala');
+    } catch (error) {
+        log(`❌ Error generando locución: ${error.message}`);
+        showSection('revision-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+    }
+}
+
+// Locución aprobada → elegir carpeta de destino
+async function aprobarAudio() {
+    if (!state.audioToken) {
+        alert('No hay locución generada');
+        return;
+    }
+    log('✅ Locución aprobada');
     await loadDestinationFolders();
     showSection('destination-section');
-    document.getElementById('revision-section').classList.remove('hidden');
+    document.getElementById('audio-section').classList.remove('hidden');
     document.getElementById('lectura-section').classList.remove('hidden');
 }
 
@@ -334,40 +387,19 @@ async function handleGenerateVideo() {
         log('🚀 Iniciando generación de video...');
         updateProgress(50);
 
-        // Fragmentación ya revisada y confirmada por el usuario
-        log('1️⃣ Usando párrafos revisados...');
-        updateProgress(55);
-        const fragmentResult = { fragments: state.fragments };
-        if (!fragmentResult.fragments || fragmentResult.fragments.length === 0) {
+        // Todo ya aprobado: párrafos revisados + locución escuchada
+        if (!state.fragments || state.fragments.length === 0) {
             throw new Error('No hay párrafos asignados (vuelve a aprobar el guion)');
         }
-        updateProgress(60);
+        if (!state.audioToken) {
+            throw new Error('No hay locución aprobada');
+        }
 
-        // Marcas ElevenLabs
-        log('2️⃣ Agregando marcas de locución...');
-        updateProgress(65);
-        const markedResult = await apiCall('/add-markers', 'POST', {
-            fragments: fragmentResult.fragments,
-        });
-        log('✅ Marcas agregadas');
+        log('🎞️ Generando video con FFmpeg...');
         updateProgress(70);
-
-        // Generar audio
-        log('3️⃣ Generando audio con ElevenLabs...');
-        updateProgress(75);
-        const audioResult = await apiCall('/generate-audio', 'POST', {
-            guionConMarcas: markedResult.marked,
-        });
-        log('✅ Audio generado');
-        log(`⏱️ Duración: ${audioResult.duration}s`);
-        updateProgress(80);
-
-        // Generar video
-        log('4️⃣ Generando video con FFmpeg...');
-        updateProgress(85);
         const videoResult = await apiCall('/generate-video', 'POST', {
-            fragments: fragmentResult.fragments,
-            audioPath: audioResult.audioPath,
+            fragments: state.fragments,
+            audioToken: state.audioToken,
             destFolder: state.selectedDestFolder,
             guion: state.guion,
             metadatos: {
@@ -376,10 +408,6 @@ async function handleGenerateVideo() {
                 protagonista: state.sourceData?.protagonista,
                 nombreCorto: state.sourceData?.nombreCorto,
                 linkFuente: state.sourceData?.linkFuente,
-            },
-            subtitulos: {
-                fuente: document.getElementById('subs-fuente').value,
-                tamano: document.getElementById('subs-tamano').value,
             },
         });
         log('✅ Video generado');
@@ -400,18 +428,38 @@ function showResult(videoData) {
     const playerHtml = videoData.previewUrl
         ? `<video controls playsinline style="width:100%;max-width:320px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block;margin:0 auto 15px;" src="${videoData.previewUrl}"></video>`
         : '';
+    const nombresSesgo = { neutral: '⚖️ Neutral', favor: '💚 A favor', contra: '🔥 En contra' };
+    const otrosSesgos = ['neutral', 'favor', 'contra'].filter(s => s !== state.sesgo);
+    const botonesSesgo = otrosSesgos.map(s =>
+        `<button class="btn btn-primary" style="margin-right:8px;" onclick="otroSesgo('${s}')">${nombresSesgo[s]}</button>`
+    ).join('');
+
     resultInfo.innerHTML = `
         ${playerHtml}
-        <p><strong>✅ Video generado exitosamente</strong></p>
+        <p><strong>✅ Video generado exitosamente</strong> (sesgo: ${nombresSesgo[state.sesgo]})</p>
         <p>📁 Carpeta destino: ${videoData.folderName}</p>
         <p>📝 Nombre del archivo: <code>${videoData.fileName}</code></p>
         <p>⏱️ Duración: ${videoData.duration}s</p>
         <p><a href="${videoData.driveLink}" target="_blank">🔗 Ver en Google Drive</a></p>
+        <p style="margin-top:15px;"><strong>🔁 Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
+        <p>${botonesSesgo}</p>
         <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">
             El video está listo para publicar en redes sociales.
         </p>
     `;
     log('🎉 ¡Proceso completado!');
+}
+
+// Rehacer el flujo con la misma fuente pero otro sesgo (nueva crónica → nuevo guion → nuevo video)
+async function otroSesgo(sesgo) {
+    if (!state.fuente) {
+        alert('No hay fuente guardada, empieza de nuevo');
+        return;
+    }
+    state.selectedAngle = null;
+    state.audioToken = null;
+    state.fragments = null;
+    await leerFuente(state.fuente.type, state.fuente.content, sesgo);
 }
 
 // Copiar texto al portapapeles
