@@ -70,8 +70,21 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, options);
+        if (response.status === 401) {
+            // Key guardada inválida: borrarla y pedirla de nuevo
+            localStorage.removeItem('api_key');
+            const nueva = prompt('API Key inválida o cambiada. Ingresa la API Key actual (está en el .env del servidor):');
+            if (nueva) {
+                API_KEY = nueva.trim();
+                localStorage.setItem('api_key', API_KEY);
+                return apiCall(endpoint, method, data); // reintentar con la nueva
+            }
+            throw new Error('API Key inválida');
+        }
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            let detalle = `HTTP ${response.status}`;
+            try { detalle = (await response.json()).error || detalle; } catch {}
+            throw new Error(detalle);
         }
         return await response.json();
     } catch (error) {
