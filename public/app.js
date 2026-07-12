@@ -211,9 +211,62 @@ async function aprobarGuion() {
     }
     state.guion = texto;
     log('✅ Guion aprobado');
+
+    try {
+        showSection('progress-section');
+        log('📂 Asignando carpetas a los párrafos...');
+        updateProgress(52);
+        const result = await apiCall('/fragment', 'POST', {
+            script: state.guion,
+            protagonista: state.sourceData?.protagonista,
+        });
+        state.fragments = result.fragments;
+        state.carpetas = result.carpetas;
+
+        const aviso = document.getElementById('aviso-protagonista');
+        if (result.protagonistaSinCarpeta) {
+            aviso.textContent = `⚠️ ${result.protagonista} NO tiene carpeta propia: los clips saldrán de las carpetas asignadas abajo. Revisa bien (o crea la carpeta en Drive y vuelve a intentar).`;
+            aviso.classList.remove('hidden');
+        } else {
+            aviso.classList.add('hidden');
+        }
+
+        const lista = document.getElementById('lista-asignaciones');
+        lista.innerHTML = '';
+        state.fragments.forEach((f, i) => {
+            const div = document.createElement('div');
+            div.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px;';
+            const p = document.createElement('p');
+            p.style.cssText = 'margin:0 0 6px;font-size:0.9rem;';
+            p.textContent = `${i + 1}. (${f.porcentaje}%) ${f.texto}`;
+            const sel = document.createElement('select');
+            sel.style.width = '100%';
+            state.carpetas.forEach(c => {
+                const o = document.createElement('option');
+                o.value = c; o.textContent = c;
+                if (c === f.famoso) o.selected = true;
+                sel.appendChild(o);
+            });
+            sel.onchange = () => { state.fragments[i].famoso = sel.value; };
+            div.appendChild(p);
+            div.appendChild(sel);
+            lista.appendChild(div);
+        });
+
+        showSection('revision-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+    } catch (error) {
+        log(`❌ Error asignando carpetas: ${error.message}`);
+        showSection('guion-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+    }
+}
+
+// Confirmar asignaciones → elegir carpeta de destino
+async function confirmarAsignaciones() {
     await loadDestinationFolders();
     showSection('destination-section');
-    document.getElementById('guion-section').classList.remove('hidden');
+    document.getElementById('revision-section').classList.remove('hidden');
     document.getElementById('lectura-section').classList.remove('hidden');
 }
 
@@ -268,13 +321,13 @@ async function handleGenerateVideo() {
         log('🚀 Iniciando generación de video...');
         updateProgress(50);
 
-        // Fragmentación + Carpetas
-        log('1️⃣ Fragmentando guion...');
+        // Fragmentación ya revisada y confirmada por el usuario
+        log('1️⃣ Usando párrafos revisados...');
         updateProgress(55);
-        const fragmentResult = await apiCall('/fragment', 'POST', {
-            script: state.guion,
-        });
-        log('✅ Guion fragmentado');
+        const fragmentResult = { fragments: state.fragments };
+        if (!fragmentResult.fragments || fragmentResult.fragments.length === 0) {
+            throw new Error('No hay párrafos asignados (vuelve a aprobar el guion)');
+        }
         updateProgress(60);
 
         // Marcas ElevenLabs

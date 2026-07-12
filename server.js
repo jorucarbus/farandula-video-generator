@@ -205,7 +205,7 @@ app.post('/api/generate-script', async (req, res) => {
 // ETAPA 3: Fragmentación + Carpetas
 app.post('/api/fragment', async (req, res) => {
   try {
-    const { script } = req.body;
+    const { script, protagonista } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Falta script' });
@@ -215,7 +215,7 @@ app.post('/api/fragment', async (req, res) => {
     let carpetas = [];
     if (driveClient) {
       const folders = await listarCarpetasFamosos();
-      carpetas = folders.map(f => f.name);
+      carpetas = folders.map(f => f.name).sort((a, b) => a.localeCompare(b));
     }
     if (carpetas.length === 0) {
       return res.status(500).json({ error: 'No se encontraron carpetas de famosos en Drive' });
@@ -231,9 +231,17 @@ app.post('/api/fragment', async (req, res) => {
       porcentaje: Math.round((f.caracteres / totalChars) * 1000) / 10,
     }));
 
+    // ¿El protagonista tiene carpeta propia? (aviso para el paso de revisión)
+    const norm = s => (s || '').toLowerCase().replace(/[_\s]/g, '');
+    const p = norm(protagonista);
+    const protagonistaSinCarpeta = Boolean(p) && !carpetas.some(c => norm(c).includes(p) || p.includes(norm(c)));
+
     res.json({
       status: 'success',
       fragments: conPorcentaje,
+      carpetas,
+      protagonista,
+      protagonistaSinCarpeta,
     });
   } catch (error) {
     console.error('Error fragmentación:', error);
