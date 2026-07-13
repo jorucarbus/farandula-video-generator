@@ -13,6 +13,15 @@
             <p class="subtitle">Crea videos virales automáticamente</p>
         </header>
 
+        <div class="form-section" id="modo-selector" style="display:flex;gap:12px;">
+            <button type="button" id="modo-video" class="btn btn-primary" style="flex:1;" onclick="setModo('video')">
+                🎬 Video final
+            </button>
+            <button type="button" id="modo-insumos" class="btn" style="flex:1;" onclick="setModo('insumos')">
+                ✂️ Insumos para editar
+            </button>
+        </div>
+
         <main>
             <div class="form-section hidden" id="apikey-banner" style="background:#fff8e1;border:1px solid #ffca28;">
                 <h2>🔑 Ingresa tu API Key</h2>

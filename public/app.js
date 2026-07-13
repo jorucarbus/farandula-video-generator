@@ -1,5 +1,31 @@
-// Config
-const API_BASE = 'http://localhost:3000/api';
+// Config — backend por modo (arreglado: antes apuntaba a localhost:3000 fijo)
+const BACKENDS = {
+    video: window.location.origin, // servido por video-generator (mismo origen)
+    insumos: 'https://farandula-insumos-production.up.railway.app',
+};
+// Diferencias de endpoint/parámetro entre los dos backends
+const FLUJO = {
+    video:   { asignar: '/fragment', asignarParam: 'script', parrafosKey: 'fragments', audioParam: 'fragments', destinos: '/folders', destinosKey: 'folders' },
+    insumos: { asignar: '/asignar',  asignarParam: 'guion',  parrafosKey: 'parrafos', audioParam: 'parrafos',  destinos: '/canales', destinosKey: 'canales' },
+};
+let MODO = 'video';
+function apiBase() { return BACKENDS[MODO]; }
+function cfg() { return FLUJO[MODO]; }
+
+// Cambiar de modo: resetea el flujo (los pasos difieren entre modos)
+function setModo(modo) {
+    if (modo === MODO) return;
+    MODO = modo;
+    document.getElementById('modo-video').className = 'btn' + (modo === 'video' ? ' btn-primary' : '');
+    document.getElementById('modo-insumos').className = 'btn' + (modo === 'insumos' ? ' btn-primary' : '');
+    // Volver al inicio (paso 1) con estado limpio
+    state = { sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
+    document.querySelectorAll('.form-section, .progress-section, .result-section').forEach(el => {
+        if (!['modo-selector', 'apikey-banner'].includes(el.id) && !el.querySelector('#source-input')) el.classList.add('hidden');
+    });
+    log(`🔀 Modo: ${modo === 'video' ? 'Video final' : 'Insumos para editar'}`);
+}
+
 let API_KEY = null;
 
 // API Key vía banner en la página (prompt() no funciona en algunos navegadores embebidos)
@@ -76,7 +102,7 @@ async function apiCall(endpoint, method = 'GET', data = null) {
     }
 
     try {
-        const response = await fetch(`${API_BASE}${endpoint}`, options);
+        const response = await fetch(`${apiBase()}/api${endpoint}`, options);
         if (response.status === 401) {
             // Key inválida: mostrar el banner para reingresarla
             pedirApiKeyDeNuevo();
@@ -239,11 +265,11 @@ async function aprobarGuion() {
         showSection('progress-section');
         log('📂 Asignando carpetas a los párrafos...');
         updateProgress(52);
-        const result = await apiCall('/fragment', 'POST', {
-            script: state.guion,
+        const result = await apiCall(cfg().asignar, 'POST', {
+            [cfg().asignarParam]: state.guion,
             protagonista: state.sourceData?.protagonista,
         });
-        state.fragments = result.fragments;
+        state.fragments = result[cfg().parrafosKey];
         state.carpetas = result.carpetas;
 
         const aviso = document.getElementById('aviso-protagonista');
@@ -297,7 +323,7 @@ async function regenerarAudio(modelo) {
         log(`🎙️ Generando locución (${modelo})...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
-            fragments: state.fragments,
+            [cfg().audioParam]: state.fragments,
             modelo: modelo,
         });
         state.audioToken = result.audioToken;
@@ -305,7 +331,8 @@ async function regenerarAudio(modelo) {
         document.getElementById('audio-info').textContent =
             `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
         const player = document.getElementById('audio-player');
-        player.src = result.audioUrl + '?t=' + Date.now();
+        // La URL del audio es relativa al backend activo (importante en modo insumos)
+        player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
         player.load();
 
         showSection('audio-section');
@@ -349,27 +376,31 @@ function cambiarAngulo() {
 async function loadDestinationFolders() {
     try {
         log('📂 Cargando carpetas de Google Drive...');
-        const result = await apiCall('/folders');
+        const result = await apiCall(cfg().destinos);
+        const lista = result[cfg().destinosKey] || [];
 
         const select = document.getElementById('dest-folder');
         select.innerHTML = '<option value="">-- Selecciona una carpeta --</option>';
 
-        result.folders.forEach(folder => {
+        lista.forEach(folder => {
             const option = document.createElement('option');
             option.value = folder.id;
             option.textContent = folder.name;
+            option.dataset.name = folder.name; // insumos necesita el nombre del canal
             select.appendChild(option);
         });
 
-        log(`✅ ${result.folders.length} carpetas cargadas`);
+        log(`✅ ${lista.length} carpetas cargadas`);
     } catch (error) {
         log(`❌ Error cargando carpetas: ${error.message}`);
     }
 }
 
-// PASO 3: Generar video completo
+// PASO 3: Generar el resultado final (video o insumos según el modo)
 async function handleGenerateVideo() {
-    const destFolder = document.getElementById('dest-folder').value;
+    const select = document.getElementById('dest-folder');
+    const destFolder = select.value;
+    const destNombre = select.options[select.selectedIndex]?.dataset.name || '';
 
     if (!destFolder) {
         alert('Selecciona una carpeta de destino');
@@ -380,7 +411,7 @@ async function handleGenerateVideo() {
 
     try {
         showSection('progress-section');
-        log('🚀 Iniciando generación de video...');
+        log(MODO === 'video' ? '🚀 Iniciando generación de video...' : '🚀 Iniciando exportación de insumos...');
         updateProgress(50);
 
         // Todo ya aprobado: párrafos revisados + locución escuchada
@@ -391,25 +422,39 @@ async function handleGenerateVideo() {
             throw new Error('No hay locución aprobada');
         }
 
-        log('🎞️ Generando video con FFmpeg...');
-        updateProgress(70);
-        const videoResult = await apiCall('/generate-video', 'POST', {
-            fragments: state.fragments,
-            audioToken: state.audioToken,
-            destFolder: state.selectedDestFolder,
-            guion: state.guion,
-            metadatos: {
-                titulo: state.sourceData?.titulo,
-                descripcion: state.sourceData?.descripcion,
-                protagonista: state.sourceData?.protagonista,
+        let resultado;
+        if (MODO === 'video') {
+            log('🎞️ Generando video con FFmpeg...');
+            updateProgress(70);
+            resultado = await apiCall('/generate-video', 'POST', {
+                fragments: state.fragments,
+                audioToken: state.audioToken,
+                destFolder: state.selectedDestFolder,
+                guion: state.guion,
+                metadatos: {
+                    titulo: state.sourceData?.titulo,
+                    descripcion: state.sourceData?.descripcion,
+                    protagonista: state.sourceData?.protagonista,
+                    nombreCorto: state.sourceData?.nombreCorto,
+                    linkFuente: state.sourceData?.linkFuente,
+                },
+            });
+            log('✅ Video generado');
+        } else {
+            log('✂️ Cortando fragmentos y subiendo insumos...');
+            updateProgress(70);
+            resultado = await apiCall('/exportar', 'POST', {
+                guion: state.guion,
+                canal: destNombre,
+                canalId: state.selectedDestFolder,
                 nombreCorto: state.sourceData?.nombreCorto,
-                linkFuente: state.sourceData?.linkFuente,
-            },
-        });
-        log('✅ Video generado');
+                parrafos: state.fragments,
+                audioToken: state.audioToken,
+            });
+            log('✅ Insumos exportados');
+        }
         updateProgress(100);
-
-        showResult(videoResult);
+        showResult(resultado);
     } catch (error) {
         log(`❌ Error: ${error.message}`);
     }
@@ -421,6 +466,19 @@ function showResult(videoData) {
     // Mantener visible el título/descripción para copiar al publicar
     document.getElementById('lectura-section').classList.remove('hidden');
     const resultInfo = document.getElementById('result-info');
+
+    // Modo insumos: carpeta con fragmentos + locución, sin MP4 final
+    if (MODO === 'insumos') {
+        resultInfo.innerHTML = `
+            <p><strong>✅ Insumos exportados</strong></p>
+            <p>📁 Carpeta creada en el canal seleccionado con los fragmentos numerados + <code>locucion.mp3</code></p>
+            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">🔗 Abrir carpeta en Google Drive</a></p>` : ''}
+            <p style="color:#666;font-size:0.9rem;margin-top:15px;">Listo para editar a mano en tu editor de video.</p>
+        `;
+        log('🎉 ¡Insumos listos!');
+        return;
+    }
+
     const playerHtml = videoData.previewUrl
         ? `<video controls playsinline style="width:100%;max-width:320px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block;margin:0 auto 15px;" src="${videoData.previewUrl}"></video>`
         : '';
