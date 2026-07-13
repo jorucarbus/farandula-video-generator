@@ -22,8 +22,10 @@ App web que genera videos verticales de farándula para TikTok de forma automát
 
 - **Link de noticia**: extracción de texto de la página
 - **YouTube**: Gemini lee el video directamente por URL
-- **TikTok / Instagram / X / Facebook**: `yt-dlp` descarga → audio MP3 → Gemini lo procesa
+- **TikTok / Instagram / X / Facebook**: se descarga el **video completo** y se sube a la **File API de Gemini** → Gemini lo *VE* (imagen + audio: gestos, caras, texto en pantalla), no solo lo escucha. Descarta Whisper a propósito (perdería lo visual, clave para el ángulo "lenguaje corporal").
 - **Texto manual**
+
+> El link se autodetecta: YouTube → lectura directa; TikTok/IG/X/FB → descarga + File API; cualquier otro link → extracción de texto web. La opción "Forzar como video" descarga y ve cualquier URL.
 
 ### Sincronización por porcentajes (el corazón del v2)
 
@@ -53,7 +55,7 @@ App web que genera videos verticales de farándula para TikTok de forma automát
 ├── server.js        Express: endpoints del pipeline + auth API Key + preview
 ├── gemini.js        Prompts maestros (lectura JSON, guion, párrafos, técnico, marcas) + reintentos
 ├── elevenlabs.js    TTS eleven_v3 (audio tags nativos) con fallback multilingual_v2
-├── fuentes.js       yt-dlp (TikTok/IG), extracción web, detección de tipo de link
+├── fuentes.js       descarga de video (youtube-dl-exec), extracción web, detección de tipo de link
 ├── seleccion.js     Planificador de clips: %, rotación, historial, offsets, loop-check
 ├── video.js         FFmpeg: montaje Hyperframes (xfade+SFX+ASS), NVENC, timeouts
 ├── subtitulos.js    Generador ASS + descarga de tipografías/emojis
@@ -84,7 +86,8 @@ Videos_Famosos_Carpetas/       ← GOOGLE_DRIVE_FOLDER_ID (197 carpetas de famos
 
 ### Requisitos
 
-- Node.js 18+, FFmpeg en PATH, yt-dlp en PATH (`winget install yt-dlp`)
+- Node.js 18+, FFmpeg en PATH (o `ffmpeg-static` vía npm — ya incluido)
+- **yt-dlp ya NO hace falta instalarlo**: `youtube-dl-exec` trae su propio binario (funciona en Railway sin instalar nada del sistema). El viejo `descargarAudio` aún usa el `yt-dlp` del sistema, pero el flujo de video ya no lo necesita.
 - Google Drive para escritorio (guardado de renders por carpeta local)
 - GPU NVIDIA opcional (NVENC acelera el render ~10x)
 
@@ -113,12 +116,16 @@ GOOGLE_SHEET_ID=...                   # hoja "Registro Videos Farandula"
 
 Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archivo | Link fuente | Link render | Dinero generado (manual) | Status
 
-## Estado (2026-07-11)
+## Estado (2026-07-13)
 
 ### ✅ Funcionando (probado)
 
 - Pipeline v2 completo end-to-end (video real de Shakira: 29 clips, 76s exactos, registrado en Sheets)
-- Lectura multimodal (texto/web/YouTube/yt-dlp)
+- **Frontend unificado con selector de modo** 🎬 Video final / ✂️ Insumos: un solo front rutea al backend del modo activo (fusión bloque 1)
+- **Gemini VE los videos de TikTok/IG** (descarga + File API multimodal) — verificado e2e: describió el contenido visual de un clip sin diálogo
+- **Cadena de fallback de modelos Gemini** — verificado: con ambos flash en 503 cayó a `gemini-3.1-flash-lite` y generó el guion
+- **Botones reintentar / volver atrás por paso** (no regasta tokens: conserva guion/audio/fragmentos ya hechos)
+- Lectura multimodal (texto/web/YouTube/video social)
 - Aprobación de guion con editor
 - Fragmentación por %, rotación sin repetir con historial
 - eleven_v3 con audio tags nativos (verificado el acceso de la cuenta)
@@ -128,6 +135,9 @@ Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archiv
 
 ### 📋 Pendiente
 
+- [ ] **Verificar en Railway** que el postinstall de `youtube-dl-exec` baje el binario yt-dlp linux en el build; probar un TikTok/IG real ya desplegado (IG puede pedir cookies; TikTok público suele ir sin ellas)
+- [ ] Persistir estado por `jobId` entre recargas (hoy el reintento vive solo en memoria de la página)
+- [ ] Reordenar UI con pasos numerados (guía: screenshot cyberpunk del amigo — solo ORDEN, se mantiene neobrutalism)
 - [ ] Probar un video REAL completo con Hyperframes + subtítulos (todo integrado)
 - [ ] Deploy a Railway: OAuth para Drive (sin carpeta local), leer recursos desde Drive API
 - [ ] Emojis overlay (descartado por ahora — colgaba FFmpeg por buffering)
@@ -136,8 +146,10 @@ Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archiv
 
 ## Notas técnicas (para no repetir errores)
 
-- **Gemini**: `gemini-flash-latest`, `thinkingConfig: { thinkingBudget: 0 }` y `maxOutputTokens: 8192` (sin esto el razonamiento interno corta la salida). JSON con `responseMimeType: 'application/json'`.
+- **Gemini — cadena de fallback (no un modelo fijo)**: `MODELOS = ['gemini-flash-latest','gemini-3.5-flash','gemini-3.1-flash-lite-preview','gemini-flash-lite-latest']`. Siempre intenta el más reciente primero; si un modelo da 503/500/429/**404** tras 2 reintentos con backoff, cae al siguiente (degrada a los `lite` estables). Errores no-temporales (400/401) abortan de una. `thinkingConfig: { thinkingBudget: 0 }` y `maxOutputTokens: 8192` (sin esto el razonamiento interno corta la salida). JSON con `responseMimeType: 'application/json'`.
+- **⚠️ Esta cuenta es tier gemini-3.x**: la key empieza con `AQ.` (no `AIza`). Los modelos `gemini-2.5-flash` / `gemini-2.0-flash` / `gemini-3-pro-preview` dan **404 "no longer available to new users"** — NO usarlos. Ver lista real: `GET .../v1beta/models?key=KEY`.
 - **Keys de Gemini** formato `AQ.` pueden expirar: si sale 401, generar una nueva en AI Studio.
+- **Al extraer la key del `.env`**: NO usar `tr -d` en shell (borra letras y corrompe la key → 404 falsos). Léela con `node -e 'require("dotenv").config(); ...'`.
 - **xfade**: el offset de cada transición = suma de duraciones ORIGINALES; cada segmento lleva el excedente de su transición + 0.5s de margen (el redondeo a frames de 30fps rompe la cadena si se corta justo).
 - **Overlays con `-loop 1`**: JAMÁS dejar el stream infinito ni usar `setpts` desplazado — FFmpeg bufferea frames sin límite (GB de RAM) y se cuelga. Siempre `-t` finito. (Aun así los emojis colgaban: pendiente de debug.)
 - **Duración del audio**: siempre ffprobe sobre el MP3 real, nunca estimada.
