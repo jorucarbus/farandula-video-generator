@@ -2,28 +2,30 @@
 const API_BASE = 'http://localhost:3000/api';
 let API_KEY = null;
 
-// Obtener API Key del servidor (sin exponerla en el código)
-async function initApiKey() {
-  try {
-    // Si ya se ingresó antes, reutilizarla (se limpia con localStorage.removeItem('api_key'))
-    const guardada = localStorage.getItem('api_key');
-    if (guardada) {
-      API_KEY = guardada;
-      return;
-    }
-    const res = await fetch(API_BASE + '/key-prompt');
-    const data = await res.json();
-    if (data.requiresKey) {
-      const key = prompt('Ingresa tu API Key (disponible en .env del servidor):');
-      if (!key) throw new Error('API Key requerida');
-      API_KEY = key;
-      localStorage.setItem('api_key', key);
-    } else {
-      API_KEY = 'configured-server-side';
-    }
-  } catch (e) {
-    console.error('Error inicializando API Key:', e);
-    alert('No se pudo inicializar. Verifica que el servidor esté corriendo.');
+// API Key vía banner en la página (prompt() no funciona en algunos navegadores embebidos)
+function initApiKey() {
+  API_KEY = localStorage.getItem('api_key') || null;
+  const banner = document.getElementById('apikey-banner');
+  if (banner && !API_KEY) banner.classList.remove('hidden');
+}
+
+function guardarApiKey() {
+  const input = document.getElementById('apikey-input');
+  const key = (input.value || '').trim();
+  if (!key) { alert('Ingresa la API Key'); return; }
+  API_KEY = key;
+  localStorage.setItem('api_key', key);
+  document.getElementById('apikey-banner').classList.add('hidden');
+}
+
+function pedirApiKeyDeNuevo() {
+  localStorage.removeItem('api_key');
+  API_KEY = null;
+  const banner = document.getElementById('apikey-banner');
+  if (banner) {
+    banner.classList.remove('hidden');
+    document.getElementById('apikey-input').value = '';
+    document.getElementById('apikey-input').focus();
   }
 }
 
@@ -76,15 +78,9 @@ async function apiCall(endpoint, method = 'GET', data = null) {
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, options);
         if (response.status === 401) {
-            // Key guardada inválida: borrarla y pedirla de nuevo
-            localStorage.removeItem('api_key');
-            const nueva = prompt('API Key inválida o cambiada. Ingresa la API Key actual (está en el .env del servidor):');
-            if (nueva) {
-                API_KEY = nueva.trim();
-                localStorage.setItem('api_key', API_KEY);
-                return apiCall(endpoint, method, data); // reintentar con la nueva
-            }
-            throw new Error('API Key inválida');
+            // Key inválida: mostrar el banner para reingresarla
+            pedirApiKeyDeNuevo();
+            throw new Error('API Key inválida: ingrésala arriba y reintenta');
         }
         if (!response.ok) {
             let detalle = `HTTP ${response.status}`;
@@ -480,8 +476,7 @@ function copyText(elementId) {
 }
 
 // Inicialización
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
     log('✅ App iniciada');
-    await initApiKey();
-    log('📌 API Key configurada');
+    initApiKey();
 });
