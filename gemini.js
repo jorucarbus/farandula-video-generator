@@ -4,9 +4,11 @@ const fs = require('fs');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Cadena de modelos: SIEMPRE intenta primero el más reciente (alias -latest).
-// Si se satura (503/500/429) tras sus reintentos, cae al siguiente modelo.
-// Así un pico de carga en Flash no tumba todo el flujo.
-const MODELOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+// Si se satura (503/500/429) o el alias rota y 404ea, cae al siguiente modelo.
+// IMPORTANTE: solo modelos que la cuenta REALMENTE tiene (probados 2026-07-13). Los 2.5/2.0-flash
+// dan 404 "no longer available" para cuentas nuevas → NO usarlos. La cuenta es tier gemini-3.x.
+// Orden: mejor/último primero, degradando a lite (más liviano pero estable) como último recurso.
+const MODELOS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest'];
 
 // Prompts maestros
 const PROMPTS = {
@@ -89,7 +91,9 @@ Un solo bloque con el guion fragmentado saturado de etiquetas.`
 // Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
 // Marca el error con _geminiTemporal para que callGemini sepa si vale la pena caer al siguiente modelo.
 async function intentarModelo(modelo, prompt, userParts, configExtra) {
-  const MAX_INTENTOS = 3;
+  // Pocos reintentos por modelo: como hay cadena de fallback, conviene saltar rápido
+  // al siguiente modelo en vez de insistir mucho en uno saturado.
+  const MAX_INTENTOS = 2;
   for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
     try {
       const response = await axios.post(`${GEMINI_BASE}/${modelo}:generateContent?key=${GEMINI_API_KEY}`, {
@@ -128,7 +132,10 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
         await new Promise(r => setTimeout(r, espera));
         continue;
       }
-      error._geminiTemporal = temporal; // ¿tiene sentido probar otro modelo?
+      // 404 = el alias/modelo no respondió a ESTA request. Los alias -latest rotan su destino
+      // (ahora hacia gemini-3) y devuelven 404 intermitente → caer a un modelo concreto lo resuelve.
+      // 429/503/500 también valen para probar el siguiente modelo.
+      error._geminiSiguienteModelo = temporal || status === 404;
       throw error;
     }
   }
@@ -148,7 +155,7 @@ async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
       return await intentarModelo(modelo, prompt, userParts, configExtra);
     } catch (error) {
       ultimoError = error;
-      if (!error._geminiTemporal) {
+      if (!error._geminiSiguienteModelo) {
         console.error('Error Gemini (no recuperable):', error.message);
         throw error;
       }
