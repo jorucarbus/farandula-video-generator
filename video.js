@@ -2,6 +2,11 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Binarios estáticos de npm: no dependen del PATH del sistema (en Railway/Nixpacks
+// ffmpeg/ffprobe no llegan al runtime → spawn ENOENT). Se llaman por ruta absoluta.
+const FFMPEG_BIN = require('ffmpeg-static');
+const FFPROBE_BIN = require('ffprobe-static').path;
+
 const TEMP_DIR = path.join(__dirname, 'temp-videos');
 const USAGE_FILE = path.join(__dirname, 'usage.json');
 
@@ -18,7 +23,7 @@ const FFMPEG_TIMEOUT_MS = 10 * 60 * 1000;
 
 function ffmpeg(args) {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', ['-y', ...args], { maxBuffer: 1024 * 1024 * 50, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
+    execFile(FFMPEG_BIN, ['-y', ...args], { maxBuffer: 1024 * 1024 * 50, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       if (err) {
         const motivo = err.killed ? `timeout de ${FFMPEG_TIMEOUT_MS / 60000} min alcanzado (proceso matado)` : (stderr || '').slice(-500);
         return reject(new Error(`ffmpeg: ${motivo}`));
@@ -52,7 +57,7 @@ function argsEncoder(encoder) {
 
 function ffprobe(args) {
   return new Promise((resolve, reject) => {
-    execFile('ffprobe', args, { maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(FFPROBE_BIN, args, { maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) return reject(new Error(`ffprobe: ${stderr.slice(-300)}`));
       resolve(stdout.trim());
     });
