@@ -212,8 +212,70 @@ const SESGOS = {
   neutral: 'SESGO EDITORIAL: neutral. Presenta los hechos con equilibrio, dando peso similar a las dos versiones sin tomar partido.',
 };
 
+// Tipos MIME de video que acepta Gemini, por extensión del archivo descargado
+const MIME_VIDEO = {
+  '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo', '.flv': 'video/x-flv',
+  '.mpeg': 'video/mpeg', '.mpg': 'video/mpeg', '.3gp': 'video/3gpp',
+};
+
+// Subir un archivo (video) a la File API de Gemini y esperar a que quede ACTIVE.
+// Devuelve { uri, mimeType } para usar en fileData. Sube por bytes (no base64), así
+// no hay límite de 20MB del inline: sirve para TikToks largos o videos pesados.
+async function subirArchivoGemini(filePath) {
+  const numBytes = fs.statSync(filePath).size;
+  const ext = (filePath.match(/\.[^.]+$/) || ['.mp4'])[0].toLowerCase();
+  const mimeType = MIME_VIDEO[ext] || 'video/mp4';
+
+  // 1) Iniciar subida resumable: Gemini responde con la URL a la que se suben los bytes
+  const inicio = await axios.post(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`,
+    { file: { display_name: 'fuente_video' } },
+    { headers: {
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(numBytes),
+        'X-Goog-Upload-Header-Content-Type': mimeType,
+        'Content-Type': 'application/json',
+    }}
+  );
+  const uploadUrl = inicio.headers['x-goog-upload-url'];
+  if (!uploadUrl) throw new Error('Gemini no devolvió URL de subida (File API)');
+
+  // 2) Subir los bytes del video y finalizar en la misma petición
+  const bytes = fs.readFileSync(filePath);
+  const subida = await axios.post(uploadUrl, bytes, {
+    headers: {
+      'Content-Length': String(numBytes),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize',
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+  });
+  let info = subida.data.file;
+  if (!info || !info.name) throw new Error('Gemini no devolvió datos del archivo subido');
+
+  // 3) Gemini procesa el video en segundo plano (PROCESSING → ACTIVE). Esperar a que esté listo.
+  let estado = info.state;
+  for (let i = 0; i < 30 && estado === 'PROCESSING'; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const chequeo = await axios.get(
+      `https://generativelanguage.googleapis.com/v1beta/${info.name}?key=${GEMINI_API_KEY}`
+    );
+    info = chequeo.data;
+    estado = info.state;
+  }
+  if (estado !== 'ACTIVE') {
+    throw new Error(`El video no quedó listo en Gemini (estado: ${estado})`);
+  }
+  console.log(`  🎥 Video subido a Gemini (${(numBytes / 1024 / 1024).toFixed(1)} MB, ${mimeType})`);
+  return { uri: info.uri, mimeType: info.mimeType || mimeType };
+}
+
 // ETAPA 1: Lectura
-// sourceType: 'texto' | 'web' (texto ya extraído) | 'youtube' (URL directa) | 'audio' (ruta a MP3 local)
+// sourceType: 'texto' | 'web' (texto ya extraído) | 'youtube' (URL directa) |
+//             'audio' (ruta a MP3 local) | 'video' (ruta a video local, se sube a File API)
 // sesgo: 'favor' | 'contra' | 'neutral'
 async function procesarLectura(sourceType, content, sesgo = 'neutral') {
   try {
@@ -231,6 +293,13 @@ async function procesarLectura(sourceType, content, sesgo = 'neutral') {
       userParts = [
         { inlineData: { mimeType: 'audio/mpeg', data } },
         { text: `Procesa este audio de una noticia de farándula.\n\n${instruccionSesgo}` },
+      ];
+    } else if (sourceType === 'video') {
+      // Video descargado (TikTok/IG/etc): subirlo a la File API y que Gemini lo VEA (imagen + audio)
+      const archivo = await subirArchivoGemini(content);
+      userParts = [
+        { fileData: { fileUri: archivo.uri, mimeType: archivo.mimeType } },
+        { text: `Procesa este video de una noticia de farándula. Fíjate en lo que se dice Y en lo que se ve (gestos, reacciones, texto en pantalla, quién aparece).\n\n${instruccionSesgo}` },
       ];
     } else {
       userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}\n\n${instruccionSesgo}` }];

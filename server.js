@@ -156,22 +156,29 @@ app.post('/api/read', async (req, res) => {
     // Detectar el tipo real de la fuente cuando es un link
     const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
     console.log(`📖 Lectura con sesgo: ${sesgoElegido}`);
+    const contenido = content.trim();
     let result;
-    if (type === 'link' && fuentes.esYoutube(content)) {
-      console.log('📖 Lectura de video de YouTube (Gemini directo)...');
-      result = await gemini.procesarLectura('youtube', content.trim(), sesgoElegido);
-    } else if (type === 'link' && fuentes.esVideoSocial(content)) {
-      console.log('📖 Descargando audio con yt-dlp (TikTok/Instagram)...');
-      const audioPath = await fuentes.descargarAudio(content.trim());
-      try {
-        result = await gemini.procesarLectura('audio', audioPath, sesgoElegido);
-      } finally {
-        try { fs.unlinkSync(audioPath); } catch {}
+    // Los selectores "Link de noticia" y "Video (URL)" ambos traen una URL: se autodetecta.
+    if (type === 'link' || type === 'video') {
+      if (fuentes.esYoutube(contenido)) {
+        // Gemini lee YouTube directo por URL (no hace falta descargar)
+        console.log('📖 Lectura de video de YouTube (Gemini directo)...');
+        result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
+      } else if (fuentes.esVideoSocial(contenido) || type === 'video') {
+        // TikTok/IG/etc o "Video (URL)": descargar el VIDEO y que Gemini lo VEA (imagen + audio)
+        console.log('📖 Descargando video con yt-dlp para que Gemini lo vea...');
+        const videoPath = await fuentes.descargarVideo(contenido);
+        try {
+          result = await gemini.procesarLectura('video', videoPath, sesgoElegido);
+        } finally {
+          try { fs.unlinkSync(videoPath); } catch {}
+        }
+      } else {
+        // Link normal de noticia: extraer el texto de la página
+        console.log('📖 Extrayendo texto de la página...');
+        const texto = await fuentes.extraerTextoWeb(contenido);
+        result = await gemini.procesarLectura('web', texto, sesgoElegido);
       }
-    } else if (type === 'link') {
-      console.log('📖 Extrayendo texto de la página...');
-      const texto = await fuentes.extraerTextoWeb(content.trim());
-      result = await gemini.procesarLectura('web', texto, sesgoElegido);
     } else {
       console.log(`📖 Procesando lectura (${type})...`);
       result = await gemini.procesarLectura(type, content, sesgoElegido);

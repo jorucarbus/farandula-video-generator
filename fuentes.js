@@ -3,6 +3,9 @@ const axios = require('axios');
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+// yt-dlp empaquetado (binario propio): funciona en Railway sin instalar nada del sistema
+const ytdlp = require('youtube-dl-exec');
+const FFMPEG_BIN = require('ffmpeg-static');
 
 const TEMP_DIR = path.join(__dirname, 'temp-videos');
 
@@ -66,4 +69,29 @@ async function descargarAudio(url) {
   return esperado;
 }
 
-module.exports = { esYoutube, esVideoSocial, esUrl, extraerTextoWeb, descargarAudio, TEMP_DIR };
+// Descargar el VIDEO completo (imagen + audio) de una red social para que Gemini lo "vea".
+// A diferencia de descargarAudio, conserva lo visual (gestos, caras, texto en pantalla).
+async function descargarVideo(url) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true });
+  const base = `fuente_${Date.now()}`;
+  const plantilla = path.join(TEMP_DIR, `${base}.%(ext)s`);
+
+  await ytdlp(url, {
+    output: plantilla,
+    // Preferir un MP4 ya combinado; si no, el mejor disponible (yt-dlp mezcla con ffmpeg)
+    format: 'best[ext=mp4]/mp4/best',
+    mergeOutputFormat: 'mp4',
+    noPlaylist: true,
+    forceOverwrites: true,
+    ffmpegLocation: FFMPEG_BIN,
+  });
+
+  // yt-dlp elige la extensión final; localizar el archivo real que quedó
+  const archivo = fs.readdirSync(TEMP_DIR).find(f => f.startsWith(base));
+  if (!archivo) {
+    throw new Error('yt-dlp terminó pero no se encontró el video descargado');
+  }
+  return path.join(TEMP_DIR, archivo);
+}
+
+module.exports = { esYoutube, esVideoSocial, esUrl, extraerTextoWeb, descargarAudio, descargarVideo, TEMP_DIR };
