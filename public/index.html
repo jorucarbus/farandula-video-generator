@@ -32,7 +32,7 @@
                 <button class="btn btn-primary" onclick="guardarApiKey()">Guardar y continuar</button>
             </div>
 
-            <div class="form-section">
+            <div class="form-section" id="fuente-section">
                 <h2>Paso 1: Proporciona la fuente</h2>
                 <div class="form-group">
                     <label for="source-type">Tipo de fuente:</label>
@@ -192,6 +192,13 @@
                 </div>
                 <p id="progress-text">0%</p>
                 <div class="log-box" id="log-box"></div>
+                <div class="hidden" id="error-actions" style="margin-top:14px;">
+                    <p style="font-weight:bold;color:#c0392b;margin-bottom:8px;">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="btn btn-primary" id="btn-reintentar" type="button">🔄 Reintentar este paso</button>
+                        <button class="btn btn-secondary" id="btn-volver" type="button">⬅️ Volver atrás</button>
+                    </div>
+                </div>
             </div>
 
             <div class="result-section hidden" id="result-section">

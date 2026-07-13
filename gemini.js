@@ -2,7 +2,11 @@ const axios = require('axios');
 const fs = require('fs');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent';
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+// Cadena de modelos: SIEMPRE intenta primero el más reciente (alias -latest).
+// Si se satura (503/500/429) tras sus reintentos, cae al siguiente modelo.
+// Así un pico de carga en Flash no tumba todo el flujo.
+const MODELOS = ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
 // Prompts maestros
 const PROMPTS = {
@@ -82,50 +86,77 @@ FORMATO DE RESPUESTA:
 Un solo bloque con el guion fragmentado saturado de etiquetas.`
 };
 
-// Función principal para llamar a Gemini (con reintentos si se alcanza el límite de tasa)
-// userMessage: string o array de parts ({text}, {inlineData}, {fileData}) para enviar audio/video
-async function callGemini(prompt, userMessage, intento = 1, configExtra = {}) {
-  const MAX_INTENTOS = 4;
-  const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
-  try {
-    const response = await axios.post(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            ...userParts
-          ]
+// Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
+// Marca el error con _geminiTemporal para que callGemini sepa si vale la pena caer al siguiente modelo.
+async function intentarModelo(modelo, prompt, userParts, configExtra) {
+  const MAX_INTENTOS = 3;
+  for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
+    try {
+      const response = await axios.post(`${GEMINI_BASE}/${modelo}:generateContent?key=${GEMINI_API_KEY}`, {
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              ...userParts
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+          // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida
+          thinkingConfig: { thinkingBudget: 0 },
+          ...configExtra,
         }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        topP: 0.95,
-        maxOutputTokens: 8192,
-        // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida
-        thinkingConfig: { thinkingBudget: 0 },
-        ...configExtra,
-      }
-    });
+      });
 
-    if (response.data.candidates && response.data.candidates.length > 0) {
-      // Unir todas las partes de texto (puede venir en varias)
-      const parts = response.data.candidates[0].content.parts || [];
-      const texto = parts.map(p => p.text || '').join('');
-      if (texto.trim()) return texto;
+      if (response.data.candidates && response.data.candidates.length > 0) {
+        // Unir todas las partes de texto (puede venir en varias)
+        const parts = response.data.candidates[0].content.parts || [];
+        const texto = parts.map(p => p.text || '').join('');
+        if (texto.trim()) return texto;
+      }
+      throw new Error('No hay respuesta de Gemini');
+    } catch (error) {
+      // 429 = límite de tasa; 503 = modelo sobrecargado; 500 = error interno. Todos temporales.
+      const status = error.response?.status;
+      const temporal = status === 429 || status === 503 || status === 500;
+      if (temporal && intento < MAX_INTENTOS) {
+        const espera = (status === 429 ? 20000 : 8000) * intento;
+        console.log(`⏳ ${modelo} respondió ${status}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
+        await new Promise(r => setTimeout(r, espera));
+        continue;
+      }
+      error._geminiTemporal = temporal; // ¿tiene sentido probar otro modelo?
+      throw error;
     }
-    throw new Error('No hay respuesta de Gemini');
-  } catch (error) {
-    // 429 = límite de peticiones; 503 = modelo sobrecargado. Ambos son temporales: esperar y reintentar
-    const status = error.response?.status;
-    if ((status === 429 || status === 503 || status === 500) && intento < MAX_INTENTOS) {
-      const espera = (status === 429 ? 20000 : 8000) * intento;
-      console.log(`⏳ Gemini respondió ${status}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
-      await new Promise(r => setTimeout(r, espera));
-      return callGemini(prompt, userMessage, intento + 1, configExtra);
-    }
-    console.error('Error Gemini:', error.message);
-    throw error;
   }
+}
+
+// Función principal para llamar a Gemini. Recorre la cadena de MODELOS:
+// intenta el más reciente y, si se satura tras sus reintentos, cae al siguiente.
+// Un error NO temporal (400/401/permiso…) aborta de una: no lo arregla otro modelo.
+// El 3er parámetro (intento) se mantiene por compatibilidad con llamarJSON; ya no se usa.
+async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
+  const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
+  let ultimoError;
+  for (let i = 0; i < MODELOS.length; i++) {
+    const modelo = MODELOS[i];
+    try {
+      if (i > 0) console.log(`↪️  Fallback: reintentando con ${modelo}...`);
+      return await intentarModelo(modelo, prompt, userParts, configExtra);
+    } catch (error) {
+      ultimoError = error;
+      if (!error._geminiTemporal) {
+        console.error('Error Gemini (no recuperable):', error.message);
+        throw error;
+      }
+      console.warn(`⚠️  ${modelo} saturado tras reintentos; probando el siguiente modelo...`);
+    }
+  }
+  console.error('Error Gemini: todos los modelos de la cadena están saturados');
+  throw ultimoError;
 }
 
 // Parsear JSON de Gemini con reparación de fallas comunes (fences de markdown,

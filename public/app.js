@@ -73,7 +73,36 @@ function showSection(sectionId) {
     document.querySelectorAll('.form-section, .progress-section, .result-section').forEach(el => {
         el.classList.add('hidden');
     });
+    ocultarError(); // cada nuevo paso arranca sin la barra de error del anterior
     document.getElementById(sectionId).classList.remove('hidden');
+}
+
+// Barra de error: reintentar el paso que falló (sin rehacer lo anterior) o volver atrás.
+// reintentarFn: closure que repite SOLO el paso fallido (conserva guion/audio/párrafos ya generados).
+// volverSection: id de la sección editable a la que regresar (o null si no aplica).
+function mostrarError(mensaje, reintentarFn, volverSection) {
+    log(`❌ ${mensaje}`);
+    const bar = document.getElementById('error-actions');
+    if (!bar) return;
+    const btnR = document.getElementById('btn-reintentar');
+    const btnV = document.getElementById('btn-volver');
+    btnR.onclick = () => { ocultarError(); reintentarFn(); };
+    if (volverSection) {
+        btnV.style.display = '';
+        btnV.onclick = () => {
+            ocultarError();
+            showSection(volverSection);
+            document.getElementById('lectura-section').classList.remove('hidden');
+        };
+    } else {
+        btnV.style.display = 'none';
+    }
+    bar.classList.remove('hidden');
+}
+
+function ocultarError() {
+    const bar = document.getElementById('error-actions');
+    if (bar) bar.classList.add('hidden');
 }
 
 function log(message) {
@@ -167,7 +196,8 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
         document.getElementById('lectura-section').classList.remove('hidden');
         log('➡️ Selecciona un ángulo para continuar');
     } catch (error) {
-        log(`❌ Error en lectura: ${error.message}`);
+        mostrarError(`Error en lectura: ${error.message}`,
+            () => leerFuente(sourceType, sourceInput, sesgo), 'fuente-section');
     }
 }
 
@@ -233,7 +263,8 @@ async function handleGenerateScript() {
         document.getElementById('lectura-section').classList.remove('hidden');
         log('➡️ Revisa el guion: aprueba, edita o regenera');
     } catch (error) {
-        log(`❌ Error generando guion: ${error.message}`);
+        mostrarError(`Error generando guion: ${error.message}`,
+            () => handleGenerateScript(), 'script-section');
     }
 }
 
@@ -305,9 +336,8 @@ async function aprobarGuion() {
         showSection('revision-section');
         document.getElementById('lectura-section').classList.remove('hidden');
     } catch (error) {
-        log(`❌ Error asignando carpetas: ${error.message}`);
-        showSection('guion-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        mostrarError(`Error asignando carpetas: ${error.message}`,
+            () => aprobarGuion(), 'guion-section');
     }
 }
 
@@ -340,9 +370,8 @@ async function regenerarAudio(modelo) {
         document.getElementById('lectura-section').classList.remove('hidden');
         log('🎧 Escucha la locución y apruébala o regenérala');
     } catch (error) {
-        log(`❌ Error generando locución: ${error.message}`);
-        showSection('revision-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        mostrarError(`Error generando locución: ${error.message}`,
+            () => regenerarAudio(modelo), 'revision-section');
     }
 }
 
@@ -456,7 +485,9 @@ async function handleGenerateVideo() {
         updateProgress(100);
         showResult(resultado);
     } catch (error) {
-        log(`❌ Error: ${error.message}`);
+        // Reintentar aquí repite SOLO el render/export: el guion y la locución ya están en state.
+        mostrarError(`Error en ${MODO === 'video' ? 'la generación del video' : 'la exportación'}: ${error.message}`,
+            () => handleGenerateVideo(), 'destination-section');
     }
 }
 
