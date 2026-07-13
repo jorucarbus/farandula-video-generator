@@ -503,6 +503,29 @@ app.post('/api/generate-video', async (req, res) => {
   }
 });
 
+// Limpieza de cache cada hora: borra de temp-videos los archivos de más de 1h
+// (clips descargados src_*, previews y audios huérfanos) para no llenar el disco.
+const UNA_HORA = 60 * 60 * 1000;
+function limpiarCache() {
+  try {
+    const ahora = Date.now();
+    const activos = new Set([
+      ...[...previews.values()],
+      ...[...audiosPendientes.values()].map(a => a.path),
+    ].map(p => path.basename(p)));
+
+    for (const f of fs.readdirSync(video.TEMP_DIR)) {
+      if (activos.has(f)) continue; // no tocar previews/audios en uso
+      const ruta = path.join(video.TEMP_DIR, f);
+      try {
+        if (ahora - fs.statSync(ruta).mtimeMs > UNA_HORA) fs.unlinkSync(ruta);
+      } catch {}
+    }
+    console.log('🧹 Cache limpiado (archivos de más de 1h)');
+  } catch {}
+}
+setInterval(limpiarCache, UNA_HORA);
+
 // Iniciar servidor
 initializeDrive();
 
