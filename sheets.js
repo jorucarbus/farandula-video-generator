@@ -13,11 +13,14 @@ let sheetsClient = null;
 
 function getClient() {
   if (!sheetsClient) {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: path.join(__dirname, 'credentials.json'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-    sheetsClient = google.sheets({ version: 'v4', auth });
+    // En Railway no hay credentials.json en disco: se usa GOOGLE_CREDENTIALS_JSON
+    const opciones = { scopes: ['https://www.googleapis.com/auth/spreadsheets'] };
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      opciones.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    } else {
+      opciones.keyFile = path.join(__dirname, 'credentials.json');
+    }
+    sheetsClient = google.sheets({ version: 'v4', auth: new google.auth.GoogleAuth(opciones) });
   }
   return sheetsClient;
 }

@@ -68,19 +68,21 @@ let driveClient;
 
 async function initializeDrive() {
   try {
-    const credentialsPath = path.join(__dirname, 'credentials.json');
-    if (!fs.existsSync(credentialsPath)) {
-      console.error('❌ credentials.json no encontrado');
-      return;
+    // En Railway no hay credentials.json en disco: se usa GOOGLE_CREDENTIALS_JSON
+    const opciones = { scopes: ['https://www.googleapis.com/auth/drive'] };
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      opciones.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    } else {
+      const credentialsPath = path.join(__dirname, 'credentials.json');
+      if (!fs.existsSync(credentialsPath)) {
+        console.error('❌ credentials.json no encontrado (ni GOOGLE_CREDENTIALS_JSON)');
+        return;
+      }
+      opciones.keyFile = credentialsPath;
     }
 
-    const auth = new google.auth.GoogleAuth({
-      keyFile: credentialsPath,
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
-
-    driveClient = google.drive({ version: 'v3', auth });
-    console.log('✅ Google Drive conectado');
+    driveClient = google.drive({ version: 'v3', auth: new google.auth.GoogleAuth(opciones) });
+    console.log(`✅ Google Drive conectado${driveHelper.hayOAuth() ? ' (subidas por OAuth)' : ''}`);
   } catch (error) {
     console.error('Error conectando Google Drive:', error);
   }

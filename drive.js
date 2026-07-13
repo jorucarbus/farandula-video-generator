@@ -2,17 +2,45 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-let drive;
+let drive;      // Service Account: lee/descarga clips de famosos
+let driveOAuth; // OAuth (cuenta del usuario): sube renders (el Service Account no tiene cuota)
 
+// Cliente Service Account. En Railway no hay credentials.json en disco:
+// se acepta la variable GOOGLE_CREDENTIALS_JSON con el contenido del archivo.
 function getDrive() {
   if (!drive) {
-    const auth = new google.auth.GoogleAuth({
-      keyFile: path.join(__dirname, 'credentials.json'),
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
-    drive = google.drive({ version: 'v3', auth });
+    const opciones = { scopes: ['https://www.googleapis.com/auth/drive'] };
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      opciones.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    } else {
+      opciones.keyFile = path.join(__dirname, 'credentials.json');
+    }
+    drive = google.drive({ version: 'v3', auth: new google.auth.GoogleAuth(opciones) });
   }
   return drive;
+}
+
+// Cliente OAuth con la cuenta del usuario (para subir a su Drive con cuota).
+// Requiere GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN.
+function getDriveOAuth() {
+  if (!hayOAuth()) return null;
+  if (!driveOAuth) {
+    const oauth2 = new google.auth.OAuth2(
+      process.env.GOOGLE_OAUTH_CLIENT_ID,
+      process.env.GOOGLE_OAUTH_CLIENT_SECRET,
+    );
+    oauth2.setCredentials({ refresh_token: process.env.GOOGLE_OAUTH_REFRESH_TOKEN });
+    driveOAuth = google.drive({ version: 'v3', auth: oauth2 });
+  }
+  return driveOAuth;
+}
+
+function hayOAuth() {
+  return Boolean(
+    process.env.GOOGLE_OAUTH_CLIENT_ID &&
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    process.env.GOOGLE_OAUTH_REFRESH_TOKEN
+  );
 }
 
 // Buscar las carpetas de famosos (hijas de la carpeta principal) por nombre
@@ -67,15 +95,17 @@ async function descargarVideo(fileId, destDir) {
   return destPath;
 }
 
-// Subir el video final a la carpeta de destino
-async function subirVideo(localPath, fileName, destFolderId) {
-  const res = await getDrive().files.create({
+// Subir un archivo a la carpeta de destino. Usa OAuth (cuenta del usuario) si está
+// configurado — los Service Accounts no tienen cuota en Drive personal.
+async function subirVideo(localPath, fileName, destFolderId, mimeType = 'video/mp4') {
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.create({
     requestBody: {
       name: fileName,
       parents: [destFolderId],
     },
     media: {
-      mimeType: 'video/mp4',
+      mimeType,
       body: fs.createReadStream(localPath),
     },
     fields: 'id, name, webViewLink',
@@ -100,4 +130,5 @@ module.exports = {
   descargarVideo,
   subirVideo,
   nombreCarpeta,
+  hayOAuth,
 };
