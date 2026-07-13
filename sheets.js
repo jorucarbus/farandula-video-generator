@@ -43,7 +43,93 @@ async function asegurarEncabezados() {
       valueInputOption: 'RAW',
       requestBody: { values: [ENCABEZADOS] },
     });
+    // Primera vez: dar formato neobrutalism a la hoja
+    try { await formatearHoja(); } catch (e) { console.warn('⚠️ No se pudo formatear la hoja:', e.message); }
   }
+}
+
+// ---- Formato neobrutalism (paleta de las apps) ----
+// Idempotente: borra bandings y reglas condicionales previas antes de re-aplicar.
+const COLOR = {
+  negro:    { red: 0.067, green: 0.067, blue: 0.067 },
+  blanco:   { red: 1, green: 1, blue: 1 },
+  crema:    { red: 1, green: 0.965, blue: 0.898 },
+  amarillo: { red: 1, green: 0.851, blue: 0.239 },
+  verde:    { red: 0.722, green: 0.949, blue: 0.545 },
+};
+const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155]; // px por columna A..J
+const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER'];
+const FILAS_CAPACIDAD = 200; // formatea header + 199 filas por adelantado
+
+async function formatearHoja() {
+  const client = getClient();
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: 'sheets(properties(sheetId,title),bandedRanges(bandedRangeId),conditionalFormats)',
+  });
+  const hoja = meta.data.sheets[0];
+  const gid = hoja.properties.sheetId;
+  const grueso = { style: 'SOLID_THICK', color: COLOR.negro };
+  const medio = { style: 'SOLID_MEDIUM', color: COLOR.negro };
+  const requests = [];
+
+  // Limpiar formato previo (evita duplicados al re-correr)
+  (hoja.bandedRanges || []).forEach(b => requests.push({ deleteBanding: { bandedRangeId: b.bandedRangeId } }));
+  for (let i = (hoja.conditionalFormats || []).length - 1; i >= 0; i--) {
+    requests.push({ deleteConditionalFormatRule: { sheetId: gid, index: i } });
+  }
+
+  // Congelar encabezado
+  requests.push({ updateSheetProperties: { properties: { sheetId: gid, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' } });
+
+  // Encabezado negro, texto blanco negrita, centrado
+  requests.push({ repeatCell: {
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 },
+    cell: { userEnteredFormat: { backgroundColor: COLOR.negro, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP', textFormat: { foregroundColor: COLOR.blanco, bold: true, fontSize: 11 } } },
+    fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)',
+  }});
+  requests.push({ updateDimensionProperties: { range: { sheetId: gid, dimension: 'ROWS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 46 }, fields: 'pixelSize' } });
+
+  // Datos: alinear arriba + ajustar texto (el fondo lo pone la banda)
+  requests.push({ repeatCell: {
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    cell: { userEnteredFormat: { verticalAlignment: 'TOP', wrapStrategy: 'WRAP', textFormat: { fontSize: 10 } } },
+    fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat)',
+  }});
+  ALINEAR.forEach((al, col) => requests.push({ repeatCell: {
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: col, endColumnIndex: col + 1 },
+    cell: { userEnteredFormat: { horizontalAlignment: al } }, fields: 'userEnteredFormat.horizontalAlignment',
+  }}));
+  ANCHOS.forEach((px, col) => requests.push({ updateDimensionProperties: {
+    range: { sheetId: gid, dimension: 'COLUMNS', startIndex: col, endIndex: col + 1 }, properties: { pixelSize: px }, fields: 'pixelSize',
+  }}));
+
+  // Banda alterna blanco/crema
+  requests.push({ addBanding: { bandedRange: {
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    rowProperties: { firstBandColor: COLOR.blanco, secondBandColor: COLOR.crema },
+  }}});
+
+  // Bordes negros: gruesos alrededor, medios internos + línea gruesa bajo el encabezado
+  requests.push({ updateBorders: {
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    top: grueso, bottom: grueso, left: grueso, right: grueso, innerHorizontal: medio, innerVertical: medio,
+  }});
+  requests.push({ updateBorders: { range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 }, bottom: grueso } });
+
+  // Dinero (col I): moneda
+  requests.push({ repeatCell: {
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 8, endColumnIndex: 9 },
+    cell: { userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0' } } }, fields: 'userEnteredFormat.numberFormat',
+  }});
+
+  // Status (col J): publicado=verde, pendiente_publicar=amarillo
+  const rangoStatus = [{ sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 9, endColumnIndex: 10 }];
+  requests.push({ addConditionalFormatRule: { index: 0, rule: { ranges: rangoStatus, booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'publicado' }] }, format: { backgroundColor: COLOR.verde, textFormat: { bold: true } } } } } });
+  requests.push({ addConditionalFormatRule: { index: 1, rule: { ranges: rangoStatus, booleanRule: { condition: { type: 'TEXT_EQ', values: [{ userEnteredValue: 'pendiente_publicar' }] }, format: { backgroundColor: COLOR.amarillo, textFormat: { bold: true } } } } } });
+
+  await client.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests } });
+  console.log(`🎨 Hoja formateada (${requests.length} operaciones)`);
 }
 
 // Agregar una fila por cada video generado.
@@ -77,4 +163,4 @@ async function registrarVideo(datos) {
   return true;
 }
 
-module.exports = { registrarVideo, configurado };
+module.exports = { registrarVideo, configurado, formatearHoja };
