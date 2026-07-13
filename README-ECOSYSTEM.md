@@ -102,7 +102,7 @@ ELEVENLABS_VOICE_ID=
 # Google
 GOOGLE_DRIVE_FOLDER_ID=      # Carpeta raíz de famosos
 GOOGLE_DRIVE_RENDERS_FOLDER_ID=
-GOOGLE_SHEETS_ID=           # Hoja de logging (solo v2)
+GOOGLE_SHEET_ID=            # Hoja de logging (solo v2) — OJO: singular, así lo lee el código
 
 # Opcional
 RENDERS_LOCAL_PATH=         # Path local Drive Desktop sync
