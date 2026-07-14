@@ -1,6 +1,6 @@
 # Railway (Nixpacks): instalar FFmpeg y yt-dlp además de Node
 [phases.setup]
-nixPkgs = ["nodejs_20", "ffmpeg", "yt-dlp"]
+nixPkgs = ["nodejs_20", "ffmpeg", "yt-dlp", "python3"]
 
 [start]
 cmd = "node server.js"
