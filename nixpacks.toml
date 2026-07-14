@@ -1,6 +1,8 @@
-# Railway (Nixpacks): instalar FFmpeg y yt-dlp además de Node
+# Railway (Nixpacks). ffmpeg viene de ffmpeg-static (npm) y yt-dlp de youtube-dl-exec (npm);
+# python3 se instala por apt para que el yt-dlp (zipapp) lo encuentre en /usr/bin (sí está en PATH).
 [phases.setup]
-nixPkgs = ["nodejs_20", "ffmpeg", "yt-dlp", "python3"]
+nixPkgs = ["nodejs_20"]
+aptPkgs = ["python3"]
 
 [start]
 cmd = "node server.js"
