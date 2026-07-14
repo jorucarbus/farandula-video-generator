@@ -479,6 +479,12 @@ async function handleGenerateVideo() {
                 nombreCorto: state.sourceData?.nombreCorto,
                 parrafos: state.fragments,
                 audioToken: state.audioToken,
+                metadatos: {
+                    titulo: state.sourceData?.titulo,
+                    descripcion: state.sourceData?.descripcion,
+                    protagonista: state.sourceData?.protagonista,
+                    linkFuente: state.sourceData?.linkFuente,
+                },
             });
             log('✅ Insumos exportados');
         }

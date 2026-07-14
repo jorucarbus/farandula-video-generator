@@ -155,7 +155,7 @@ async function registrarVideo(datos) {
         datos.linkFuente || '',
         datos.linkRender || '',
         '', // Dinero generado (manual)
-        'pendiente_publicar',
+        datos.status || 'pendiente_publicar',
       ]],
     },
   });
