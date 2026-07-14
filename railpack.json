@@ -1,0 +1,7 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "buildAptPackages": ["python3"],
+  "deploy": {
+    "aptPackages": ["python3"]
+  }
+}
