@@ -3,8 +3,7 @@ const axios = require('axios');
 const { execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-// yt-dlp empaquetado (binario propio): funciona en Railway sin instalar nada del sistema
-const ytdlp = require('youtube-dl-exec');
+// yt-dlp del sistema (nix, en PATH): autocontenido, no depende de que python3 sea localizable
 const FFMPEG_BIN = require('ffmpeg-static');
 
 const TEMP_DIR = path.join(__dirname, 'temp-videos');
@@ -76,14 +75,23 @@ async function descargarVideo(url) {
   const base = `fuente_${Date.now()}`;
   const plantilla = path.join(TEMP_DIR, `${base}.%(ext)s`);
 
-  await ytdlp(url, {
-    output: plantilla,
-    // Preferir un MP4 ya combinado; si no, el mejor disponible (yt-dlp mezcla con ffmpeg)
-    format: 'best[ext=mp4]/mp4/best',
-    mergeOutputFormat: 'mp4',
-    noPlaylist: true,
-    forceOverwrites: true,
-    ffmpegLocation: FFMPEG_BIN,
+  await new Promise((resolve, reject) => {
+    execFile(
+      'yt-dlp',
+      [
+        // Preferir un MP4 ya combinado; si no, el mejor disponible (yt-dlp mezcla con ffmpeg)
+        '-f', 'best[ext=mp4]/mp4/best',
+        '--merge-output-format', 'mp4',
+        '--no-playlist', '--force-overwrites',
+        '--ffmpeg-location', FFMPEG_BIN,
+        '-o', plantilla, url,
+      ],
+      { timeout: 180000 },
+      (err, stdout, stderr) => {
+        if (err) reject(new Error(`yt-dlp falló: ${(stderr || err.message).slice(0, 300)}`));
+        else resolve();
+      }
+    );
   });
 
   // yt-dlp elige la extensión final; localizar el archivo real que quedó
