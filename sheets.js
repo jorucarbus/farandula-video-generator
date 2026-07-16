@@ -6,7 +6,7 @@ const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 const ENCABEZADOS = [
   'Fecha', 'Título', 'Descripción + Hashtags', 'Protagonista', 'Canal',
-  'Nombre archivo', 'Link fuente', 'Link render', 'Dinero generado', 'Status',
+  'Nombre archivo', 'Link fuente', 'Link render', 'Dinero generado', 'Status', 'Guion',
 ];
 
 let sheetsClient = null;
@@ -34,12 +34,12 @@ async function asegurarEncabezados() {
   const client = getClient();
   const res = await client.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'A1:J1',
+    range: 'A1:K1',
   });
   if (!res.data.values || res.data.values.length === 0) {
     await client.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: 'A1:J1',
+      range: 'A1:K1',
       valueInputOption: 'RAW',
       requestBody: { values: [ENCABEZADOS] },
     });
@@ -57,8 +57,8 @@ const COLOR = {
   amarillo: { red: 1, green: 0.851, blue: 0.239 },
   verde:    { red: 0.722, green: 0.949, blue: 0.545 },
 };
-const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155]; // px por columna A..J
-const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER'];
+const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155, 350]; // px por columna A..K
+const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER','LEFT'];
 const FILAS_CAPACIDAD = 200; // formatea header + 199 filas por adelantado
 
 async function formatearHoja() {
@@ -84,7 +84,7 @@ async function formatearHoja() {
 
   // Encabezado negro, texto blanco negrita, centrado
   requests.push({ repeatCell: {
-    range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 },
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 11 },
     cell: { userEnteredFormat: { backgroundColor: COLOR.negro, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP', textFormat: { foregroundColor: COLOR.blanco, bold: true, fontSize: 11 } } },
     fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)',
   }});
@@ -92,7 +92,7 @@ async function formatearHoja() {
 
   // Datos: alinear arriba + ajustar texto (el fondo lo pone la banda)
   requests.push({ repeatCell: {
-    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
     cell: { userEnteredFormat: { verticalAlignment: 'TOP', wrapStrategy: 'WRAP', textFormat: { fontSize: 10 } } },
     fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat)',
   }});
@@ -106,16 +106,16 @@ async function formatearHoja() {
 
   // Banda alterna blanco/crema
   requests.push({ addBanding: { bandedRange: {
-    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
     rowProperties: { firstBandColor: COLOR.blanco, secondBandColor: COLOR.crema },
   }}});
 
   // Bordes negros: gruesos alrededor, medios internos + línea gruesa bajo el encabezado
   requests.push({ updateBorders: {
-    range: { sheetId: gid, startRowIndex: 0, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 10 },
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
     top: grueso, bottom: grueso, left: grueso, right: grueso, innerHorizontal: medio, innerVertical: medio,
   }});
-  requests.push({ updateBorders: { range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 10 }, bottom: grueso } });
+  requests.push({ updateBorders: { range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 11 }, bottom: grueso } });
 
   // Dinero (col I): moneda
   requests.push({ repeatCell: {
@@ -142,7 +142,7 @@ async function registrarVideo(datos) {
   await asegurarEncabezados();
   await getClient().spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: 'A:J',
+    range: 'A:K',
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[
@@ -156,6 +156,7 @@ async function registrarVideo(datos) {
         datos.linkRender || '',
         '', // Dinero generado (manual)
         datos.status || 'pendiente_publicar',
+        datos.guion || '',
       ]],
     },
   });
@@ -163,4 +164,27 @@ async function registrarVideo(datos) {
   return true;
 }
 
-module.exports = { registrarVideo, configurado, formatearHoja };
+// Últimas N filas del historial (para mostrar título/descripción/hashtags/guion en la UI)
+async function leerHistorial(limite = 20) {
+  if (!configurado()) return [];
+  const res = await getClient().spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: 'A2:K',
+  });
+  const filas = res.data.values || [];
+  return filas.slice(-limite).reverse().map(f => ({
+    fecha: f[0] || '',
+    titulo: f[1] || '',
+    descripcion: f[2] || '',
+    protagonista: f[3] || '',
+    canal: f[4] || '',
+    nombreArchivo: f[5] || '',
+    linkFuente: f[6] || '',
+    linkRender: f[7] || '',
+    dinero: f[8] || '',
+    status: f[9] || '',
+    guion: f[10] || '',
+  }));
+}
+
+module.exports = { registrarVideo, configurado, formatearHoja, leerHistorial };

@@ -114,7 +114,26 @@ GOOGLE_SHEET_ID=...                   # hoja "Registro Videos Farandula"
 
 ### Google Sheets (columnas)
 
-Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archivo | Link fuente | Link render | Dinero generado (manual) | Status
+Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archivo | Link fuente | Link render | Dinero generado (manual) | Status | Guion
+
+## Rama de prueba `test-persistencia` (2026-07-16)
+
+Branch separada, NO tocar `main`/Railway hasta confirmar que funciona óptimo. Ver `.claude/CLAUDE.md` para detalle de la sesión.
+
+**Bloque A completo — Persistencia por jobId:**
+- `jobStore.js`: store JSON simple en `data/jobs.json` (gitignored), sin MongoDB. `crearJob/actualizarJob/obtenerJob/listarJobs`.
+- `jobId` (UUID) nace en `/api/read`, viaja en el body de cada endpoint siguiente (`generate-script`, `fragment`, `generar-audio`, `generate-video`), cada uno actualiza `paso` (`lectura→guion→fragmentacion→audio→completado`) + los datos de esa etapa.
+- ⚠️ Variable interna preexistente `jobId` dentro de `/api/generate-video` (nombraba archivos temporales) renombrada a `renderId` para no chocar con el jobId persistente.
+- `public/app.js`: al cargar, `chequearJobPendiente()` mira `localStorage.farandula_job_id`; si el job no está `completado`, muestra banner "🔁 Continuar donde quedó" / "🗑️ Empezar de cero". Recuperar rehidrata título/descripción/guion/fragmentos/audio según la etapa guardada — sin regenerar nada ya hecho.
+- Endpoints nuevos: `GET /api/jobs` (últimos 20), `GET /api/jobs/:jobId`.
+- **Verificado en browser real**: job recuperado tras reload restauró guion exacto (206 palabras) sin llamar a Gemini de nuevo.
+
+**Historial real desde Sheets:**
+- Columna 11 "Guion" agregada a la hoja (`ENCABEZADOS`, formato, `registrarVideo`).
+- `sheets.leerHistorial(20)` lee `A2:K` y devuelve objetos con guion incluido.
+- `GET /api/historial` + `public/app.js: cargarHistorial()` — tarjetas neobrutalism, clic en título expande descripción+hashtags/protagonista/canal/status/link/guion (copiable).
+
+**Pendiente de este bloque de trabajo** (Bloques B/C/D del plan, no empezados): UI responsive 2 columnas desktop / 1 columna mobile sin wizard (todos los pasos visibles, verde al completar); navegación libre entre pasos ya completados (hoy solo hay "continuar desde el último pendiente", no saltar a un paso específico arbitrario); carpeta caché en Drive dentro de `Redes_Canales` (id `1irTudEARQWOrJr3y911Hwl_1VbvQqNP5`) para backup de historial/guiones/audios/videos.
 
 ## Estado (2026-07-13)
 
@@ -136,7 +155,7 @@ Fecha | Título | Descripción + Hashtags | Protagonista | Canal | Nombre archiv
 ### 📋 Pendiente
 
 - [ ] **Verificar en Railway** que el postinstall de `youtube-dl-exec` baje el binario yt-dlp linux en el build; probar un TikTok/IG real ya desplegado (IG puede pedir cookies; TikTok público suele ir sin ellas)
-- [ ] Persistir estado por `jobId` entre recargas (hoy el reintento vive solo en memoria de la página)
+- [x] Persistir estado por `jobId` entre recargas — hecho en rama `test-persistencia` (ver sección arriba), pendiente merge a `main`
 - [ ] Reordenar UI con pasos numerados (guía: screenshot cyberpunk del amigo — solo ORDEN, se mantiene neobrutalism)
 - [ ] Probar un video REAL completo con Hyperframes + subtítulos (todo integrado)
 - [ ] Deploy a Railway: OAuth para Drive (sin carpeta local), leer recursos desde Drive API

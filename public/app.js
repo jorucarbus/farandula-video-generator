@@ -19,7 +19,8 @@ function setModo(modo) {
     document.getElementById('modo-video').className = 'btn' + (modo === 'video' ? ' btn-primary' : '');
     document.getElementById('modo-insumos').className = 'btn' + (modo === 'insumos' ? ' btn-primary' : '');
     // Volver al inicio (paso 1) con estado limpio
-    state = { sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
+    localStorage.removeItem('farandula_job_id');
     document.querySelectorAll('.form-section, .progress-section, .result-section').forEach(el => {
         if (!['modo-selector', 'apikey-banner'].includes(el.id) && !el.querySelector('#source-input')) el.classList.add('hidden');
     });
@@ -42,6 +43,7 @@ function guardarApiKey() {
   API_KEY = key;
   localStorage.setItem('api_key', key);
   document.getElementById('apikey-banner').classList.add('hidden');
+  chequearJobPendiente();
 }
 
 function pedirApiKeyDeNuevo() {
@@ -56,6 +58,7 @@ function pedirApiKeyDeNuevo() {
 }
 
 let state = {
+    jobId: null,    // id de persistencia (server guarda el progreso por etapa)
     sourceData: null,
     selectedAngle: null,
     selectedDestFolder: null,
@@ -185,6 +188,11 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
         state.sourceData = result;
         // Guardar el link original de la noticia (para la hoja de Google Sheets)
         state.sourceData.linkFuente = sourceType === 'link' ? sourceInput.trim() : '';
+        // jobId: persiste el progreso en el server. Solo existe en modo 'video' (mismo backend).
+        if (result.jobId) {
+            state.jobId = result.jobId;
+            localStorage.setItem('farandula_job_id', result.jobId);
+        }
         updateProgress(30);
 
         // Mostrar resultado de la lectura (título, descripción, crónica)
@@ -244,6 +252,7 @@ async function handleGenerateScript() {
             cronica: state.sourceData.cronica,
             angle: state.selectedAngle,
             angleContent: angleContent,
+            jobId: state.jobId,
         });
 
         log('✅ Guion generado');
@@ -299,39 +308,11 @@ async function aprobarGuion() {
         const result = await apiCall(cfg().asignar, 'POST', {
             [cfg().asignarParam]: state.guion,
             protagonista: state.sourceData?.protagonista,
+            jobId: state.jobId,
         });
         state.fragments = result[cfg().parrafosKey];
         state.carpetas = result.carpetas;
-
-        const aviso = document.getElementById('aviso-protagonista');
-        if (result.protagonistaSinCarpeta) {
-            aviso.textContent = `⚠️ ${result.protagonista} NO tiene carpeta propia: los clips saldrán de las carpetas asignadas abajo. Revisa bien (o crea la carpeta en Drive y vuelve a intentar).`;
-            aviso.classList.remove('hidden');
-        } else {
-            aviso.classList.add('hidden');
-        }
-
-        const lista = document.getElementById('lista-asignaciones');
-        lista.innerHTML = '';
-        state.fragments.forEach((f, i) => {
-            const div = document.createElement('div');
-            div.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px;';
-            const p = document.createElement('p');
-            p.style.cssText = 'margin:0 0 6px;font-size:0.9rem;';
-            p.textContent = `${i + 1}. (${f.porcentaje}%) ${f.texto}`;
-            const sel = document.createElement('select');
-            sel.style.width = '100%';
-            state.carpetas.forEach(c => {
-                const o = document.createElement('option');
-                o.value = c; o.textContent = c;
-                if (c === f.famoso) o.selected = true;
-                sel.appendChild(o);
-            });
-            sel.onchange = () => { state.fragments[i].famoso = sel.value; };
-            div.appendChild(p);
-            div.appendChild(sel);
-            lista.appendChild(div);
-        });
+        renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
         showSection('revision-section');
         document.getElementById('lectura-section').classList.remove('hidden');
@@ -339,6 +320,39 @@ async function aprobarGuion() {
         mostrarError(`Error asignando carpetas: ${error.message}`,
             () => aprobarGuion(), 'guion-section');
     }
+}
+
+// Pinta la lista de párrafos/carpetas asignadas (usada al aprobar guion y al recuperar un job)
+function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
+    const aviso = document.getElementById('aviso-protagonista');
+    if (protagonistaSinCarpeta) {
+        aviso.textContent = `⚠️ ${protagonistaNombre} NO tiene carpeta propia: los clips saldrán de las carpetas asignadas abajo. Revisa bien (o crea la carpeta en Drive y vuelve a intentar).`;
+        aviso.classList.remove('hidden');
+    } else {
+        aviso.classList.add('hidden');
+    }
+
+    const lista = document.getElementById('lista-asignaciones');
+    lista.innerHTML = '';
+    state.fragments.forEach((f, i) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px;';
+        const p = document.createElement('p');
+        p.style.cssText = 'margin:0 0 6px;font-size:0.9rem;';
+        p.textContent = `${i + 1}. (${f.porcentaje}%) ${f.texto}`;
+        const sel = document.createElement('select');
+        sel.style.width = '100%';
+        state.carpetas.forEach(c => {
+            const o = document.createElement('option');
+            o.value = c; o.textContent = c;
+            if (c === f.famoso) o.selected = true;
+            sel.appendChild(o);
+        });
+        sel.onchange = () => { state.fragments[i].famoso = sel.value; };
+        div.appendChild(p);
+        div.appendChild(sel);
+        lista.appendChild(div);
+    });
 }
 
 // Confirmar asignaciones → generar locución para aprobación
@@ -355,6 +369,7 @@ async function regenerarAudio(modelo) {
         const result = await apiCall('/generar-audio', 'POST', {
             [cfg().audioParam]: state.fragments,
             modelo: modelo,
+            jobId: state.jobId,
         });
         state.audioToken = result.audioToken;
 
@@ -460,6 +475,7 @@ async function handleGenerateVideo() {
                 audioToken: state.audioToken,
                 destFolder: state.selectedDestFolder,
                 guion: state.guion,
+                jobId: state.jobId,
                 metadatos: {
                     titulo: state.sourceData?.titulo,
                     descripcion: state.sourceData?.descripcion,
@@ -570,8 +586,146 @@ function copyText(elementId) {
     });
 }
 
+// Historial real desde la Hoja de Cálculo: título, descripción+hashtags, guion, etc.
+// Click en el título expande/colapsa el resto de la info de ese video.
+async function cargarHistorial() {
+    const cont = document.getElementById('historial-lista');
+    cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
+    try {
+        const result = await apiCall('/historial');
+        const filas = result.historial || [];
+        if (filas.length === 0) {
+            cont.innerHTML = '<p style="color:#666;">Sin registros todavía.</p>';
+            return;
+        }
+        cont.innerHTML = '';
+        filas.forEach((f, i) => {
+            const item = document.createElement('div');
+            item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;overflow:hidden;';
+
+            const header = document.createElement('div');
+            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;font-weight:bold;display:flex;justify-content:space-between;gap:8px;';
+            header.innerHTML = `<span>${f.titulo || '(sin título)'}</span><span style="color:#666;font-weight:normal;">${f.fecha || ''}</span>`;
+
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:14px;display:none;';
+            body.innerHTML = `
+                <p><strong>Descripción + Hashtags:</strong><br>${f.descripcion || '-'}</p>
+                <p><strong>Protagonista:</strong> ${f.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${f.canal || '-'}</p>
+                <p><strong>Status:</strong> ${f.status || '-'} &nbsp;|&nbsp; <strong>Archivo:</strong> ${f.nombreArchivo || '-'}</p>
+                ${f.linkRender ? `<p><a href="${f.linkRender}" target="_blank">🔗 Ver video en Drive</a></p>` : ''}
+                ${f.guion ? `
+                <div class="copy-block" style="margin-top:10px;">
+                    <div class="copy-header">
+                        <label>Guion</label>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.guion)}); log('📋 Guion copiado del historial')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content">${f.guion}</p>
+                </div>` : ''}
+            `;
+
+            header.onclick = () => {
+                body.style.display = body.style.display === 'none' ? 'block' : 'none';
+            };
+
+            item.appendChild(header);
+            item.appendChild(body);
+            cont.appendChild(item);
+        });
+    } catch (error) {
+        cont.innerHTML = `<p style="color:#c0392b;">Error cargando historial: ${error.message}</p>`;
+    }
+}
+
+// Recuperación de proceso pendiente (jobId guardado en localStorage de una sesión anterior)
+let jobPendiente = null;
+
+async function chequearJobPendiente() {
+    const jobId = localStorage.getItem('farandula_job_id');
+    if (!jobId || !API_KEY) return;
+    try {
+        const job = await apiCall(`/jobs/${jobId}`);
+        if (job && job.paso !== 'completado') {
+            jobPendiente = job;
+            document.getElementById('recuperar-banner').classList.remove('hidden');
+        } else {
+            localStorage.removeItem('farandula_job_id');
+        }
+    } catch {
+        // Job no encontrado (expiró, se podó, o server reiniciado): limpiar referencia vieja
+        localStorage.removeItem('farandula_job_id');
+    }
+}
+
+// Rehidrata state + UI según en qué etapa quedó el job, sin repetir pasos ya hechos
+async function recuperarJobPendiente() {
+    if (!jobPendiente) return;
+    const job = jobPendiente;
+    document.getElementById('recuperar-banner').classList.add('hidden');
+
+    state.jobId = job.jobId;
+    state.fuente = job.fuente;
+    state.sesgo = job.fuente?.sesgo || 'neutral';
+    state.sourceData = {
+        cronica: job.cronica, titulo: job.titulo, descripcion: job.descripcion,
+        protagonista: job.protagonista, secundario: job.secundario,
+        accion: job.accion, nombreCorto: job.nombreCorto,
+        linkFuente: job.fuente?.type === 'link' ? job.fuente.content : '',
+    };
+
+    document.getElementById('res-titulo').textContent = job.titulo || '';
+    document.getElementById('res-descripcion').textContent = job.descripcion || '';
+    document.getElementById('res-cronica').textContent = job.cronica || '';
+    document.getElementById('lectura-section').classList.remove('hidden');
+    log(`🔁 Proceso recuperado (etapa: ${job.paso})`);
+
+    if (job.paso === 'lectura') {
+        showSection('script-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+        return;
+    }
+
+    state.guion = job.script || '';
+    document.getElementById('guion-editor').value = state.guion;
+    actualizarStatsGuion();
+    if (job.paso === 'guion') {
+        showSection('guion-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+        return;
+    }
+
+    state.fragments = job.fragments || [];
+    state.carpetas = job.carpetas || [];
+    if (job.paso === 'fragmentacion') {
+        renderAsignaciones(false, state.sourceData.protagonista);
+        showSection('revision-section');
+        document.getElementById('lectura-section').classList.remove('hidden');
+        return;
+    }
+
+    state.audioToken = job.audioToken;
+    if (job.paso === 'audio') {
+        document.getElementById('audio-info').textContent = `Duración: ${Math.round(job.duracion || 0)}s | Modelo: ${job.modelo || ''}`;
+        const player = document.getElementById('audio-player');
+        player.src = apiBase() + '/api/audio/' + job.audioToken + '?t=' + Date.now();
+        player.load();
+        showSection('audio-section');
+        document.getElementById('revision-section').classList.remove('hidden');
+        document.getElementById('lectura-section').classList.remove('hidden');
+        return;
+    }
+}
+
+function descartarJobPendiente() {
+    localStorage.removeItem('farandula_job_id');
+    jobPendiente = null;
+    document.getElementById('recuperar-banner').classList.add('hidden');
+    log('🗑️ Proceso pendiente descartado');
+}
+
 // Inicialización
 document.addEventListener('DOMContentLoaded', () => {
     log('✅ App iniciada');
     initApiKey();
+    chequearJobPendiente();
 });

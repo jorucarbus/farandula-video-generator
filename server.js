@@ -13,6 +13,7 @@ const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const subtitulos = require('./subtitulos');
+const jobStore = require('./jobStore');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -184,8 +185,21 @@ app.post('/api/read', async (req, res) => {
       result = await gemini.procesarLectura(type, content, sesgoElegido);
     }
 
+    const job = jobStore.crearJob({
+      paso: 'lectura',
+      fuente: { type, content, sesgo: sesgoElegido },
+      cronica: result.cronica,
+      titulo: result.titulo,
+      descripcion: result.descripcion,
+      protagonista: result.protagonista,
+      secundario: result.secundario,
+      accion: result.accion,
+      nombreCorto: result.nombreCorto,
+    });
+
     res.json({
       status: 'success',
+      jobId: job.jobId,
       cronica: result.cronica,
       titulo: result.titulo,
       descripcion: result.descripcion,
@@ -203,7 +217,7 @@ app.post('/api/read', async (req, res) => {
 // ETAPA 2: Generar Guion
 app.post('/api/generate-script', async (req, res) => {
   try {
-    const { cronica, angle, angleContent } = req.body;
+    const { cronica, angle, angleContent, jobId } = req.body;
 
     if (!cronica || !angle) {
       return res.status(400).json({ error: 'Faltan cronica o angle' });
@@ -213,6 +227,11 @@ app.post('/api/generate-script', async (req, res) => {
     const script = await gemini.generarGuion(cronica, angle, angleContent);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
+
+    if (jobId) {
+      try { jobStore.actualizarJob(jobId, { paso: 'guion', script, palabras }); }
+      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+    }
 
     res.json({
       status: 'success',
@@ -228,7 +247,7 @@ app.post('/api/generate-script', async (req, res) => {
 // ETAPA 3: Fragmentación + Carpetas
 app.post('/api/fragment', async (req, res) => {
   try {
-    const { script, protagonista } = req.body;
+    const { script, protagonista, jobId } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Falta script' });
@@ -258,6 +277,11 @@ app.post('/api/fragment', async (req, res) => {
     const norm = s => (s || '').toLowerCase().replace(/[_\s]/g, '');
     const p = norm(protagonista);
     const protagonistaSinCarpeta = Boolean(p) && !carpetas.some(c => norm(c).includes(p) || p.includes(norm(c)));
+
+    if (jobId) {
+      try { jobStore.actualizarJob(jobId, { paso: 'fragmentacion', fragments: conPorcentaje, carpetas }); }
+      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+    }
 
     res.json({
       status: 'success',
@@ -299,7 +323,7 @@ app.post('/api/add-markers', async (req, res) => {
 // body: { fragments, modelo?: 'eleven_v3' | 'eleven_multilingual_v2' }
 app.post('/api/generar-audio', async (req, res) => {
   try {
-    const { fragments, modelo } = req.body;
+    const { fragments, modelo, jobId } = req.body;
     if (!Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
     }
@@ -319,6 +343,12 @@ app.post('/api/generar-audio', async (req, res) => {
     audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo });
 
     console.log(`  ⏱️ ${duracion.toFixed(1)}s (${audio.modelo}) — esperando aprobación`);
+
+    if (jobId) {
+      try { jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: audio.modelo }); }
+      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+    }
+
     res.json({
       status: 'success',
       audioToken: token,
@@ -363,9 +393,9 @@ app.post('/api/generate-audio', async (req, res) => {
 
 // ETAPA 6: Generar Video
 app.post('/api/generate-video', async (req, res) => {
-  const jobId = `job_${Date.now()}`;
+  const renderId = `job_${Date.now()}`; // id interno solo para nombrar temporales de este render
   try {
-    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos } = req.body;
+    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId } = req.body;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
@@ -383,7 +413,7 @@ app.post('/api/generate-video', async (req, res) => {
 
     // 1. Duración real de la locución: define el tiempo total del video
     const durAudio = await video.obtenerDuracion(audioPath);
-    console.log(`🎬 [${jobId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
+    console.log(`🎬 [${renderId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
 
     // 2. Inventario de videos por famoso (con duración de cada video)
     const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
@@ -407,7 +437,7 @@ app.post('/api/generate-video', async (req, res) => {
     console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)`);
 
     // 4. Descargar los videos únicos del plan
-    console.log(`⬇️ [${jobId}] Descargando clips...`);
+    console.log(`⬇️ [${renderId}] Descargando clips...`);
     const archivos = {};
     for (const videoId of [...new Set(clipsValidos.map(c => c.videoId))]) {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
@@ -416,8 +446,8 @@ app.post('/api/generate-video', async (req, res) => {
     // 5. Montar (simple y estable: cortes secos, sin transiciones ni subtítulos)
     // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
     // (montarVideoHyper) y en el historial de git por si se retoma.
-    console.log(`🎞️ [${jobId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, jobId);
+    console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId);
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
@@ -435,12 +465,12 @@ app.post('/api/generate-video', async (req, res) => {
     if (localBase && fs.existsSync(path.join(localBase, folderName))) {
       // Copiar a la carpeta local de Google Drive (el cliente de escritorio la sincroniza solo)
       const destPath = path.join(localBase, folderName, fileName);
-      console.log(`💾 [${jobId}] Guardando en Drive local: ${destPath}`);
+      console.log(`💾 [${renderId}] Guardando en Drive local: ${destPath}`);
       fs.copyFileSync(resultado.finalPath, destPath);
       driveLink = `https://drive.google.com/drive/folders/${destFolder}`;
     } else {
       // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
-      console.log(`⬆️ [${jobId}] Subiendo a Drive por API: ${fileName}`);
+      console.log(`⬆️ [${renderId}] Subiendo a Drive por API: ${fileName}`);
       const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, destFolder);
       driveLink = subido.webViewLink;
     }
@@ -452,10 +482,10 @@ app.post('/api/generate-video', async (req, res) => {
         fs.mkdirSync(audiosDir, { recursive: true });
         const audioBackup = path.join(audiosDir, fileName.replace(/\.mp4$/i, '.mp3'));
         fs.copyFileSync(audioPath, audioBackup);
-        console.log(`🎵 [${jobId}] Audio respaldado: ${audioBackup}`);
+        console.log(`🎵 [${renderId}] Audio respaldado: ${audioBackup}`);
       }
     } catch (e) {
-      console.warn(`⚠️ [${jobId}] No se pudo respaldar el audio: ${e.message}`);
+      console.warn(`⚠️ [${renderId}] No se pudo respaldar el audio: ${e.message}`);
     }
 
     // 9. Registrar en Google Sheets (si falla, el video ya está guardado: solo avisar)
@@ -469,9 +499,10 @@ app.post('/api/generate-video', async (req, res) => {
         nombreArchivo: fileName,
         linkFuente: metadatos?.linkFuente,
         linkRender: driveLink,
+        guion: guion || '',
       });
     } catch (e) {
-      console.warn(`⚠️ [${jobId}] No se pudo registrar en Sheets: ${e.message}`);
+      console.warn(`⚠️ [${renderId}] No se pudo registrar en Sheets: ${e.message}`);
     }
 
     // 10. Registrar preview (copia que sobrevive a la limpieza de temporales)
@@ -487,14 +518,19 @@ app.post('/api/generate-video', async (req, res) => {
       }
       previews.set(previewToken, previewPath);
     } catch (e) {
-      console.warn(`⚠️ [${jobId}] No se pudo crear el preview: ${e.message}`);
+      console.warn(`⚠️ [${renderId}] No se pudo crear el preview: ${e.message}`);
     }
 
     // 11. Limpiar temporales (incluido el video final y el audio)
-    video.limpiarTemporales(jobId);
+    video.limpiarTemporales(renderId);
     try { fs.unlinkSync(audioPath); } catch {}
 
-    console.log(`✅ [${jobId}] Video guardado: ${fileName}`);
+    if (jobId) {
+      try { jobStore.actualizarJob(jobId, { paso: 'completado', fileName, folderName, driveLink }); }
+      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+    }
+
+    console.log(`✅ [${renderId}] Video guardado: ${fileName}`);
     res.json({
       status: 'success',
       fileName: fileName,
@@ -504,8 +540,30 @@ app.post('/api/generate-video', async (req, res) => {
       previewUrl: previews.has(previewToken) ? `/api/preview/${previewToken}` : null,
     });
   } catch (error) {
-    console.error(`Error video [${jobId}]:`, error);
-    video.limpiarTemporales(jobId);
+    console.error(`Error video [${renderId}]:`, error);
+    video.limpiarTemporales(renderId);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Historial de jobs (persistencia local): recuperar/listar procesos por jobId
+app.get('/api/jobs', (req, res) => {
+  res.json({ jobs: jobStore.listarJobs(20) });
+});
+
+app.get('/api/jobs/:jobId', (req, res) => {
+  const job = jobStore.obtenerJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+  res.json(job);
+});
+
+// Historial real desde la Hoja de Cálculo (título, descripción+hashtags, guion, etc.)
+app.get('/api/historial', async (req, res) => {
+  try {
+    const filas = await sheets.leerHistorial(20);
+    res.json({ historial: filas });
+  } catch (error) {
+    console.error('Error leyendo historial de Sheets:', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -131,8 +131,8 @@ Service Account de Google Cloud con permiso en:
 ## Próximas Mejoras
 
 ### Corto Plazo (1-2 sesiones)
+- [x] Tabla jobId para pasar estado sin sesión HTTP — hecho en rama `test-persistencia` de v2 (2026-07-16), pendiente merge a `main`. Ver `.claude/CLAUDE.md` en ese repo.
 - [ ] Integrar módulos v3 a v2 (sincronización exacta)
-- [ ] Tabla jobId para pasar estado sin sesión HTTP
 - [ ] Test e2e v2 + v3 con contenido real
 
 ### Mediano Plazo
