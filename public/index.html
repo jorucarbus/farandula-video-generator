@@ -13,15 +13,6 @@
             <p class="subtitle">Crea videos virales automáticamente</p>
         </header>
 
-        <div class="form-section" id="modo-selector" style="display:flex;gap:12px;">
-            <button type="button" id="modo-video" class="btn btn-primary" style="flex:1;" onclick="setModo('video')">
-                🎬 Video final
-            </button>
-            <button type="button" id="modo-insumos" class="btn" style="flex:1;" onclick="setModo('insumos')">
-                ✂️ Insumos para editar
-            </button>
-        </div>
-
         <main>
             <div class="form-section hidden" id="apikey-banner" style="background:#fff8e1;border:1px solid #ffca28;">
                 <h2>🔑 Ingresa tu API Key</h2>
@@ -30,20 +21,6 @@
                     <input type="password" id="apikey-input" placeholder="API Key..." style="width:100%;padding:10px;" onkeydown="if(event.key==='Enter')guardarApiKey()">
                 </div>
                 <button class="btn btn-primary" onclick="guardarApiKey()">Guardar y continuar</button>
-            </div>
-
-            <div class="form-section" id="historial-section">
-                <h2>📚 Historial (Hoja de Cálculo)</h2>
-                <button class="btn btn-secondary" type="button" onclick="cargarHistorial()">🔄 Cargar historial</button>
-                <div id="historial-lista" style="margin-top:12px;"></div>
-            </div>
-
-            <div class="form-section hidden" id="recuperar-banner" style="background:#e8f4fd;border:1px solid #3498db;">
-                <p style="margin:0 0 10px;"><strong>🔁 Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()">▶️ Continuar donde quedó</button>
-                    <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()">🗑️ Empezar de cero</button>
-                </div>
             </div>
 
             <div class="form-section hidden" id="lectura-section">
@@ -71,7 +48,28 @@
                 </details>
             </div>
 
-            <div class="steps-grid">
+            <div class="layout-cols">
+            <div class="col-procesos">
+            <h2 class="col-title">⚙️ Procesos</h2>
+
+            <div class="form-section" id="modo-selector" style="display:flex;gap:12px;">
+                <button type="button" id="modo-video" class="btn btn-primary" style="flex:1;" onclick="setModo('video')">
+                    🎬 Video final
+                </button>
+                <button type="button" id="modo-insumos" class="btn" style="flex:1;" onclick="setModo('insumos')">
+                    ✂️ Insumos para editar
+                </button>
+            </div>
+
+            <div class="form-section hidden" id="recuperar-banner" style="background:#e8f4fd;border:1px solid #3498db;">
+                <p style="margin:0 0 10px;"><strong>🔁 Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()">▶️ Continuar donde quedó</button>
+                    <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()">🗑️ Empezar de cero</button>
+                </div>
+            </div>
+
+            <div class="steps-grid scroll-snap-col">
 
             <div class="form-section" id="fuente-section" data-status="active">
                 <h2>Paso 1: Proporciona la fuente</h2>
@@ -205,6 +203,16 @@
             </div>
 
             </div><!-- /.steps-grid -->
+            </div><!-- /.col-procesos -->
+
+            <div class="col-productos">
+            <h2 class="col-title">📦 Historial</h2>
+            <div class="form-section" id="historial-section">
+                <button class="btn btn-secondary" type="button" onclick="cargarHistorial()">🔄 Cargar historial</button>
+                <div id="historial-lista" class="scroll-snap-col" style="margin-top:12px;"></div>
+            </div>
+            </div><!-- /.col-productos -->
+            </div><!-- /.layout-cols -->
 
             <div class="progress-section hidden" id="progress-section">
                 <h2 id="progress-title">Procesando...</h2>

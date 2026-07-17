@@ -643,6 +643,18 @@ function copyText(elementId) {
     });
 }
 
+// Scroll magnético: marca con clase 'snapped' el bloque actualmente centrado en el viewport del contenedor.
+// rootMargin negativo arriba/abajo deja solo una franja central angosta: el bloque que la cruza es "el visible".
+function observarSnap(container, itemSelector) {
+    if (!container) return;
+    const items = container.querySelectorAll(itemSelector);
+    if (!items.length) return;
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => entry.target.classList.toggle('snapped', entry.isIntersecting));
+    }, { root: container, rootMargin: '-40% 0px -40% 0px', threshold: 0 });
+    items.forEach(item => observer.observe(item));
+}
+
 // Historial real desde la Hoja de Cálculo: título, descripción+hashtags, guion, etc.
 // Click en el título expande/colapsa el resto de la info de ese video.
 async function cargarHistorial() {
@@ -656,19 +668,32 @@ async function cargarHistorial() {
             return;
         }
         cont.innerHTML = '';
-        cont.style.cssText = 'max-height:190px;overflow-y:auto;padding-right:4px;';
         filas.forEach((f, i) => {
             const item = document.createElement('div');
-            item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;overflow:hidden;';
+            item.className = 'historial-item';
+            item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
 
             const header = document.createElement('div');
-            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;font-weight:bold;display:flex;justify-content:space-between;gap:8px;';
+            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;font-weight:bold;display:flex;justify-content:space-between;gap:8px;border-radius:6px 6px 0 0;';
             header.innerHTML = `<span>${f.titulo || '(sin título)'}</span><span style="color:#666;font-weight:normal;">${f.fecha || ''}</span>`;
 
             const body = document.createElement('div');
             body.style.cssText = 'padding:14px;display:none;';
             body.innerHTML = `
-                <p><strong>Descripción + Hashtags:</strong><br>${f.descripcion || '-'}</p>
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Título</label>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.titulo || '')}); log('📋 Título copiado del historial')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content">${f.titulo || '-'}</p>
+                </div>
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Descripción + Hashtags</label>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.descripcion || '')}); log('📋 Descripción copiada del historial')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content">${f.descripcion || '-'}</p>
+                </div>
                 <p><strong>Protagonista:</strong> ${f.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${f.canal || '-'}</p>
                 <p><strong>Status:</strong> ${f.status || '-'} &nbsp;|&nbsp; <strong>Archivo:</strong> ${f.nombreArchivo || '-'}</p>
                 ${f.linkRender ? `<p><a href="${f.linkRender}" target="_blank">🔗 Ver video en Drive</a></p>` : ''}
@@ -690,6 +715,7 @@ async function cargarHistorial() {
             item.appendChild(body);
             cont.appendChild(item);
         });
+        observarSnap(cont, '.historial-item');
     } catch (error) {
         cont.innerHTML = `<p style="color:#c0392b;">Error cargando historial: ${error.message}</p>`;
     }
@@ -785,4 +811,5 @@ document.addEventListener('DOMContentLoaded', () => {
     log('✅ App iniciada');
     initApiKey();
     chequearJobPendiente();
+    observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section');
 });

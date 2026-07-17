@@ -36,16 +36,19 @@ body {
     border: 4px solid var(--black);
     border-radius: 20px;
     box-shadow: var(--shadow-lg);
-    overflow: hidden;
 }
 
-/* Header */
+/* Header (sticky: queda visible al hacer scroll dentro del contenedor) */
 header {
     background: var(--pink);
     color: var(--black);
     padding: 36px 24px;
     text-align: center;
     border-bottom: 4px solid var(--black);
+    border-radius: 16px 16px 0 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
 }
 
 header h1 {
@@ -86,16 +89,72 @@ main {
 .form-section:nth-of-type(4n+3) { background: #ffe9fb; }
 .form-section:nth-of-type(4n+4) { background: #e5f4ff; }
 
-/* Grid de pasos (Bloque B: todos los pasos visibles a la vez) */
-.steps-grid {
+/* Layout 2 columnas: Procesos (izquierda) / Productos (derecha) */
+.layout-cols {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr 1fr;
     gap: 24px;
     align-items: start;
     margin-bottom: 28px;
 }
+.col-title {
+    font-size: 1.4rem;
+    font-weight: 900;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+}
+
+/* Scroll magnético: cada bloque encaja completo, nunca queda cortado a la mitad */
+.scroll-snap-col {
+    max-height: 74vh;
+    overflow-y: auto;
+    scroll-snap-type: y proximity;
+    padding-right: 6px;
+}
+.scroll-snap-col > .form-section,
+.scroll-snap-col > .historial-item {
+    scroll-snap-align: start;
+    position: relative;
+}
+
+/* Indicador del bloque actualmente centrado en el scroll magnético */
+.scroll-snap-col > .form-section.snapped,
+.scroll-snap-col > .historial-item.snapped {
+    border-color: var(--blue) !important;
+    box-shadow: 6px 6px 0 var(--black) !important;
+}
+.scroll-snap-col > .form-section.snapped::after,
+.scroll-snap-col > .historial-item.snapped::after {
+    content: "👉 Viendo";
+    position: absolute;
+    top: -14px;
+    left: 16px;
+    background: var(--blue);
+    border: 2px solid var(--black);
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    box-shadow: 2px 2px 0 var(--black);
+}
+
 @media (max-width: 900px) {
-    .steps-grid { grid-template-columns: 1fr; }
+    .layout-cols { grid-template-columns: 1fr; }
+    .col-productos { order: 1; }
+    .col-procesos { order: 2; }
+    .scroll-snap-col { max-height: 50vh; }
+}
+
+/* Grid de pasos (Bloque B: todos los pasos visibles a la vez) */
+.steps-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    align-items: start;
+    margin-bottom: 0;
 }
 
 .steps-grid .form-section {
@@ -371,11 +430,14 @@ footer {
     text-align: center;
     font-weight: 800;
     border-top: 4px solid var(--black);
+    border-radius: 0 0 16px 16px;
 }
 
 /* Responsive */
 @media (max-width: 600px) {
-    header h1 { font-size: 1.9rem; }
+    header { padding: 16px 14px; }
+    header h1 { font-size: 1.5rem; }
+    .subtitle { font-size: 0.85rem; padding: 3px 12px; margin-top: 6px; }
     main { padding: 20px 16px; }
     .form-section { padding: 18px; }
     .angles-grid { grid-template-columns: 1fr; }
