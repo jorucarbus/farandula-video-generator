@@ -12,6 +12,16 @@ let MODO = 'video';
 function apiBase() { return BACKENDS[MODO]; }
 function cfg() { return FLUJO[MODO]; }
 
+// Bloque C: rehacer un paso ya completado (editar y reenviar) invalida todo lo posterior.
+// Se llama al INICIO de cada función que muta el pipeline, antes de la llamada a la API.
+const STEP_ORDER = ['fuente-section', 'script-section', 'guion-section', 'revision-section', 'audio-section', 'destination-section'];
+function lockFrom(stepId) {
+    const idx = STEP_ORDER.indexOf(stepId);
+    if (idx === -1) return;
+    for (let i = idx; i < STEP_ORDER.length; i++) setStepStatus(STEP_ORDER[i], 'locked');
+    document.getElementById('result-section').classList.add('hidden');
+}
+
 // Cambiar de modo: resetea el flujo (los pasos difieren entre modos)
 function setModo(modo) {
     if (modo === MODO) return;
@@ -23,14 +33,9 @@ function setModo(modo) {
     localStorage.removeItem('farandula_job_id');
 
     document.getElementById('lectura-section').classList.add('hidden');
-    document.getElementById('result-section').classList.add('hidden');
     hideProgress();
+    lockFrom('script-section');
     setStepStatus('fuente-section', 'active');
-    setStepStatus('script-section', 'locked');
-    setStepStatus('guion-section', 'locked');
-    setStepStatus('revision-section', 'locked');
-    setStepStatus('audio-section', 'locked');
-    setStepStatus('destination-section', 'locked');
 
     log(`🔀 Modo: ${modo === 'video' ? 'Video final' : 'Insumos para editar'}`);
 }
@@ -198,6 +203,13 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
     try {
         state.fuente = { type: sourceType, content: sourceInput };
         state.sesgo = sesgo;
+        // Rehacer la lectura invalida guion/asignaciones/audio/destino ya hechos
+        state.selectedAngle = null;
+        state.guion = null;
+        state.fragments = null;
+        state.audioToken = null;
+        state.selectedDestFolder = null;
+        lockFrom('script-section');
 
         showProgress('📖 Leyendo fuente...');
         log(`📖 Iniciando lectura (sesgo: ${sesgo})...`);
@@ -273,6 +285,12 @@ async function handleGenerateScript() {
     }
 
     try {
+        // Rehacer el guion (nuevo ángulo o regenerar) invalida asignaciones/audio/destino ya hechos
+        state.fragments = null;
+        state.audioToken = null;
+        state.selectedDestFolder = null;
+        lockFrom('guion-section');
+
         showProgress('✍️ Generando guion...');
         log('✍️ Generando guion...');
         updateProgress(40);
@@ -332,6 +350,11 @@ async function aprobarGuion() {
     log('✅ Guion aprobado');
 
     try {
+        // Rehacer la aprobación (guion editado) invalida audio/destino ya hechos
+        state.audioToken = null;
+        state.selectedDestFolder = null;
+        lockFrom('revision-section');
+
         showProgress('📂 Asignando carpetas...');
         log('📂 Asignando carpetas a los párrafos...');
         updateProgress(52);
@@ -394,6 +417,10 @@ async function confirmarAsignaciones() {
 // Generar (o regenerar) la locución y mostrarla para aprobación
 async function regenerarAudio(modelo) {
     try {
+        // Rehacer la locución invalida el destino ya elegido
+        state.selectedDestFolder = null;
+        lockFrom('destination-section');
+
         showProgress(`🎙️ Generando locución (${modelo})...`);
         log(`🎙️ Generando locución (${modelo})...`);
         updateProgress(65);
@@ -595,15 +622,7 @@ async function otroSesgo(sesgo) {
         alert('No hay fuente guardada, empieza de nuevo');
         return;
     }
-    state.selectedAngle = null;
-    state.audioToken = null;
-    state.fragments = null;
-    document.getElementById('result-section').classList.add('hidden');
-    setStepStatus('script-section', 'locked');
-    setStepStatus('guion-section', 'locked');
-    setStepStatus('revision-section', 'locked');
-    setStepStatus('audio-section', 'locked');
-    setStepStatus('destination-section', 'locked');
+    // leerFuente ya invalida/bloquea todo lo posterior (Bloque C)
     await leerFuente(state.fuente.type, state.fuente.content, sesgo);
 }
 
