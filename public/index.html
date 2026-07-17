@@ -46,7 +46,34 @@
                 </div>
             </div>
 
-            <div class="form-section" id="fuente-section">
+            <div class="form-section hidden" id="lectura-section">
+                <h2>📰 Resultado de la lectura</h2>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Título</label>
+                        <button class="btn-copy" onclick="copyText('res-titulo')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-titulo"></p>
+                </div>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Descripción + Hashtags (para redes)</label>
+                        <button class="btn-copy" onclick="copyText('res-descripcion')">📋 Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-descripcion"></p>
+                </div>
+
+                <details class="cronica-details">
+                    <summary>📖 Ver crónica completa (de qué trata el tema)</summary>
+                    <p class="copy-content" id="res-cronica"></p>
+                </details>
+            </div>
+
+            <div class="steps-grid">
+
+            <div class="form-section" id="fuente-section" data-status="active">
                 <h2>Paso 1: Proporciona la fuente</h2>
                 <div class="form-group">
                     <label for="source-type">Tipo de fuente:</label>
@@ -79,32 +106,7 @@
                 </button>
             </div>
 
-            <div class="form-section hidden" id="lectura-section">
-                <h2>📰 Resultado de la lectura</h2>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Título</label>
-                        <button class="btn-copy" onclick="copyText('res-titulo')">📋 Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-titulo"></p>
-                </div>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Descripción + Hashtags (para redes)</label>
-                        <button class="btn-copy" onclick="copyText('res-descripcion')">📋 Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-descripcion"></p>
-                </div>
-
-                <details class="cronica-details">
-                    <summary>📖 Ver crónica completa (de qué trata el tema)</summary>
-                    <p class="copy-content" id="res-cronica"></p>
-                </details>
-            </div>
-
-            <div class="form-section hidden" id="script-section">
+            <div class="form-section" id="script-section" data-status="locked">
                 <h2>Paso 2: Elige el ángulo</h2>
                 <div class="angles-grid">
                     <div class="angle-card" onclick="selectAngle(1)">
@@ -147,8 +149,8 @@
                 </button>
             </div>
 
-            <div class="form-section hidden" id="guion-section">
-                <h2>📜 Guion generado — revisa y aprueba</h2>
+            <div class="form-section" id="guion-section" data-status="locked">
+                <h2>📜 Paso 3: Revisa y aprueba el guion</h2>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label id="guion-stats">Guion</label>
@@ -166,16 +168,16 @@
                 </p>
             </div>
 
-            <div class="form-section hidden" id="revision-section">
-                <h2>Revisa las asignaciones de carpetas</h2>
+            <div class="form-section" id="revision-section" data-status="locked">
+                <h2>Paso 4: Revisa las asignaciones de carpetas</h2>
                 <div id="aviso-protagonista" class="hidden" style="background:#ffe5e5;border:1px solid #e74c3c;border-radius:8px;padding:10px 14px;margin-bottom:12px;color:#c0392b;font-weight:bold;"></div>
                 <p style="color:#666;font-size:0.9rem;margin-bottom:10px;">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
                 <div id="lista-asignaciones"></div>
                 <button class="btn btn-success" style="margin-top:12px;" onclick="confirmarAsignaciones()">✅ Confirmar asignaciones</button>
             </div>
 
-            <div class="form-section hidden" id="audio-section">
-                <h2>Escucha y aprueba la locución</h2>
+            <div class="form-section" id="audio-section" data-status="locked">
+                <h2>Paso 5: Escucha y aprueba la locución</h2>
                 <p id="audio-info" style="color:#666;font-size:0.9rem;margin-bottom:8px;"></p>
                 <audio id="audio-player" controls style="width:100%;margin-bottom:12px;"></audio>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -188,8 +190,8 @@
                 </p>
             </div>
 
-            <div class="form-section hidden" id="destination-section">
-                <h2>Selecciona carpeta de destino</h2>
+            <div class="form-section" id="destination-section" data-status="locked">
+                <h2>Paso 6: Selecciona carpeta de destino</h2>
                 <div class="form-group">
                     <label for="dest-folder">Carpeta en Google Drive:</label>
                     <select id="dest-folder">
@@ -202,8 +204,10 @@
                 </button>
             </div>
 
+            </div><!-- /.steps-grid -->
+
             <div class="progress-section hidden" id="progress-section">
-                <h2>Generando video...</h2>
+                <h2 id="progress-title">Procesando...</h2>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>

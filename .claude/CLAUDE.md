@@ -55,8 +55,11 @@ npm install   # ffmpeg-static no venía instalado, requerido para levantar serve
 node server.js   # o npm start — puerto 3000
 ```
 
-**Pendiente (Bloques B/C/D, no empezados):**
-- [ ] UI responsive 2 columnas desktop / 1 columna mobile, todos los pasos visibles a la vez, verde al completar (no-wizard)
+## Bloque B completo (2026-07-16)
+
+UI ya NO es wizard: los 6 pasos viven siempre en el DOM dentro de `.steps-grid` (`public/index.html`), grid 2 columnas desktop / 1 columna móvil (breakpoint 900px, `public/style.css`). Cada tarjeta tiene `data-status="locked|active|done"` controlado por `setStepStatus()` en `public/app.js` — locked = `pointer-events:none` + gris + badge ⏳, active = badge 🔓 + sombra, done = borde verde + badge ✅. `showSection()` (wizard viejo) fue eliminado; el progreso/errores ahora viven en una barra flotante (`showProgress()`/`hideProgress()`) fija al fondo que no tapa el grid. Verificado en browser real: flujo completo lectura→ángulo con estados y barra flotante funcionando.
+
+**Pendiente (Bloques C/D, no empezados):**
 - [ ] Saltar/rehacer un paso específico a elección (hoy solo hay "continuar desde el último pendiente")
 - [ ] Carpeta caché en Google Drive dentro de `Redes_Canales` (id `1irTudEARQWOrJr3y911Hwl_1VbvQqNP5`) para historial.json/backups/guiones-audios-videos
 

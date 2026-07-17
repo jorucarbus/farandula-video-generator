@@ -21,9 +21,17 @@ function setModo(modo) {
     // Volver al inicio (paso 1) con estado limpio
     state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
     localStorage.removeItem('farandula_job_id');
-    document.querySelectorAll('.form-section, .progress-section, .result-section').forEach(el => {
-        if (!['modo-selector', 'apikey-banner'].includes(el.id) && !el.querySelector('#source-input')) el.classList.add('hidden');
-    });
+
+    document.getElementById('lectura-section').classList.add('hidden');
+    document.getElementById('result-section').classList.add('hidden');
+    hideProgress();
+    setStepStatus('fuente-section', 'active');
+    setStepStatus('script-section', 'locked');
+    setStepStatus('guion-section', 'locked');
+    setStepStatus('revision-section', 'locked');
+    setStepStatus('audio-section', 'locked');
+    setStepStatus('destination-section', 'locked');
+
     log(`🔀 Modo: ${modo === 'video' ? 'Video final' : 'Insumos para editar'}`);
 }
 
@@ -71,31 +79,50 @@ let state = {
     sesgo: 'neutral',
 };
 
-// Funciones auxiliares
-function showSection(sectionId) {
-    document.querySelectorAll('.form-section, .progress-section, .result-section').forEach(el => {
-        el.classList.add('hidden');
-    });
-    ocultarError(); // cada nuevo paso arranca sin la barra de error del anterior
-    document.getElementById(sectionId).classList.remove('hidden');
+// Funciones auxiliares (Bloque B: todos los pasos visibles a la vez, sin wizard)
+
+// Cambia el estado visual de una tarjeta de paso: locked (bloqueada) | active (en curso) | done (completa)
+function setStepStatus(stepId, status) {
+    const el = document.getElementById(stepId);
+    if (!el) return;
+    el.dataset.status = status;
+    if (status === 'active') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Revela la tarjeta de resultado de lectura (queda visible el resto de la sesión, no se vuelve a ocultar)
+function revealLectura() {
+    document.getElementById('lectura-section').classList.remove('hidden');
+}
+
+// Barra de progreso flotante (ya no tapa el grid de pasos, como antes hacía showSection)
+function showProgress(label) {
+    ocultarError();
+    document.getElementById('progress-title').textContent = label || 'Procesando...';
+    document.getElementById('progress-section').classList.remove('hidden');
+    updateProgress(0);
+}
+
+function hideProgress() {
+    document.getElementById('progress-section').classList.add('hidden');
 }
 
 // Barra de error: reintentar el paso que falló (sin rehacer lo anterior) o volver atrás.
 // reintentarFn: closure que repite SOLO el paso fallido (conserva guion/audio/párrafos ya generados).
-// volverSection: id de la sección editable a la que regresar (o null si no aplica).
-function mostrarError(mensaje, reintentarFn, volverSection) {
+// volverStepId: id de la tarjeta de paso a reactivar (o null si no aplica).
+function mostrarError(mensaje, reintentarFn, volverStepId) {
     log(`❌ ${mensaje}`);
+    document.getElementById('progress-section').classList.remove('hidden');
     const bar = document.getElementById('error-actions');
     if (!bar) return;
     const btnR = document.getElementById('btn-reintentar');
     const btnV = document.getElementById('btn-volver');
     btnR.onclick = () => { ocultarError(); reintentarFn(); };
-    if (volverSection) {
+    if (volverStepId) {
         btnV.style.display = '';
         btnV.onclick = () => {
             ocultarError();
-            showSection(volverSection);
-            document.getElementById('lectura-section').classList.remove('hidden');
+            hideProgress();
+            setStepStatus(volverStepId, 'active');
         };
     } else {
         btnV.style.display = 'none';
@@ -172,7 +199,7 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
         state.fuente = { type: sourceType, content: sourceInput };
         state.sesgo = sesgo;
 
-        showSection('progress-section');
+        showProgress('📖 Leyendo fuente...');
         log(`📖 Iniciando lectura (sesgo: ${sesgo})...`);
         updateProgress(10);
 
@@ -199,9 +226,11 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
         document.getElementById('res-titulo').textContent = result.titulo;
         document.getElementById('res-descripcion').textContent = result.descripcion;
         document.getElementById('res-cronica').textContent = result.cronica;
+        revealLectura();
 
-        showSection('script-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        hideProgress();
+        setStepStatus('fuente-section', 'done');
+        setStepStatus('script-section', 'active');
         log('➡️ Selecciona un ángulo para continuar');
     } catch (error) {
         mostrarError(`Error en lectura: ${error.message}`,
@@ -244,7 +273,7 @@ async function handleGenerateScript() {
     }
 
     try {
-        showSection('progress-section');
+        showProgress('✍️ Generando guion...');
         log('✍️ Generando guion...');
         updateProgress(40);
 
@@ -268,8 +297,9 @@ async function handleGenerateScript() {
             log('⚠️ Guion corto (se esperan 205-220 palabras)');
         }
 
-        showSection('guion-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        hideProgress();
+        setStepStatus('script-section', 'done');
+        setStepStatus('guion-section', 'active');
         log('➡️ Revisa el guion: aprueba, edita o regenera');
     } catch (error) {
         mostrarError(`Error generando guion: ${error.message}`,
@@ -302,7 +332,7 @@ async function aprobarGuion() {
     log('✅ Guion aprobado');
 
     try {
-        showSection('progress-section');
+        showProgress('📂 Asignando carpetas...');
         log('📂 Asignando carpetas a los párrafos...');
         updateProgress(52);
         const result = await apiCall(cfg().asignar, 'POST', {
@@ -314,8 +344,9 @@ async function aprobarGuion() {
         state.carpetas = result.carpetas;
         renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
-        showSection('revision-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        hideProgress();
+        setStepStatus('guion-section', 'done');
+        setStepStatus('revision-section', 'active');
     } catch (error) {
         mostrarError(`Error asignando carpetas: ${error.message}`,
             () => aprobarGuion(), 'guion-section');
@@ -363,7 +394,7 @@ async function confirmarAsignaciones() {
 // Generar (o regenerar) la locución y mostrarla para aprobación
 async function regenerarAudio(modelo) {
     try {
-        showSection('progress-section');
+        showProgress(`🎙️ Generando locución (${modelo})...`);
         log(`🎙️ Generando locución (${modelo})...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
@@ -380,9 +411,9 @@ async function regenerarAudio(modelo) {
         player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
         player.load();
 
-        showSection('audio-section');
-        document.getElementById('revision-section').classList.remove('hidden');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        hideProgress();
+        setStepStatus('revision-section', 'done');
+        setStepStatus('audio-section', 'active');
         log('🎧 Escucha la locución y apruébala o regenérala');
     } catch (error) {
         mostrarError(`Error generando locución: ${error.message}`,
@@ -398,9 +429,8 @@ async function aprobarAudio() {
     }
     log('✅ Locución aprobada');
     await loadDestinationFolders();
-    showSection('destination-section');
-    document.getElementById('audio-section').classList.remove('hidden');
-    document.getElementById('lectura-section').classList.remove('hidden');
+    setStepStatus('audio-section', 'done');
+    setStepStatus('destination-section', 'active');
 }
 
 // RECHAZO: regenerar con el mismo ángulo
@@ -411,8 +441,8 @@ function regenerarGuion() {
 
 // RECHAZO: volver a elegir ángulo
 function cambiarAngulo() {
-    showSection('script-section');
-    document.getElementById('lectura-section').classList.remove('hidden');
+    setStepStatus('guion-section', 'locked');
+    setStepStatus('script-section', 'active');
     log('🎯 Elige otro ángulo');
 }
 
@@ -454,7 +484,7 @@ async function handleGenerateVideo() {
     state.selectedDestFolder = destFolder;
 
     try {
-        showSection('progress-section');
+        showProgress(MODO === 'video' ? '🚀 Generando video...' : '🚀 Exportando insumos...');
         log(MODO === 'video' ? '🚀 Iniciando generación de video...' : '🚀 Iniciando exportación de insumos...');
         updateProgress(50);
 
@@ -505,6 +535,8 @@ async function handleGenerateVideo() {
             log('✅ Insumos exportados');
         }
         updateProgress(100);
+        hideProgress();
+        setStepStatus('destination-section', 'done');
         showResult(resultado);
     } catch (error) {
         // Reintentar aquí repite SOLO el render/export: el guion y la locución ya están en state.
@@ -515,9 +547,9 @@ async function handleGenerateVideo() {
 
 // Mostrar resultado
 function showResult(videoData) {
-    showSection('result-section');
-    // Mantener visible el título/descripción para copiar al publicar
-    document.getElementById('lectura-section').classList.remove('hidden');
+    const resultSection = document.getElementById('result-section');
+    resultSection.classList.remove('hidden');
+    resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const resultInfo = document.getElementById('result-info');
 
     // Modo insumos: carpeta con fragmentos + locución, sin MP4 final
@@ -566,6 +598,12 @@ async function otroSesgo(sesgo) {
     state.selectedAngle = null;
     state.audioToken = null;
     state.fragments = null;
+    document.getElementById('result-section').classList.add('hidden');
+    setStepStatus('script-section', 'locked');
+    setStepStatus('guion-section', 'locked');
+    setStepStatus('revision-section', 'locked');
+    setStepStatus('audio-section', 'locked');
+    setStepStatus('destination-section', 'locked');
     await leerFuente(state.fuente.type, state.fuente.content, sesgo);
 }
 
@@ -676,42 +714,41 @@ async function recuperarJobPendiente() {
     document.getElementById('res-titulo').textContent = job.titulo || '';
     document.getElementById('res-descripcion').textContent = job.descripcion || '';
     document.getElementById('res-cronica').textContent = job.cronica || '';
-    document.getElementById('lectura-section').classList.remove('hidden');
+    revealLectura();
+    setStepStatus('fuente-section', 'done');
     log(`🔁 Proceso recuperado (etapa: ${job.paso})`);
 
     if (job.paso === 'lectura') {
-        showSection('script-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        setStepStatus('script-section', 'active');
         return;
     }
 
     state.guion = job.script || '';
     document.getElementById('guion-editor').value = state.guion;
     actualizarStatsGuion();
+    setStepStatus('script-section', 'done');
     if (job.paso === 'guion') {
-        showSection('guion-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        setStepStatus('guion-section', 'active');
         return;
     }
 
     state.fragments = job.fragments || [];
     state.carpetas = job.carpetas || [];
+    setStepStatus('guion-section', 'done');
     if (job.paso === 'fragmentacion') {
         renderAsignaciones(false, state.sourceData.protagonista);
-        showSection('revision-section');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        setStepStatus('revision-section', 'active');
         return;
     }
 
     state.audioToken = job.audioToken;
+    setStepStatus('revision-section', 'done');
     if (job.paso === 'audio') {
         document.getElementById('audio-info').textContent = `Duración: ${Math.round(job.duracion || 0)}s | Modelo: ${job.modelo || ''}`;
         const player = document.getElementById('audio-player');
         player.src = apiBase() + '/api/audio/' + job.audioToken + '?t=' + Date.now();
         player.load();
-        showSection('audio-section');
-        document.getElementById('revision-section').classList.remove('hidden');
-        document.getElementById('lectura-section').classList.remove('hidden');
+        setStepStatus('audio-section', 'active');
         return;
     }
 }

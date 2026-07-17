@@ -30,7 +30,7 @@ body {
 }
 
 .container {
-    max-width: 860px;
+    max-width: 1140px;
     margin: 0 auto;
     background: var(--card);
     border: 4px solid var(--black);
@@ -85,6 +85,51 @@ main {
 .form-section:nth-of-type(4n+2) { background: #eafbe0; }
 .form-section:nth-of-type(4n+3) { background: #ffe9fb; }
 .form-section:nth-of-type(4n+4) { background: #e5f4ff; }
+
+/* Grid de pasos (Bloque B: todos los pasos visibles a la vez) */
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    align-items: start;
+    margin-bottom: 28px;
+}
+@media (max-width: 900px) {
+    .steps-grid { grid-template-columns: 1fr; }
+}
+
+.steps-grid .form-section {
+    margin-bottom: 0;
+    position: relative;
+    transition: opacity 0.2s ease, filter 0.2s ease, box-shadow 0.15s ease;
+}
+
+/* Badge de estado (esquina superior derecha de cada tarjeta) */
+.steps-grid .form-section::before {
+    content: "⏳ Pendiente";
+    position: absolute;
+    top: -14px;
+    right: 16px;
+    background: var(--yellow);
+    border: 2px solid var(--black);
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    box-shadow: 2px 2px 0 var(--black);
+}
+.steps-grid .form-section[data-status="active"]::before { content: "🔓 Activo"; background: var(--blue); }
+.steps-grid .form-section[data-status="done"]::before { content: "✅ Listo"; background: var(--green); }
+
+.steps-grid .form-section[data-status="locked"] {
+    opacity: 0.5;
+    filter: grayscale(70%);
+    pointer-events: none;
+}
+.steps-grid .form-section[data-status="done"] { border-color: #2f8f2f; }
+.steps-grid .form-section[data-status="active"] { box-shadow: var(--shadow-lg); }
 
 .form-section h2 {
     font-size: 1.4rem;
@@ -183,7 +228,26 @@ select:focus {
     transform: translate(-2px, -2px);
 }
 
-/* Progreso */
+/* Progreso: barra flotante (no tapa el grid de pasos) */
+#progress-section {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 500;
+    max-width: 1140px;
+    margin: 0 auto;
+    background: var(--card);
+    padding: 22px 26px;
+    border: var(--border);
+    border-bottom: none;
+    border-radius: 20px 20px 0 0;
+    max-height: 50vh;
+    overflow-y: auto;
+    box-shadow: 0 -8px 0 var(--black);
+}
+#progress-section h2 { font-size: 1.1rem; margin-bottom: 14px; }
+
 .progress-bar {
     width: 100%;
     height: 26px;
