@@ -18,7 +18,12 @@ const STEP_ORDER = ['fuente-section', 'script-section', 'guion-section', 'revisi
 function lockFrom(stepId) {
     const idx = STEP_ORDER.indexOf(stepId);
     if (idx === -1) return;
-    for (let i = idx; i < STEP_ORDER.length; i++) setStepStatus(STEP_ORDER[i], 'locked');
+    for (let i = idx; i < STEP_ORDER.length; i++) {
+        setStepStatus(STEP_ORDER[i], 'locked');
+        if (STEP_ORDER[i] === 'guion-section') resetProductoSlot('producto-guion');
+        if (STEP_ORDER[i] === 'audio-section') resetProductoSlot('producto-audio');
+        if (STEP_ORDER[i] === 'destination-section') resetProductoSlot('producto-final');
+    }
     document.getElementById('result-section').classList.add('hidden');
 }
 
@@ -26,8 +31,8 @@ function lockFrom(stepId) {
 function setModo(modo) {
     if (modo === MODO) return;
     MODO = modo;
-    document.getElementById('modo-video').className = 'btn' + (modo === 'video' ? ' btn-primary' : '');
-    document.getElementById('modo-insumos').className = 'btn' + (modo === 'insumos' ? ' btn-primary' : '');
+    document.getElementById('modo-selector').dataset.modo = modo;
+    document.getElementById('producto-final-label').textContent = modo === 'video' ? 'Video' : 'Insumos';
     // Volver al inicio (paso 1) con estado limpio
     state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
     localStorage.removeItem('farandula_job_id');
@@ -87,12 +92,76 @@ let state = {
 
 // Funciones auxiliares (Bloque B: todos los pasos visibles a la vez, sin wizard)
 
+const STEP_BADGE = {
+    locked: { icon: 'hourglass', texto: 'Pendiente' },
+    active: { icon: 'lockOpen', texto: 'Activo' },
+    done: { icon: 'checkCircle', texto: 'Listo' },
+};
+
+function actualizarStepBadge(el, status) {
+    const badge = el.querySelector('.step-badge');
+    if (!badge) return;
+    const info = STEP_BADGE[status] || STEP_BADGE.locked;
+    badge.innerHTML = `${icon(info.icon)} ${info.texto}`;
+}
+
 // Cambia el estado visual de una tarjeta de paso: locked (bloqueada) | active (en curso) | done (completa)
 function setStepStatus(stepId, status) {
     const el = document.getElementById(stepId);
     if (!el) return;
     el.dataset.status = status;
+    actualizarStepBadge(el, status);
     if (status === 'active') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Productos del job actual (columna derecha): opacos hasta que existan, se "encienden" al estar listos.
+function setProductoSlot(id, status) {
+    const el = document.getElementById(id);
+    if (el) el.dataset.status = status;
+}
+function resetProductoSlot(id) {
+    setProductoSlot(id, 'pendiente');
+    const body = document.querySelector(`#${id} .producto-slot-body`);
+    if (body) body.textContent = 'Aún no generado';
+}
+function renderProductoGuion(texto) {
+    setProductoSlot('producto-guion', 'listo');
+    const body = document.querySelector('#producto-guion .producto-slot-body');
+    body.innerHTML = '';
+    const p = document.createElement('p');
+    p.style.cssText = 'white-space:pre-wrap;';
+    p.textContent = texto.length > 160 ? texto.slice(0, 160) + '…' : texto;
+    body.appendChild(p);
+}
+function renderProductoAudio(src) {
+    setProductoSlot('producto-audio', 'listo');
+    const body = document.querySelector('#producto-audio .producto-slot-body');
+    body.innerHTML = '';
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.src = src;
+    body.appendChild(audio);
+}
+function renderProductoFinal(resultado) {
+    setProductoSlot('producto-final', 'listo');
+    const body = document.querySelector('#producto-final .producto-slot-body');
+    body.innerHTML = '';
+    if (MODO === 'video' && resultado.previewUrl) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.playsInline = true;
+        video.style.cssText = 'max-width:180px;aspect-ratio:9/16;background:#000;display:block;';
+        video.src = resultado.previewUrl;
+        body.appendChild(video);
+    } else if (resultado.driveLink) {
+        const a = document.createElement('a');
+        a.href = resultado.driveLink;
+        a.target = '_blank';
+        a.innerHTML = `${icon('link')} Ver en Drive`;
+        body.appendChild(a);
+    } else {
+        body.textContent = 'Listo';
+    }
 }
 
 // Revela la tarjeta de resultado de lectura (queda visible el resto de la sesión, no se vuelve a ocultar)
@@ -103,7 +172,7 @@ function revealLectura() {
 // Barra de progreso flotante (ya no tapa el grid de pasos, como antes hacía showSection)
 function showProgress(label) {
     ocultarError();
-    document.getElementById('progress-title').textContent = label || 'Procesando...';
+    document.getElementById('progress-title').innerHTML = label || 'Procesando...';
     document.getElementById('progress-section').classList.remove('hidden');
     updateProgress(0);
 }
@@ -212,7 +281,7 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
         state.selectedDestFolder = null;
         lockFrom('script-section');
 
-        showProgress('📖 Leyendo fuente...');
+        showProgress(`${icon('bookOpen')} Leyendo fuente...`);
         log(`📖 Iniciando lectura (sesgo: ${sesgo})...`);
         updateProgress(10);
 
@@ -292,7 +361,7 @@ async function handleGenerateScript() {
         state.selectedDestFolder = null;
         lockFrom('guion-section');
 
-        showProgress('✍️ Generando guion...');
+        showProgress(`${icon('pencilSimple')} Generando guion...`);
         log('✍️ Generando guion...');
         updateProgress(40);
 
@@ -305,6 +374,7 @@ async function handleGenerateScript() {
 
         log('✅ Guion generado');
         state.guion = result.script;
+        renderProductoGuion(result.script);
         updateProgress(50);
 
         // Mostrar el guion en el editor para revisión (aprobar / modificar / rechazar)
@@ -348,6 +418,7 @@ async function aprobarGuion() {
         return;
     }
     state.guion = texto;
+    renderProductoGuion(texto);
     log('✅ Guion aprobado');
 
     try {
@@ -356,7 +427,7 @@ async function aprobarGuion() {
         state.selectedDestFolder = null;
         lockFrom('revision-section');
 
-        showProgress('📂 Asignando carpetas...');
+        showProgress(`${icon('folderOpen')} Asignando carpetas...`);
         log('📂 Asignando carpetas a los párrafos...');
         updateProgress(52);
         const result = await apiCall(cfg().asignar, 'POST', {
@@ -422,7 +493,7 @@ async function regenerarAudio(modelo) {
         state.selectedDestFolder = null;
         lockFrom('destination-section');
 
-        showProgress(`🎙️ Generando locución (${modelo})...`);
+        showProgress(`${icon('microphone')} Generando locución (${modelo})...`);
         log(`🎙️ Generando locución (${modelo})...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
@@ -438,6 +509,7 @@ async function regenerarAudio(modelo) {
         // La URL del audio es relativa al backend activo (importante en modo insumos)
         player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
         player.load();
+        renderProductoAudio(player.src);
 
         hideProgress();
         setStepStatus('revision-section', 'done');
@@ -512,7 +584,7 @@ async function handleGenerateVideo() {
     state.selectedDestFolder = destFolder;
 
     try {
-        showProgress(MODO === 'video' ? '🚀 Generando video...' : '🚀 Exportando insumos...');
+        showProgress(MODO === 'video' ? `${icon('rocketLaunch')} Generando video...` : `${icon('rocketLaunch')} Exportando insumos...`);
         log(MODO === 'video' ? '🚀 Iniciando generación de video...' : '🚀 Iniciando exportación de insumos...');
         updateProgress(50);
 
@@ -579,13 +651,14 @@ function showResult(videoData) {
     resultSection.classList.remove('hidden');
     resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const resultInfo = document.getElementById('result-info');
+    renderProductoFinal(videoData);
 
     // Modo insumos: carpeta con fragmentos + locución, sin MP4 final
     if (MODO === 'insumos') {
         resultInfo.innerHTML = `
-            <p><strong>✅ Insumos exportados</strong></p>
-            <p>📁 Carpeta creada en el canal seleccionado con los fragmentos numerados + <code>locucion.mp3</code></p>
-            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">🔗 Abrir carpeta en Google Drive</a></p>` : ''}
+            <p><strong>${icon('checkCircle')} Insumos exportados</strong></p>
+            <p>${icon('folderOpen')} Carpeta creada en el canal seleccionado con los fragmentos numerados + <code>locucion.mp3</code></p>
+            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Abrir carpeta en Google Drive</a></p>` : ''}
             <p style="color:#666;font-size:0.9rem;margin-top:15px;">Listo para editar a mano en tu editor de video.</p>
         `;
         log('🎉 ¡Insumos listos!');
@@ -595,7 +668,7 @@ function showResult(videoData) {
     const playerHtml = videoData.previewUrl
         ? `<video controls playsinline style="width:100%;max-width:320px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block;margin:0 auto 15px;" src="${videoData.previewUrl}"></video>`
         : '';
-    const nombresSesgo = { neutral: '⚖️ Neutral', favor: '💚 A favor', contra: '🔥 En contra' };
+    const nombresSesgo = { neutral: `${icon('scales')} Neutral`, favor: `${icon('heart')} A favor`, contra: `${icon('flame')} En contra` };
     const otrosSesgos = ['neutral', 'favor', 'contra'].filter(s => s !== state.sesgo);
     const botonesSesgo = otrosSesgos.map(s =>
         `<button class="btn btn-primary" style="margin-right:8px;" onclick="otroSesgo('${s}')">${nombresSesgo[s]}</button>`
@@ -603,12 +676,12 @@ function showResult(videoData) {
 
     resultInfo.innerHTML = `
         ${playerHtml}
-        <p><strong>✅ Video generado exitosamente</strong> (sesgo: ${nombresSesgo[state.sesgo]})</p>
-        <p>📁 Carpeta destino: ${videoData.folderName}</p>
-        <p>📝 Nombre del archivo: <code>${videoData.fileName}</code></p>
-        <p>⏱️ Duración: ${videoData.duration}s</p>
-        <p><a href="${videoData.driveLink}" target="_blank">🔗 Ver en Google Drive</a></p>
-        <p style="margin-top:15px;"><strong>🔁 Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
+        <p><strong>${icon('checkCircle')} Video generado exitosamente</strong> (sesgo: ${nombresSesgo[state.sesgo]})</p>
+        <p>${icon('folderOpen')} Carpeta destino: ${videoData.folderName}</p>
+        <p>${icon('pencilSimple')} Nombre del archivo: <code>${videoData.fileName}</code></p>
+        <p>${icon('hourglass')} Duración: ${videoData.duration}s</p>
+        <p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Ver en Google Drive</a></p>
+        <p style="margin-top:15px;"><strong>${icon('repeat')} Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
         <p>${botonesSesgo}</p>
         <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">
             El video está listo para publicar en redes sociales.
@@ -698,9 +771,9 @@ async function cargarHistorial() {
             header.innerHTML = `
                 <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.titulo || '(sin título)'}</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;">
-                    <span>📅 ${f.fecha || '-'}</span>
-                    <span>🎭 ${f.protagonista || '-'}</span>
-                    <span>📺 ${f.canal || '-'}</span>
+                    <span>${icon('calendar')} ${f.fecha || '-'}</span>
+                    <span>${icon('userFocus')} ${f.protagonista || '-'}</span>
+                    <span>${icon('televisionSimple')} ${f.canal || '-'}</span>
                 </div>
             `;
 
@@ -710,25 +783,25 @@ async function cargarHistorial() {
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Título</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.titulo || '')}); log('📋 Título copiado del historial')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
                     </div>
                     <p class="copy-content">${f.titulo || '-'}</p>
                 </div>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Descripción + Hashtags</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.descripcion || '')}); log('📋 Descripción copiada del historial')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
                     </div>
                     <p class="copy-content">${f.descripcion || '-'}</p>
                 </div>
                 <p><strong>Protagonista:</strong> ${f.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${f.canal || '-'}</p>
                 <p><strong>Status:</strong> ${f.status || '-'} &nbsp;|&nbsp; <strong>Archivo:</strong> ${f.nombreArchivo || '-'}</p>
-                ${f.linkRender ? `<p><a href="${f.linkRender}" target="_blank">🔗 Ver video en Drive</a></p>` : ''}
+                ${f.linkRender ? `<p><a href="${f.linkRender}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
                 ${f.guion ? `
                 <div class="copy-block" style="margin-top:10px;">
                     <div class="copy-header">
                         <label>Guion</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.guion)}); log('📋 Guion copiado del historial')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.guion)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
                     </div>
                     <p class="copy-content">${f.guion}</p>
                 </div>` : ''}
@@ -808,6 +881,7 @@ async function recuperarJobPendiente() {
     state.guion = job.script || '';
     document.getElementById('guion-editor').value = state.guion;
     actualizarStatsGuion();
+    if (state.guion) renderProductoGuion(state.guion);
     setStepStatus('script-section', 'done');
     if (job.paso === 'guion') {
         setStepStatus('guion-section', 'active');
@@ -830,6 +904,7 @@ async function recuperarJobPendiente() {
         const player = document.getElementById('audio-player');
         player.src = apiBase() + '/api/audio/' + job.audioToken + '?t=' + Date.now();
         player.load();
+        renderProductoAudio(player.src);
         setStepStatus('audio-section', 'active');
         return;
     }
@@ -843,7 +918,17 @@ function descartarJobPendiente() {
 }
 
 // Inicialización
+// Inserta los iconos declarados en HTML como <span data-icon="nombreIcono">
+function aplicarIconos() {
+    document.querySelectorAll('[data-icon]').forEach(el => {
+        el.innerHTML = (typeof ICONS !== 'undefined' && ICONS[el.dataset.icon]) || '';
+        el.classList.add('icon-slot');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    aplicarIconos();
+    document.querySelectorAll('.steps-grid .form-section[id]').forEach(el => actualizarStepBadge(el, el.dataset.status));
     log('✅ App iniciada');
     initApiKey();
     chequearJobPendiente();

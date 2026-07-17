@@ -1,4 +1,19 @@
 /* ===== Neobrutalism ===== */
+
+/* Tipografía auto-hospedada (sin CDN externo). Space Grotesk = títulos/UI, Inter = texto. */
+@font-face {
+    font-family: 'Space Grotesk';
+    src: url('fonts/space-grotesk.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Inter';
+    src: url('fonts/inter.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: swap;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -17,16 +32,22 @@
     --shadow: 5px 5px 0 var(--black);
     --shadow-lg: 8px 8px 0 var(--black);
     --border: 3px solid var(--black);
+    --font-display: 'Space Grotesk', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
 }
 
 body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-body);
     background: var(--purple);
     color: var(--black);
     min-height: 100vh;
     padding: 24px 16px;
     background-image: radial-gradient(var(--black) 1.5px, transparent 1.5px);
     background-size: 28px 28px;
+}
+
+h1, h2, h3, label, .btn, .col-title, .form-section::before, .historial-item .snapped::after {
+    font-family: var(--font-display);
 }
 
 .container {
@@ -89,6 +110,115 @@ main {
 .form-section:nth-of-type(4n+3) { background: #ffe9fb; }
 .form-section:nth-of-type(4n+4) { background: #e5f4ff; }
 
+/* Iconos (SVG inline, Phosphor bold) */
+.icon, .icon-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1em;
+    height: 1.1em;
+    vertical-align: -0.18em;
+}
+.icon svg, .icon-slot svg { width: 100%; height: 100%; }
+
+/* Productos en progreso: guion/audio/video-insumos del job actual. Opaco hasta que exista, se enciende al estar listo. */
+.productos-actual { margin-bottom: 8px; }
+.producto-slot {
+    border: var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    opacity: 0.4;
+    filter: grayscale(65%);
+    transition: opacity 0.25s ease, filter 0.25s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.producto-slot[data-status="listo"] {
+    opacity: 1;
+    filter: none;
+    border-color: #2f8f2f;
+    box-shadow: 6px 6px 0 var(--black);
+}
+.producto-slot-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    letter-spacing: -0.2px;
+    margin-bottom: 6px;
+}
+.producto-slot-body {
+    font-size: 0.85rem;
+    color: #444;
+    line-height: 1.45;
+}
+.producto-slot[data-status="listo"] .producto-slot-body { color: var(--black); }
+.producto-slot-body audio,
+.producto-slot-body video {
+    width: 100%;
+    margin-top: 4px;
+    border: 2px solid var(--black);
+    border-radius: 8px;
+}
+.producto-slot-body a { color: var(--black); font-weight: 800; text-decoration: underline; }
+
+/* Palanca (switch) de modo: Video final <-> Insumos */
+.modo-switch {
+    position: relative;
+    display: flex;
+    border: var(--border);
+    border-radius: 999px;
+    background: var(--card);
+    box-shadow: var(--shadow);
+    padding: 5px;
+    margin-bottom: 28px;
+}
+.modo-thumb {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    width: calc(50% - 5px);
+    height: calc(100% - 10px);
+    background: var(--pink);
+    border: 2px solid var(--black);
+    border-radius: 999px;
+    transition: transform 0.25s cubic-bezier(.2,.8,.2,1), background 0.25s ease;
+    z-index: 0;
+}
+.modo-switch[data-modo="insumos"] .modo-thumb {
+    transform: translateX(100%);
+    background: var(--yellow);
+}
+.modo-opt {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 12px 14px;
+    font-weight: 800;
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: -0.2px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--black);
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
+.modo-switch[data-modo="video"] .modo-opt[data-opt="video"],
+.modo-switch[data-modo="insumos"] .modo-opt[data-opt="insumos"] {
+    opacity: 1;
+}
+
 /* Layout 2 columnas: Procesos (izquierda) / Productos (derecha) */
 .layout-cols {
     display: grid;
@@ -111,36 +241,35 @@ main {
     overflow-y: auto;
     scroll-snap-type: y proximity;
     padding-right: 6px;
-    padding-top: 20px;
+    padding-top: 10px;
 }
 .scroll-snap-col > .form-section,
 .scroll-snap-col > .historial-item {
     scroll-snap-align: start;
-    scroll-margin-top: 20px;
+    scroll-margin-top: 10px;
     position: relative;
+    transition: opacity 0.18s ease, filter 0.18s ease;
 }
 
-/* Indicador del bloque actualmente centrado en el scroll magnético */
+/* Encendido/apagado: el bloque centrado en el scroll queda a color pleno, el resto opaco */
+.scroll-snap-col > .form-section,
+.scroll-snap-col > .historial-item {
+    opacity: 0.45;
+    filter: grayscale(55%);
+}
 .scroll-snap-col > .form-section.snapped,
 .scroll-snap-col > .historial-item.snapped {
+    opacity: 1;
+    filter: none;
     border-color: var(--blue) !important;
     box-shadow: 6px 6px 0 var(--black) !important;
 }
-.scroll-snap-col > .form-section.snapped::after,
-.scroll-snap-col > .historial-item.snapped::after {
-    content: "👉 Viendo";
-    position: absolute;
-    top: -14px;
-    left: 16px;
-    background: var(--blue);
-    border: 2px solid var(--black);
-    border-radius: 999px;
-    padding: 3px 12px;
-    font-size: 0.72rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    box-shadow: 2px 2px 0 var(--black);
+/* Un paso bloqueado nunca se "enciende" aunque quede centrado en el scroll */
+.steps-grid .form-section[data-status="locked"].snapped {
+    opacity: 0.5;
+    filter: grayscale(70%);
+    box-shadow: var(--shadow) !important;
+    border-color: var(--black) !important;
 }
 
 @media (max-width: 900px) {
@@ -165,24 +294,27 @@ main {
     transition: opacity 0.2s ease, filter 0.2s ease, box-shadow 0.15s ease;
 }
 
-/* Badge de estado (esquina superior derecha de cada tarjeta) */
-.steps-grid .form-section::before {
-    content: "⏳ Pendiente";
+/* Badge de estado (esquina superior derecha de cada tarjeta) — elemento real, no ::before, para poder llevar un icono SVG */
+.step-badge {
     position: absolute;
     top: -14px;
     right: 16px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
     background: var(--yellow);
     border: 2px solid var(--black);
     border-radius: 999px;
     padding: 3px 12px;
     font-size: 0.72rem;
     font-weight: 900;
+    font-family: var(--font-display);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     box-shadow: 2px 2px 0 var(--black);
 }
-.steps-grid .form-section[data-status="active"]::before { content: "🔓 Activo"; background: var(--blue); }
-.steps-grid .form-section[data-status="done"]::before { content: "✅ Listo"; background: var(--green); }
+.form-section[data-status="active"] .step-badge { background: var(--blue); }
+.form-section[data-status="done"] .step-badge { background: var(--green); }
 
 .steps-grid .form-section[data-status="locked"] {
     opacity: 0.5;
@@ -282,6 +414,18 @@ select:focus {
 
 .angle-card strong { display: block; margin-bottom: 6px; font-weight: 900; }
 .angle-card p { font-size: 0.85rem; font-weight: 600; }
+.angle-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: var(--black);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    margin-right: 4px;
+}
 
 .angle-card.selected {
     background: var(--yellow);

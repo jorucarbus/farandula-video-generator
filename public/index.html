@@ -9,13 +9,13 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎬 Farándula Video Generator</h1>
+            <h1><span class="icon-slot" data-icon="videoCamera"></span> Farándula Video Generator</h1>
             <p class="subtitle">Crea videos virales automáticamente</p>
         </header>
 
         <main>
             <div class="form-section hidden" id="apikey-banner" style="background:#fff8e1;border:1px solid #ffca28;">
-                <h2>🔑 Ingresa tu API Key</h2>
+                <h2><span class="icon-slot" data-icon="key"></span> Ingresa tu API Key</h2>
                 <p style="color:#666;font-size:0.9rem;margin-bottom:8px;">La que está en el <code>.env</code> del servidor (variable <code>API_KEY</code>).</p>
                 <div class="form-group">
                     <input type="password" id="apikey-input" placeholder="API Key..." style="width:100%;padding:10px;" onkeydown="if(event.key==='Enter')guardarApiKey()">
@@ -24,12 +24,12 @@
             </div>
 
             <div class="form-section hidden" id="lectura-section">
-                <h2>📰 Resultado de la lectura</h2>
+                <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
 
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Título</label>
-                        <button class="btn-copy" onclick="copyText('res-titulo')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
                     </div>
                     <p class="copy-content" id="res-titulo"></p>
                 </div>
@@ -37,41 +37,43 @@
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Descripción + Hashtags (para redes)</label>
-                        <button class="btn-copy" onclick="copyText('res-descripcion')">📋 Copiar</button>
+                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
                     </div>
                     <p class="copy-content" id="res-descripcion"></p>
                 </div>
 
                 <details class="cronica-details">
-                    <summary>📖 Ver crónica completa (de qué trata el tema)</summary>
+                    <summary><span class="icon-slot" data-icon="bookOpen"></span> Ver crónica completa (de qué trata el tema)</summary>
                     <p class="copy-content" id="res-cronica"></p>
                 </details>
             </div>
 
             <div class="layout-cols">
             <div class="col-procesos">
-            <h2 class="col-title">⚙️ Procesos</h2>
+            <h2 class="col-title"><span class="icon-slot" data-icon="gear"></span> Procesos</h2>
 
-            <div class="form-section" id="modo-selector" style="display:flex;gap:12px;">
-                <button type="button" id="modo-video" class="btn btn-primary" style="flex:1;" onclick="setModo('video')">
-                    🎬 Video final
+            <div class="modo-switch" id="modo-selector" data-modo="video">
+                <div class="modo-thumb"></div>
+                <button type="button" class="modo-opt" data-opt="video" onclick="setModo('video')">
+                    <span class="icon-slot" data-icon="videoCamera"></span> Video final
                 </button>
-                <button type="button" id="modo-insumos" class="btn" style="flex:1;" onclick="setModo('insumos')">
-                    ✂️ Insumos para editar
+                <button type="button" class="modo-opt" data-opt="insumos" onclick="setModo('insumos')">
+                    <span class="icon-slot" data-icon="scissors"></span> Insumos
                 </button>
             </div>
 
             <div class="form-section hidden" id="recuperar-banner" style="background:#e8f4fd;border:1px solid #3498db;">
-                <p style="margin:0 0 10px;"><strong>🔁 Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
+                <p style="margin:0 0 10px;"><strong><span class="icon-slot" data-icon="repeat"></span> Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()">▶️ Continuar donde quedó</button>
-                    <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()">🗑️ Empezar de cero</button>
+                    <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()"><span class="icon-slot" data-icon="play"></span> Continuar donde quedó</button>
+                    <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()"><span class="icon-slot" data-icon="trash"></span> Empezar de cero</button>
                 </div>
             </div>
 
             <div class="steps-grid scroll-snap-col">
 
             <div class="form-section" id="fuente-section" data-status="active">
+                <span class="step-badge"></span>
                 <h2>Paso 1: Proporciona la fuente</h2>
                 <div class="form-group">
                     <label for="source-type">Tipo de fuente:</label>
@@ -100,39 +102,40 @@
                 </div>
 
                 <button class="btn btn-primary" onclick="handleRead()">
-                    📖 Leer y procesar
+                    <span class="icon-slot" data-icon="bookOpen"></span> Leer y procesar
                 </button>
             </div>
 
             <div class="form-section" id="script-section" data-status="locked">
+                <span class="step-badge"></span>
                 <h2>Paso 2: Elige el ángulo</h2>
                 <div class="angles-grid">
                     <div class="angle-card" onclick="selectAngle(1)">
-                        <strong>1️⃣ Lenguaje Corporal</strong>
+                        <strong><span class="angle-num">1</span> Lenguaje Corporal</strong>
                         <p>Lo que nadie notó en el video</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(2)">
-                        <strong>2️⃣ Pasado/Hipocresía</strong>
+                        <strong><span class="angle-num">2</span> Pasado/Hipocresía</strong>
                         <p>Contradice lo que dijo antes</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(3)">
-                        <strong>3️⃣ Víctimas/Terceros</strong>
+                        <strong><span class="angle-num">3</span> Víctimas/Terceros</strong>
                         <p>La reacción del entorno</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(4)">
-                        <strong>4️⃣ Conspiración/Dinero</strong>
+                        <strong><span class="angle-num">4</span> Conspiración/Dinero</strong>
                         <p>¿Qué se intenta tapar?</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(5)">
-                        <strong>5️⃣ Ruptura de Expectativas</strong>
+                        <strong><span class="angle-num">5</span> Ruptura de Expectativas</strong>
                         <p>Te dejará frío</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(6)">
-                        <strong>6️⃣ Combinado</strong>
+                        <strong><span class="angle-num">6</span> Combinado</strong>
                         <p>Mix de varios enfoques</p>
                     </div>
                     <div class="angle-card" onclick="selectAngle(7)">
-                        <strong>7️⃣ Tu enfoque</strong>
+                        <strong><span class="angle-num">7</span> Tu enfoque</strong>
                         <p>Escribe el tuyo propio</p>
                     </div>
                 </div>
@@ -143,23 +146,24 @@
                 </div>
 
                 <button class="btn btn-primary" onclick="handleGenerateScript()">
-                    ✍️ Generar guion
+                    <span class="icon-slot" data-icon="pencilSimple"></span> Generar guion
                 </button>
             </div>
 
             <div class="form-section" id="guion-section" data-status="locked">
-                <h2>📜 Paso 3: Revisa y aprueba el guion</h2>
+                <span class="step-badge"></span>
+                <h2><span class="icon-slot" data-icon="article"></span> Paso 3: Revisa y aprueba el guion</h2>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label id="guion-stats">Guion</label>
-                        <button class="btn-copy" onclick="copyGuion()">📋 Copiar</button>
+                        <button class="btn-copy" onclick="copyGuion()"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
                     </div>
                     <textarea id="guion-editor" rows="10" style="width:100%;resize:vertical;" oninput="actualizarStatsGuion()"></textarea>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
-                    <button class="btn btn-success" onclick="aprobarGuion()">✅ Aprobar y continuar</button>
-                    <button class="btn btn-primary" onclick="regenerarGuion()">🔄 Regenerar (mismo ángulo)</button>
-                    <button class="btn btn-secondary" onclick="cambiarAngulo()">🎯 Cambiar ángulo</button>
+                    <button class="btn btn-success" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
+                    <button class="btn btn-primary" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
+                    <button class="btn btn-secondary" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
                 </div>
                 <p style="color:#666;font-size:0.85rem;margin-top:8px;">
                     Puedes editar el texto directamente antes de aprobar. Solo el guion aprobado pasa a locución y edición.
@@ -167,21 +171,23 @@
             </div>
 
             <div class="form-section" id="revision-section" data-status="locked">
+                <span class="step-badge"></span>
                 <h2>Paso 4: Revisa las asignaciones de carpetas</h2>
                 <div id="aviso-protagonista" class="hidden" style="background:#ffe5e5;border:1px solid #e74c3c;border-radius:8px;padding:10px 14px;margin-bottom:12px;color:#c0392b;font-weight:bold;"></div>
                 <p style="color:#666;font-size:0.9rem;margin-bottom:10px;">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
                 <div id="lista-asignaciones"></div>
-                <button class="btn btn-success" style="margin-top:12px;" onclick="confirmarAsignaciones()">✅ Confirmar asignaciones</button>
+                <button class="btn btn-success" style="margin-top:12px;" onclick="confirmarAsignaciones()"><span class="icon-slot" data-icon="check"></span> Confirmar asignaciones</button>
             </div>
 
             <div class="form-section" id="audio-section" data-status="locked">
+                <span class="step-badge"></span>
                 <h2>Paso 5: Escucha y aprueba la locución</h2>
                 <p id="audio-info" style="color:#666;font-size:0.9rem;margin-bottom:8px;"></p>
                 <audio id="audio-player" controls style="width:100%;margin-bottom:12px;"></audio>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button class="btn btn-success" onclick="aprobarAudio()">✅ Aprobar locución</button>
-                    <button class="btn btn-primary" onclick="regenerarAudio('eleven_v3')">🔄 Regenerar (v3, actúa marcas)</button>
-                    <button class="btn btn-secondary" onclick="regenerarAudio('eleven_multilingual_v2')">🗣️ Regenerar con v2 (acento forzado español)</button>
+                    <button class="btn btn-success" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
+                    <button class="btn btn-primary" onclick="regenerarAudio('eleven_v3')"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (v3, actúa marcas)</button>
+                    <button class="btn btn-secondary" onclick="regenerarAudio('eleven_multilingual_v2')"><span class="icon-slot" data-icon="microphone"></span> Regenerar con v2 (acento forzado español)</button>
                 </div>
                 <p style="color:#666;font-size:0.85rem;margin-top:8px;">
                     v3 actúa las emociones pero a veces cambia el acento. v2 fuerza el idioma (más estable) pero lee plano.
@@ -189,6 +195,7 @@
             </div>
 
             <div class="form-section" id="destination-section" data-status="locked">
+                <span class="step-badge"></span>
                 <h2>Paso 6: Selecciona carpeta de destino</h2>
                 <div class="form-group">
                     <label for="dest-folder">Carpeta en Google Drive:</label>
@@ -198,7 +205,7 @@
                 </div>
 
                 <button class="btn btn-success" onclick="handleGenerateVideo()">
-                    🚀 Generar video completo
+                    <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
                 </button>
             </div>
 
@@ -206,9 +213,25 @@
             </div><!-- /.col-procesos -->
 
             <div class="col-productos">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                <h2 class="col-title" style="margin-bottom:0;">📦 Historial</h2>
-                <button class="btn-copy" type="button" onclick="cargarHistorial()" title="Actualizar historial">🔄</button>
+            <h2 class="col-title"><span class="icon-slot" data-icon="listChecks"></span> Productos</h2>
+            <div class="productos-actual" id="productos-actual">
+                <div class="producto-slot" id="producto-guion" data-status="pendiente">
+                    <div class="producto-slot-head"><span class="icon-slot" data-icon="article"></span> Guion</div>
+                    <div class="producto-slot-body">Aún no generado</div>
+                </div>
+                <div class="producto-slot" id="producto-audio" data-status="pendiente">
+                    <div class="producto-slot-head"><span class="icon-slot" data-icon="microphone"></span> Audio</div>
+                    <div class="producto-slot-body">Aún no generado</div>
+                </div>
+                <div class="producto-slot" id="producto-final" data-status="pendiente">
+                    <div class="producto-slot-head"><span class="icon-slot" data-icon="videoCamera"></span> <span id="producto-final-label">Video</span></div>
+                    <div class="producto-slot-body">Aún no generado</div>
+                </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;">
+                <h2 class="col-title" style="margin-bottom:0;"><span class="icon-slot" data-icon="package"></span> Historial</h2>
+                <button class="btn-copy" type="button" onclick="cargarHistorial()" title="Actualizar historial"><span class="icon-slot" data-icon="arrowsClockwise"></span></button>
             </div>
             <div class="form-section" id="historial-section">
                 <div id="historial-lista" class="scroll-snap-col"></div>
@@ -226,17 +249,17 @@
                 <div class="hidden" id="error-actions" style="margin-top:14px;">
                     <p style="font-weight:bold;color:#c0392b;margin-bottom:8px;">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <button class="btn btn-primary" id="btn-reintentar" type="button">🔄 Reintentar este paso</button>
-                        <button class="btn btn-secondary" id="btn-volver" type="button">⬅️ Volver atrás</button>
+                        <button class="btn btn-primary" id="btn-reintentar" type="button"><span class="icon-slot" data-icon="arrowsClockwise"></span> Reintentar este paso</button>
+                        <button class="btn btn-secondary" id="btn-volver" type="button"><span class="icon-slot" data-icon="arrowLeft"></span> Volver atrás</button>
                     </div>
                 </div>
             </div>
 
             <div class="result-section hidden" id="result-section">
-                <h2>✅ Video generado</h2>
+                <h2><span class="icon-slot" data-icon="checkCircle"></span> Video generado</h2>
                 <div class="result-info" id="result-info"></div>
                 <button class="btn btn-secondary" onclick="location.reload()">
-                    🔄 Generar otro video
+                    <span class="icon-slot" data-icon="arrowsClockwise"></span> Generar otro video
                 </button>
             </div>
         </main>
@@ -246,6 +269,7 @@
         </footer>
     </div>
 
+    <script src="icons.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
