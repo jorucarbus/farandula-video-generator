@@ -30,7 +30,10 @@ async function restaurar(localPath, nombreDrive) {
   try {
     if (fs.existsSync(localPath) && fs.statSync(localPath).size > 0) return false;
     const archivo = await buscarArchivo(nombreDrive);
-    if (!archivo) return false;
+    if (!archivo) {
+      console.log(`ℹ️ ${nombreDrive} no existe todavía en la carpeta caché de Drive (nada que restaurar)`);
+      return false;
+    }
 
     const res = await cliente().files.get(
       { fileId: archivo.id, alt: 'media', supportsAllDrives: true },

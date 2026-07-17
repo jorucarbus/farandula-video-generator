@@ -63,15 +63,15 @@ UI ya NO es wizard: los 6 pasos viven siempre en el DOM dentro de `.steps-grid` 
 
 Rehacer un paso ya completado (editar y reenviar, ej. releer fuente con guion/audio ya generados) ahora invalida y re-bloquea automáticamente todo lo posterior. `STEP_ORDER` + `lockFrom(stepId)` en `public/app.js` — se llama al INICIO de `leerFuente()`, `handleGenerateScript()`, `aprobarGuion()` y `regenerarAudio()`, antes de la llamada a la API, bloqueando ese paso y todos los siguientes + ocultando `result-section` si estaba visible. Como los pasos "done" no tienen `pointer-events:none` (solo los "locked" lo tienen), el usuario ya podía reenviar un paso anterior — lo que faltaba era esta invalidación en cascada. `otroSesgo()` se simplificó para reusar `lockFrom` vía `leerFuente()`. Verificado en browser real: releer fuente con guion ya generado bloqueó guion/revisión/audio/destino al instante (antes de que terminara la nueva lectura) y los reactivó correctamente al completar.
 
-## Bloque D en progreso (2026-07-17) — falta verificar restore, no commiteado aún
+## Bloque D completo y verificado (2026-07-17)
 
 Objetivo: `historial.json` (rotación de clips) y `data/jobs.json` (jobs Bloque A) viven solo en el
 disco efímero de Railway — un redeploy los borra. Se agregó respaldo/restauración en Drive:
 
 - `driveCache.js` (nuevo) — `respaldar(localPath, nombreDrive)` sube/actualiza el archivo en la
   carpeta caché de Drive; `restaurar(localPath, nombreDrive)` lo trae de vuelta SOLO si el archivo
-  local no existe o está vacío (nunca pisa progreso reciente). Usa OAuth (misma cuenta que sube
-  renders) porque el Service Account no tiene cuota para crear archivos.
+  local no existe o está vacío (nunca pisa progreso reciente). Preferencia OAuth (misma cuenta que
+  sube renders), con fallback al Service Account si no hay OAuth configurado en el `.env` local.
 - `drive.js` — export agregado de `getDrive`/`getDriveOAuth` (antes privados) para que `driveCache.js`
   los reuse.
 - `seleccion.js` — `guardarHistorial()` ahora llama `driveCache.respaldar()` fire-and-forget.
@@ -82,21 +82,27 @@ disco efímero de Railway — un redeploy los borra. Se agregó respaldo/restaur
 MISMO (la raíz que ya comparte renders/audios/recursos), NO una subcarpeta — confirmado con
 `files.get`. Se creó una subcarpeta dedicada **`cache-estado`** dentro de Redes_Canales
 (id `1s0OXuermFR4_DbNZP3gWFYDAV1xvf5ct`) y `driveCache.js` usa ESE id como default
-(`GOOGLE_DRIVE_CACHE_FOLDER_ID` la puede sobreescribir). Un `jobs.json` que se subió por error
-directo a la raíz de Redes_Canales ya se movió a `cache-estado`.
+(`GOOGLE_DRIVE_CACHE_FOLDER_ID` la puede sobreescribir).
 
-**Verificado:** `respaldar()` funciona — se confirmó con `files.list` que `jobs.json` queda dentro
-de `cache-estado` (no en la raíz) tras crear un job real vía `/api/read`.
+**⚠️ REQUISITO DE PERMISO (hallado y resuelto 2026-07-17)**: si una máquina no tiene las variables
+`GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN` en su `.env` local (p.ej. esta Mac no las tenía),
+`driveCache` cae al Service Account — y el Service Account NO tenía acceso a `cache-estado` (a
+diferencia de `renders`/`recursos`/`famosos`, que sí están compartidas explícitamente). Daba
+`File not found` sin loguear nada (bug de silencio ya corregido: `restaurar()` ahora loguea
+`ℹ️ ... no existe todavía en la carpeta caché` cuando el archivo no aparece). **Fix aplicado**:
+se compartió `cache-estado` como Editor con `farandula-generator@n8n-automatizacion-chismex.iam.gserviceaccount.com`
+desde Drive UI. Si se despliega a Railway sin las variables OAuth configuradas ahí, este mismo
+permiso sobre `cache-estado` es lo que hace que el fallback a Service Account funcione igual.
 
-**Falta verificar (sesión cortada aquí, retomar en la Mac):** el flujo `restaurar()` completo —
-borrar `data/jobs.json` local, reiniciar `node server.js`, confirmar que el arranque lo trae de
-vuelta de Drive antes de que la app lo necesite. Se alcanzó a borrar el archivo local para probar
-pero se interrumpió antes de reiniciar el server; el archivo ya se restauró manualmente a mano
-(está sano, no falta nada), la prueba end-to-end del restore queda pendiente.
+**Verificado end-to-end (2026-07-17, en la Mac)**:
+1. `respaldar()` — confirmado antes (Windows): sube/actualiza `jobs.json` en `cache-estado`.
+2. `restaurar()` — borré `data/jobs.json` local, reinicié `node server.js`, el arranque lo trajo
+   solo de Drive antes de que la app lo necesitara (log `♻️ Restaurado desde Drive: jobs.json`),
+   con el contenido más reciente subido desde la sesión de Windows. Ciclo completo funciona.
 
-**Sin commitear todavía**: `driveCache.js`, `drive.js`, `seleccion.js`, `jobStore.js`, `server.js`
-tienen cambios de Bloque D sin commit en `test-persistencia`. Revisar `git status`/`git diff` al
-retomar antes de commitear (verificar primero el restore).
+Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: decidir cuándo mergear
+a `main` (regla: solo cuando el usuario confirme que todo funciona óptimo, ver memoria
+`farandula_test_version_rule`).
 
 ## Pendiente Verificar (Railway Live — main, sin tocar por ahora)
 

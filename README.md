@@ -144,12 +144,13 @@ Branch separada, NO tocar `main`/Railway hasta confirmar que funciona óptimo. V
 - Como los pasos "done" no tienen `pointer-events:none`, el usuario ya podía reenviar un paso anterior — faltaba esta invalidación en cascada para que los pasos posteriores no quedaran mostrando datos viejos.
 - **Verificado en browser real**: releer fuente con guion ya generado bloqueó guion/revisión/audio/destino al instante y los reactivó correctamente al completar la nueva lectura.
 
-**Bloque D en progreso — respaldo en Drive de historial/jobs (falta verificar restore):**
+**Bloque D completo — respaldo/restauración en Drive de historial/jobs:**
 - `driveCache.js` (nuevo): `respaldar()`/`restaurar()` de archivos de estado (`historial.json`, `data/jobs.json`) contra una subcarpeta dedicada en Drive, porque Railway borra el disco en cada redeploy.
 - ⚠️ La carpeta `Redes_Canales` (id `1irTudEARQWOrJr3y911Hwl_1VbvQqNP5`) es la raíz compartida con renders/audios/recursos, NO una carpeta de caché — se creó la subcarpeta dedicada **`cache-estado`** (id `1s0OXuermFR4_DbNZP3gWFYDAV1xvf5ct`) para no ensuciar la raíz.
-- `respaldar()` verificado (jobs.json queda en `cache-estado` tras crear un job real). `restaurar()` (traer el archivo de vuelta si el disco llegó vacío) implementado pero **sin verificar end-to-end todavía** — pendiente para la próxima sesión. Detalle completo en `.claude/CLAUDE.md`.
+- ⚠️ **Requisito de permiso**: si la máquina no tiene OAuth configurado en `.env`, `driveCache` cae al Service Account — y ese account necesita compartida `cache-estado` como Editor explícitamente (no la hereda de `Redes_Canales`). Si falta, `restaurar()` fallaba en silencio (bug de logging ya corregido).
+- `respaldar()` y `restaurar()` **verificados end-to-end** (2026-07-17): borré `data/jobs.json` local, reinicié el server, el arranque lo trajo solo de Drive antes de que la app lo necesitara, con el contenido más reciente.
 
-**Pendiente de este bloque de trabajo**: verificar `restaurar()` (borrar `data/jobs.json` local, reiniciar server, confirmar que vuelve de Drive antes de que la app lo necesite); commitear los archivos de Bloque D en `test-persistencia` (aún sin commit al cierre de esta sesión).
+Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: decidir el merge a `main` (solo cuando confirmes que todo funciona óptimo).
 
 ## Estado (2026-07-13)
 
