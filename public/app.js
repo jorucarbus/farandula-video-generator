@@ -656,6 +656,7 @@ async function cargarHistorial() {
             return;
         }
         cont.innerHTML = '';
+        cont.style.cssText = 'max-height:190px;overflow-y:auto;padding-right:4px;';
         filas.forEach((f, i) => {
             const item = document.createElement('div');
             item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;overflow:hidden;';
