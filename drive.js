@@ -131,4 +131,6 @@ module.exports = {
   subirVideo,
   nombreCarpeta,
   hayOAuth,
+  getDrive,
+  getDriveOAuth,
 };

@@ -14,6 +14,7 @@ const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const subtitulos = require('./subtitulos');
 const jobStore = require('./jobStore');
+const driveCache = require('./driveCache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -593,6 +594,11 @@ setInterval(limpiarCache, UNA_HORA);
 
 // Iniciar servidor
 initializeDrive();
+
+// Bloque D: restaurar historial.json/jobs.json desde Drive si el disco llegó vacío
+// (Railway lo borra en cada redeploy). Fire-and-forget: no bloquea el arranque.
+driveCache.restaurar(path.join(__dirname, 'historial.json'), 'historial.json');
+driveCache.restaurar(path.join(__dirname, 'data', 'jobs.json'), 'jobs.json');
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);

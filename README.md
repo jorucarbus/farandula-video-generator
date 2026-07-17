@@ -133,7 +133,23 @@ Branch separada, NO tocar `main`/Railway hasta confirmar que funciona óptimo. V
 - `sheets.leerHistorial(20)` lee `A2:K` y devuelve objetos con guion incluido.
 - `GET /api/historial` + `public/app.js: cargarHistorial()` — tarjetas neobrutalism, clic en título expande descripción+hashtags/protagonista/canal/status/link/guion (copiable).
 
-**Pendiente de este bloque de trabajo** (Bloques B/C/D del plan, no empezados): UI responsive 2 columnas desktop / 1 columna mobile sin wizard (todos los pasos visibles, verde al completar); navegación libre entre pasos ya completados (hoy solo hay "continuar desde el último pendiente", no saltar a un paso específico arbitrario); carpeta caché en Drive dentro de `Redes_Canales` (id `1irTudEARQWOrJr3y911Hwl_1VbvQqNP5`) para backup de historial/guiones/audios/videos.
+**Bloque B completo — UI no-wizard (grid de pasos):**
+- Los 6 pasos del pipeline viven siempre en el DOM dentro de `.steps-grid` (`public/index.html`), grid 2 columnas desktop / 1 columna móvil (breakpoint 900px, `public/style.css`).
+- Cada tarjeta tiene `data-status="locked|active|done"` (`setStepStatus()` en `public/app.js`): locked = `pointer-events:none` + gris + badge ⏳, active = badge 🔓, done = borde verde + badge ✅.
+- El wizard viejo (`showSection()`, ocultaba todo menos un paso) se eliminó. Progreso/errores ahora en barra flotante fija al fondo (`showProgress()`/`hideProgress()`) que no tapa el grid.
+- **Verificado en browser real**: flujo lectura→ángulo con estados y barra flotante funcionando; grid confirmado en 2 columnas (526px c/u) y 1 columna en mobile.
+
+**Bloque C completo — rehacer un paso invalida lo posterior:**
+- `STEP_ORDER` + `lockFrom(stepId)` en `public/app.js`, llamado al INICIO de `leerFuente()`, `handleGenerateScript()`, `aprobarGuion()` y `regenerarAudio()` (antes de la llamada a la API): bloquea ese paso + todos los siguientes y oculta `result-section` si estaba visible.
+- Como los pasos "done" no tienen `pointer-events:none`, el usuario ya podía reenviar un paso anterior — faltaba esta invalidación en cascada para que los pasos posteriores no quedaran mostrando datos viejos.
+- **Verificado en browser real**: releer fuente con guion ya generado bloqueó guion/revisión/audio/destino al instante y los reactivó correctamente al completar la nueva lectura.
+
+**Bloque D en progreso — respaldo en Drive de historial/jobs (falta verificar restore):**
+- `driveCache.js` (nuevo): `respaldar()`/`restaurar()` de archivos de estado (`historial.json`, `data/jobs.json`) contra una subcarpeta dedicada en Drive, porque Railway borra el disco en cada redeploy.
+- ⚠️ La carpeta `Redes_Canales` (id `1irTudEARQWOrJr3y911Hwl_1VbvQqNP5`) es la raíz compartida con renders/audios/recursos, NO una carpeta de caché — se creó la subcarpeta dedicada **`cache-estado`** (id `1s0OXuermFR4_DbNZP3gWFYDAV1xvf5ct`) para no ensuciar la raíz.
+- `respaldar()` verificado (jobs.json queda en `cache-estado` tras crear un job real). `restaurar()` (traer el archivo de vuelta si el disco llegó vacío) implementado pero **sin verificar end-to-end todavía** — pendiente para la próxima sesión. Detalle completo en `.claude/CLAUDE.md`.
+
+**Pendiente de este bloque de trabajo**: verificar `restaurar()` (borrar `data/jobs.json` local, reiniciar server, confirmar que vuelve de Drive antes de que la app lo necesite); commitear los archivos de Bloque D en `test-persistencia` (aún sin commit al cierre de esta sesión).
 
 ## Estado (2026-07-13)
 

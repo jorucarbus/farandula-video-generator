@@ -131,7 +131,11 @@ Service Account de Google Cloud con permiso en:
 ## Próximas Mejoras
 
 ### Corto Plazo (1-2 sesiones)
-- [x] Tabla jobId para pasar estado sin sesión HTTP — hecho en rama `test-persistencia` de v2 (2026-07-16), pendiente merge a `main`. Ver `.claude/CLAUDE.md` en ese repo.
+- [x] Tabla jobId para pasar estado sin sesión HTTP — Bloque A, rama `test-persistencia` de v2 (2026-07-16)
+- [x] UI no-wizard: grid de pasos 2 cols desktop / 1 col mobile, verde al completar — Bloque B, misma rama
+- [x] Rehacer un paso invalida en cascada lo posterior — Bloque C, misma rama
+- [~] Respaldo en Drive de historial/jobs (Railway borra el disco en cada redeploy) — Bloque D, `respaldar()` verificado, `restaurar()` implementado sin verificar aún. Ver `.claude/CLAUDE.md` en ese repo.
+- [ ] Los 4 bloques siguen en `test-persistencia`, pendiente merge a `main` (regla: no tocar main/Railway hasta confirmar que funciona óptimo)
 - [ ] Integrar módulos v3 a v2 (sincronización exacta)
 - [ ] Test e2e v2 + v3 con contenido real
 
@@ -196,7 +200,7 @@ node test-e2e-apis.js         # 6 endpoints con APIs reales
 | **Confiabilidad** | Alta | Alta | Alta |
 | **Líneas Código** | 2189 | 1361 | ~1500 |
 
-**Siguiente Check-in**: 2026-07-17 (converger v3 mejoras a v2)
+**Siguiente Check-in**: verificar `restaurar()` de Bloque D (rama `test-persistencia`) y evaluar merge a `main`; converger v3 mejoras a v2
 
 ---
 

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const driveCache = require('./driveCache');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
@@ -20,6 +21,8 @@ function cargar() {
 function guardar(jobs) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(JOBS_FILE, JSON.stringify(jobs, null, 2));
+  // Bloque D: respaldo en Drive (fire-and-forget, Railway borra el disco en cada redeploy)
+  driveCache.respaldar(JOBS_FILE, 'jobs.json');
 }
 
 function podar(jobs) {
