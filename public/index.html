@@ -206,10 +206,12 @@
             </div><!-- /.col-procesos -->
 
             <div class="col-productos">
-            <h2 class="col-title">📦 Historial</h2>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <h2 class="col-title" style="margin-bottom:0;">📦 Historial</h2>
+                <button class="btn-copy" type="button" onclick="cargarHistorial()" title="Actualizar historial">🔄</button>
+            </div>
             <div class="form-section" id="historial-section">
-                <button class="btn btn-secondary" type="button" onclick="cargarHistorial()">🔄 Cargar historial</button>
-                <div id="historial-lista" class="scroll-snap-col" style="margin-top:12px;"></div>
+                <div id="historial-lista" class="scroll-snap-col"></div>
             </div>
             </div><!-- /.col-productos -->
             </div><!-- /.layout-cols -->

@@ -57,6 +57,7 @@ function guardarApiKey() {
   localStorage.setItem('api_key', key);
   document.getElementById('apikey-banner').classList.add('hidden');
   chequearJobPendiente();
+  cargarHistorial();
 }
 
 function pedirApiKeyDeNuevo() {
@@ -643,22 +644,40 @@ function copyText(elementId) {
     });
 }
 
-// Scroll magnético: marca con clase 'snapped' el bloque actualmente centrado en el viewport del contenedor.
-// rootMargin negativo arriba/abajo deja solo una franja central angosta: el bloque que la cruza es "el visible".
+// Scroll magnético: marca con clase 'snapped' SOLO el bloque más cercano al centro del contenedor
+// (por distancia de centros, no por intersección — evita que varios queden "encendidos" a la vez).
 function observarSnap(container, itemSelector) {
     if (!container) return;
-    const items = container.querySelectorAll(itemSelector);
-    if (!items.length) return;
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => entry.target.classList.toggle('snapped', entry.isIntersecting));
-    }, { root: container, rootMargin: '-40% 0px -40% 0px', threshold: 0 });
-    items.forEach(item => observer.observe(item));
+    function actualizar() {
+        const items = container.querySelectorAll(itemSelector);
+        if (!items.length) return;
+        const contRect = container.getBoundingClientRect();
+        const contCenter = contRect.top + contRect.height / 2;
+        let masCercano = null;
+        let menorDistancia = Infinity;
+        items.forEach(item => {
+            const r = item.getBoundingClientRect();
+            const centro = r.top + r.height / 2;
+            const distancia = Math.abs(centro - contCenter);
+            if (distancia < menorDistancia) { menorDistancia = distancia; masCercano = item; }
+        });
+        items.forEach(item => item.classList.toggle('snapped', item === masCercano));
+    }
+    let esperando = false;
+    container.addEventListener('scroll', () => {
+        if (esperando) return;
+        esperando = true;
+        requestAnimationFrame(() => { actualizar(); esperando = false; });
+    });
+    actualizar();
 }
 
 // Historial real desde la Hoja de Cálculo: título, descripción+hashtags, guion, etc.
+// Se carga solo (sin botón); muestra las 3 más recientes visibles y el resto con scroll magnético.
 // Click en el título expande/colapsa el resto de la info de ese video.
 async function cargarHistorial() {
     const cont = document.getElementById('historial-lista');
+    cont.style.maxHeight = '';
     cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
     try {
         const result = await apiCall('/historial');
@@ -668,14 +687,15 @@ async function cargarHistorial() {
             return;
         }
         cont.innerHTML = '';
+        const items = [];
         filas.forEach((f, i) => {
             const item = document.createElement('div');
             item.className = 'historial-item';
             item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
 
             const header = document.createElement('div');
-            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;font-weight:bold;display:flex;justify-content:space-between;gap:8px;border-radius:6px 6px 0 0;';
-            header.innerHTML = `<span>${f.titulo || '(sin título)'}</span><span style="color:#666;font-weight:normal;">${f.fecha || ''}</span>`;
+            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+            header.innerHTML = `<div style="font-weight:900;">${f.titulo || '(sin título)'}</div><div style="color:#666;font-weight:600;font-size:0.8rem;margin-top:2px;">${f.fecha || ''}</div>`;
 
             const body = document.createElement('div');
             body.style.cssText = 'padding:14px;display:none;';
@@ -714,7 +734,14 @@ async function cargarHistorial() {
             item.appendChild(header);
             item.appendChild(body);
             cont.appendChild(item);
+            items.push(item);
         });
+        // Alto exacto para que asomen 3 tarjetas (por título/fecha en cada una) y el resto quede con scroll
+        const n = Math.min(3, items.length);
+        let alto = 20; // padding-top del contenedor (deja espacio para el badge "Viendo")
+        for (let i = 0; i < n; i++) alto += items[i].offsetHeight;
+        alto += 8 * (n - 1); // separación entre tarjetas (margin-bottom)
+        cont.style.maxHeight = alto + 'px';
         observarSnap(cont, '.historial-item');
     } catch (error) {
         cont.innerHTML = `<p style="color:#c0392b;">Error cargando historial: ${error.message}</p>`;
@@ -811,5 +838,6 @@ document.addEventListener('DOMContentLoaded', () => {
     log('✅ App iniciada');
     initApiKey();
     chequearJobPendiente();
+    if (API_KEY) cargarHistorial();
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section');
 });
