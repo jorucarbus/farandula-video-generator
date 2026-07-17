@@ -694,8 +694,15 @@ async function cargarHistorial() {
             item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
 
             const header = document.createElement('div');
-            header.style.cssText = 'padding:10px 14px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
-            header.innerHTML = `<div style="font-weight:900;">${f.titulo || '(sin título)'}</div><div style="color:#666;font-weight:600;font-size:0.8rem;margin-top:2px;">${f.fecha || ''}</div>`;
+            header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+            header.innerHTML = `
+                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.titulo || '(sin título)'}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;">
+                    <span>📅 ${f.fecha || '-'}</span>
+                    <span>🎭 ${f.protagonista || '-'}</span>
+                    <span>📺 ${f.canal || '-'}</span>
+                </div>
+            `;
 
             const body = document.createElement('div');
             body.style.cssText = 'padding:14px;display:none;';
@@ -736,11 +743,13 @@ async function cargarHistorial() {
             cont.appendChild(item);
             items.push(item);
         });
-        // Alto exacto para que asomen 3 tarjetas (por título/fecha en cada una) y el resto quede con scroll
-        const n = Math.min(3, items.length);
+        // Alto exacto: una tarjeta completa + un pedacito de la siguiente (asoma, invita a scrollear)
         let alto = 20; // padding-top del contenedor (deja espacio para el badge "Viendo")
-        for (let i = 0; i < n; i++) alto += items[i].offsetHeight;
-        alto += 8 * (n - 1); // separación entre tarjetas (margin-bottom)
+        alto += items[0].offsetHeight;
+        if (items.length > 1) {
+            alto += 8; // separación (margin-bottom) hasta la siguiente tarjeta
+            alto += Math.max(20, Math.round(items[1].offsetHeight * 0.3)); // pedacito visible de la siguiente
+        }
         cont.style.maxHeight = alto + 'px';
         observarSnap(cont, '.historial-item');
     } catch (error) {
