@@ -23,31 +23,6 @@
                 <button class="btn btn-primary" onclick="guardarApiKey()">Guardar y continuar</button>
             </div>
 
-            <div class="form-section hidden" id="lectura-section">
-                <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Título</label>
-                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-titulo"></p>
-                </div>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Descripción + Hashtags (para redes)</label>
-                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-descripcion"></p>
-                </div>
-
-                <details class="cronica-details">
-                    <summary><span class="icon-slot" data-icon="bookOpen"></span> Ver crónica completa (de qué trata el tema)</summary>
-                    <p class="copy-content" id="res-cronica"></p>
-                </details>
-            </div>
-
             <div class="layout-cols">
             <div class="col-procesos">
             <h2 class="col-title"><span class="icon-slot" data-icon="gear"></span> Procesos</h2>
@@ -249,6 +224,32 @@
 
             <div class="col-productos">
             <h2 class="col-title"><span class="icon-slot" data-icon="listChecks"></span> Productos</h2>
+
+            <div class="form-section hidden" id="lectura-section">
+                <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Título</label>
+                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-titulo"></p>
+                </div>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Descripción + Hashtags (para redes)</label>
+                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-descripcion"></p>
+                </div>
+
+                <details class="cronica-details">
+                    <summary><span class="icon-slot" data-icon="bookOpen"></span> Ver crónica completa (de qué trata el tema)</summary>
+                    <p class="copy-content" id="res-cronica"></p>
+                </details>
+            </div>
+
             <div class="productos-actual" id="productos-actual">
                 <div class="producto-slot" id="producto-guion" data-status="pendiente">
                     <div class="producto-slot-head"><span class="icon-slot" data-icon="article"></span> Guion</div>
