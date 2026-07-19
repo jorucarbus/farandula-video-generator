@@ -636,6 +636,11 @@ async function handleGenerateVideo() {
                     protagonista: state.sourceData?.protagonista,
                     linkFuente: state.sourceData?.linkFuente,
                 },
+                efectos: {
+                    zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
+                    zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
+                    espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
+                },
             });
             log('✅ Insumos exportados');
         }
