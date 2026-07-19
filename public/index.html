@@ -70,6 +70,16 @@
                 </div>
             </div>
 
+            <div class="pasos-nav">
+                <button type="button" class="pasos-nav-btn" onclick="pasoAnterior()" aria-label="Paso anterior">
+                    <span class="icon-slot" data-icon="arrowLeft"></span>
+                </button>
+                <span class="pasos-nav-indicador" id="pasos-nav-indicador">Paso 1 de 6</span>
+                <button type="button" class="pasos-nav-btn" onclick="pasoSiguiente()" aria-label="Paso siguiente">
+                    <span class="icon-slot" data-icon="arrowLeft" style="transform:rotate(180deg)"></span>
+                </button>
+            </div>
+
             <div class="steps-grid scroll-snap-col">
 
             <div class="form-section" id="fuente-section" data-status="active">
@@ -201,6 +211,31 @@
                     <label for="dest-folder">Carpeta en Google Drive:</label>
                     <select id="dest-folder">
                         <option value="">Cargando carpetas...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="efecto-zoom">Efecto zoom (activo toda la toma):</label>
+                    <select id="efecto-zoom">
+                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="todos">Todos los clips</option>
+                        <option value="alternado">Alternado (uno sí, uno no)</option>
+                        <option value="intercalado">Intercalado (in / out)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="zoom-pct-group">
+                    <label for="zoom-pct">Intensidad del zoom (%):</label>
+                    <input type="number" id="zoom-pct" value="20" min="5" max="60" step="5">
+                </div>
+
+                <div class="form-group">
+                    <label for="efecto-espejo">Efecto espejo (flip horizontal):</label>
+                    <select id="efecto-espejo">
+                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="todos">Todos los clips</option>
+                        <option value="alternado">Alternado (uno sí, uno no)</option>
+                        <option value="intercalado">Intercalado</option>
                     </select>
                 </div>
 
