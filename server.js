@@ -170,9 +170,22 @@ app.post('/api/read', async (req, res) => {
     // Los selectores "Link de noticia" y "Video (URL)" ambos traen una URL: se autodetecta.
     if (type === 'link' || type === 'video') {
       if (fuentes.esYoutube(contenido)) {
-        // Gemini lee YouTube directo por URL (no hace falta descargar)
-        console.log('📖 Lectura de video de YouTube (Gemini directo)...');
-        result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
+        // Gemini lee YouTube directo por URL (rápido, sin descargar). Pero algunos links
+        // (Shorts, videos privados/age-restricted, o páginas de canal) hacen que Gemini
+        // fetchee HTML y devuelva 400 "Unsupported MIME type: text/html". En ese caso,
+        // fallback: descargar con yt-dlp y subir el mp4 a la File API (como los sociales).
+        try {
+          console.log('📖 Lectura de video de YouTube (Gemini directo)...');
+          result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
+        } catch (e) {
+          console.warn(`⚠️ YouTube directo falló (${e.message}); reintentando con yt-dlp...`);
+          const videoPath = await fuentes.descargarVideo(contenido);
+          try {
+            result = await gemini.procesarLectura('video', videoPath, sesgoElegido);
+          } finally {
+            try { fs.unlinkSync(videoPath); } catch {}
+          }
+        }
       } else if (fuentes.esVideoSocial(contenido) || type === 'video') {
         // TikTok/IG/etc o "Video (URL)": descargar el VIDEO y que Gemini lo VEA (imagen + audio)
         console.log('📖 Descargando video con yt-dlp para que Gemini lo vea...');
