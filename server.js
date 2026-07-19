@@ -396,7 +396,7 @@ app.post('/api/generate-audio', async (req, res) => {
 app.post('/api/generate-video', async (req, res) => {
   const renderId = `job_${Date.now()}`; // id interno solo para nombrar temporales de este render
   try {
-    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId } = req.body;
+    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId, efectos } = req.body;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
@@ -448,7 +448,7 @@ app.post('/api/generate-video', async (req, res) => {
     // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
     // (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, efectos || {});
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
