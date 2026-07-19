@@ -23,7 +23,14 @@ const API_KEY = process.env.API_KEY;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+// no-cache en estáticos: el HTML/CSS/JS cambia seguido durante el desarrollo y el
+// navegador se quedaba pegado con versiones viejas (parecía que los cambios no aplicaban).
+app.use(express.static('public', {
+  etag: true,
+  setHeaders: (res, ruta) => {
+    if (/\.(html|css|js)$/i.test(ruta)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // Autenticación por API Key
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;

@@ -271,17 +271,17 @@
             <div class="form-section" id="historial-section">
                 <div id="historial-lista" class="scroll-snap-col"></div>
             </div>
-            </div><!-- /.col-productos -->
-            </div><!-- /.layout-cols -->
 
             <div class="progress-section hidden" id="progress-section">
-                <h2 id="progress-title">Procesando...</h2>
+                <div class="progress-head">
+                    <span id="progress-title">Procesando...</span>
+                    <span id="progress-text">0%</span>
+                </div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
-                <p id="progress-text">0%</p>
                 <div class="log-box" id="log-box"></div>
-                <div class="hidden" id="error-actions" style="margin-top:14px;">
+                <div class="hidden" id="error-actions">
                     <p style="font-weight:bold;color:#c0392b;margin-bottom:8px;">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="btn btn-primary" id="btn-reintentar" type="button"><span class="icon-slot" data-icon="arrowsClockwise"></span> Reintentar este paso</button>
@@ -289,6 +289,8 @@
                     </div>
                 </div>
             </div>
+            </div><!-- /.col-productos -->
+            </div><!-- /.layout-cols -->
 
             <div class="result-section hidden" id="result-section">
                 <h2><span class="icon-slot" data-icon="checkCircle"></span> Video generado</h2>

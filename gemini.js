@@ -125,6 +125,10 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
     } catch (error) {
       // 429 = límite de tasa; 503 = modelo sobrecargado; 500 = error interno. Todos temporales.
       const status = error.response?.status;
+      // Mensaje real de la API (axios solo deja "Request failed with status code 4xx", inútil para
+      // diagnosticar). Lo adjuntamos para que el log/registro diga QUÉ rechazó Gemini.
+      const detalleApi = error.response?.data?.error?.message;
+      if (detalleApi) error.message = `${modelo} → ${status}: ${detalleApi}`;
       const temporal = status === 429 || status === 503 || status === 500;
       if (temporal && intento < MAX_INTENTOS) {
         const espera = (status === 429 ? 20000 : 8000) * intento;
@@ -132,18 +136,20 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
         await new Promise(r => setTimeout(r, espera));
         continue;
       }
-      // 404 = el alias/modelo no respondió a ESTA request. Los alias -latest rotan su destino
-      // (ahora hacia gemini-3) y devuelven 404 intermitente → caer a un modelo concreto lo resuelve.
-      // 429/503/500 también valen para probar el siguiente modelo.
-      error._geminiSiguienteModelo = temporal || status === 404;
+      // Los alias -latest rotan su destino (ahora hacia gemini-3): una MISMA request puede dar 400/404
+      // en un modelo y funcionar en el siguiente (p.ej. un modelo rechaza thinkingBudget:0 o un campo
+      // de config con 400, pero otro lo acepta). Por eso 400 y 404 también caen al siguiente modelo de
+      // la cadena en vez de abortar. Solo 401/403 (auth/permiso) son fatales y no se reintentan.
+      const authFatal = status === 401 || status === 403;
+      error._geminiSiguienteModelo = !authFatal && (temporal || status === 404 || status === 400);
       throw error;
     }
   }
 }
 
 // Función principal para llamar a Gemini. Recorre la cadena de MODELOS:
-// intenta el más reciente y, si se satura tras sus reintentos, cae al siguiente.
-// Un error NO temporal (400/401/permiso…) aborta de una: no lo arregla otro modelo.
+// intenta el más reciente y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
+// Solo 401/403 (auth/permiso) abortan de una: no los arregla otro modelo.
 // El 3er parámetro (intento) se mantiene por compatibilidad con llamarJSON; ya no se usa.
 async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
   const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
