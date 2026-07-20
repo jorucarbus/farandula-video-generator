@@ -853,9 +853,7 @@ async function cargarHistorial() {
             const body = document.createElement('div');
             body.style.cssText = 'padding:14px;display:none;';
             body.innerHTML = `
-                ${job.estado !== 'terminado' ? `
-                <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} Continuar en pestaña nueva</a></p>
-                ` : ''}
+                <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} ${job.estado === 'terminado' ? 'Abrir para hacer otro video' : 'Continuar en pestaña nueva'}</a></p>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Título</label>
@@ -1015,6 +1013,19 @@ async function recuperarJobPendiente() {
         setStepStatus('audio-section', 'active');
         return;
     }
+
+    // completado: ya generó un video con este guion/asignaciones. El audioToken viejo puede
+    // haber quedado inválido (vivía solo en memoria del server, se pierde en cada redeploy),
+    // así que en vez de intentar reproducirlo se deja lista la revisión de carpetas (paso 4):
+    // desde ahí, confirmar → regenera locución fresca → elegir destino → generar OTRO video
+    // con el mismo guion, sin repetir lectura ni redacción.
+    if (job.fileName || job.driveLink) {
+        renderProductoFinal({ driveLink: job.driveLink });
+        log(`✅ Este proceso ya generó: ${job.fileName || 'un video'}${job.driveLink ? ` — ${job.driveLink}` : ''}`);
+    }
+    log('🔁 Confirma las asignaciones para regenerar locución y crear OTRO video con el mismo guion (o edita el guion/ángulo arriba antes de confirmar).');
+    renderAsignaciones(false, state.sourceData.protagonista);
+    setStepStatus('revision-section', 'active');
 }
 
 function descartarJobPendiente() {
