@@ -257,22 +257,29 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 
 // PASO 1: Leer fuente
 async function handleRead() {
+    const canalId = document.getElementById('canal-select').value;
     const sourceType = document.getElementById('source-type').value;
     const sourceInput = document.getElementById('source-input').value;
     const sesgo = document.getElementById('sesgo-select').value;
+
+    if (!canalId) {
+        alert('Por favor selecciona un canal');
+        return;
+    }
 
     if (!sourceInput.trim()) {
         alert('Por favor ingresa un link o texto');
         return;
     }
-    await leerFuente(sourceType, sourceInput, sesgo);
+    await leerFuente(sourceType, sourceInput, sesgo, canalId);
 }
 
 // Lectura reutilizable (también para regenerar con otro sesgo al final)
-async function leerFuente(sourceType, sourceInput, sesgo) {
+async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
     try {
         state.fuente = { type: sourceType, content: sourceInput };
         state.sesgo = sesgo;
+        state.canalId = canalId;
         // Rehacer la lectura invalida guion/asignaciones/audio/destino ya hechos
         state.selectedAngle = null;
         state.guion = null;
@@ -289,6 +296,7 @@ async function leerFuente(sourceType, sourceInput, sesgo) {
             type: sourceType,
             content: sourceInput,
             sesgo: sesgo,
+            canalId: canalId,
         });
 
         log('✅ Lectura completada');
@@ -959,6 +967,32 @@ function descartarJobPendiente() {
     log('🗑️ Proceso pendiente descartado');
 }
 
+// Cargar canales de insumos en el dropdown de Paso 1
+async function cargarCanales() {
+    try {
+        const response = await apiCall('/canales', 'GET');
+        const select = document.getElementById('canal-select');
+        select.innerHTML = '';
+        if (response.canales && response.canales.length > 0) {
+            response.canales.forEach(canal => {
+                const option = document.createElement('option');
+                option.value = canal.id;
+                option.textContent = canal.name;
+                select.appendChild(option);
+            });
+        } else {
+            const option = document.createElement('option');
+            option.textContent = 'No hay canales disponibles';
+            option.disabled = true;
+            select.appendChild(option);
+        }
+    } catch (error) {
+        log(`⚠️ Error cargando canales: ${error.message}`);
+        const select = document.getElementById('canal-select');
+        select.innerHTML = '<option disabled>Error cargando canales</option>';
+    }
+}
+
 // Inicialización
 // Inserta los iconos declarados en HTML como <span data-icon="nombreIcono">
 function aplicarIconos() {
@@ -973,8 +1007,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.steps-grid .form-section[id]').forEach(el => actualizarStepBadge(el, el.dataset.status));
     log('✅ App iniciada');
     initApiKey();
-    chequearJobPendiente();
-    if (API_KEY) cargarHistorial();
+    if (API_KEY) {
+        cargarCanales();
+        chequearJobPendiente();
+        cargarHistorial();
+    }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);

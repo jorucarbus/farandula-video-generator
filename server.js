@@ -153,13 +153,24 @@ app.get('/api/folders', async (req, res) => {
   }
 });
 
+// Listar los 4 canales de insumos para edición
+app.get('/api/canales', async (req, res) => {
+  try {
+    const canales = await driveHelper.listarCanales();
+    res.json({ canales });
+  } catch (error) {
+    console.error('Error obteniendo canales:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ETAPA 1: Lectura
 app.post('/api/read', async (req, res) => {
   try {
-    const { type, content, sesgo } = req.body;
+    const { type, content, sesgo, canalId } = req.body;
 
-    if (!type || !content) {
-      return res.status(400).json({ error: 'Faltan type o content' });
+    if (!type || !content || !canalId) {
+      return res.status(400).json({ error: 'Faltan type, content o canalId' });
     }
 
     // Detectar el tipo real de la fuente cuando es un link
@@ -206,8 +217,19 @@ app.post('/api/read', async (req, res) => {
       result = await gemini.procesarLectura(type, content, sesgoElegido);
     }
 
+    // Generar nombre de carpeta a partir del titulo + timestamp
+    const timestamp = new Date().toISOString().split('T')[0];
+    const nombreCarpeta = `${result.nombreCorto}-${timestamp}`;
+
+    // Crear carpeta de insumos dentro del canal elegido
+    console.log(`📁 Creando carpeta de insumos: ${nombreCarpeta}`);
+    const carpetaInsumoId = await driveHelper.crearCarpetaInsumo(canalId, nombreCarpeta);
+
+    // Crear job con referencias a canal y carpeta
     const job = jobStore.crearJob({
       paso: 'lectura',
+      canalId,
+      carpetaInsumoId,
       fuente: { type, content, sesgo: sesgoElegido },
       cronica: result.cronica,
       titulo: result.titulo,
@@ -218,9 +240,13 @@ app.post('/api/read', async (req, res) => {
       nombreCorto: result.nombreCorto,
     });
 
+    // Guardar la lectura en Drive (carpeta de insumos)
+    await driveHelper.guardarEnInsumo(carpetaInsumoId, 'lectura.json', JSON.stringify(result, null, 2));
+
     res.json({
       status: 'success',
       jobId: job.jobId,
+      carpetaInsumoId,
       cronica: result.cronica,
       titulo: result.titulo,
       descripcion: result.descripcion,

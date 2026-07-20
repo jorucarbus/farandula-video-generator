@@ -124,6 +124,99 @@ async function nombreCarpeta(folderId) {
   return res.data.name;
 }
 
+// Listar los 4 canales dentro de la carpeta de insumos
+async function listarCanales() {
+  const res = await getDrive().files.list({
+    q: `'${process.env.GOOGLE_DRIVE_INSUMOS_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name)',
+    pageSize: 100,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return res.data.files.map(f => ({ id: f.id, name: f.name }));
+}
+
+// Crear una carpeta dentro de un canal (para guardar insumos de un job)
+async function crearCarpetaInsumo(canalId, nombreCarpeta) {
+  const res = await getDrive().files.create({
+    requestBody: {
+      name: nombreCarpeta,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [canalId],
+    },
+    fields: 'id, name',
+    supportsAllDrives: true,
+  });
+  return res.data.id;
+}
+
+// Guardar un archivo en una carpeta de insumo (texto, JSON, audio MP3, etc.)
+async function guardarEnInsumo(carpetaId, nombreArchivo, contenido) {
+  const cliente = getDriveOAuth() || getDrive();
+
+  let body;
+  if (typeof contenido === 'string') {
+    body = contenido; // texto, JSON, etc.
+  } else if (Buffer.isBuffer(contenido)) {
+    body = contenido; // audio MP3, etc.
+  } else {
+    body = JSON.stringify(contenido); // objetos
+  }
+
+  const mimeType = nombreArchivo.endsWith('.mp3') ? 'audio/mpeg' : 'application/octet-stream';
+
+  const res = await cliente.files.create({
+    requestBody: {
+      name: nombreArchivo,
+      parents: [carpetaId],
+    },
+    media: {
+      mimeType,
+      body: Buffer.isBuffer(body) ? body : Buffer.from(body),
+    },
+    fields: 'id, name, webViewLink',
+    supportsAllDrives: true,
+  });
+  return res.data;
+}
+
+// Leer un archivo desde una carpeta de insumo
+async function leerDeInsumo(carpetaId, nombreArchivo) {
+  // Buscar el archivo por nombre dentro de la carpeta
+  const res = await getDrive().files.list({
+    q: `'${carpetaId}' in parents and name='${nombreArchivo.replace(/'/g, "\\'")}' and trashed=false`,
+    fields: 'files(id)',
+    pageSize: 1,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+
+  if (!res.data.files.length) return null;
+
+  const fileId = res.data.files[0].id;
+  const contenido = await getDrive().files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'stream' }
+  );
+
+  // Convertir stream a buffer/string
+  return new Promise((resolve, reject) => {
+    let data = [];
+    contenido.data.on('data', chunk => data.push(chunk));
+    contenido.data.on('end', () => {
+      const buffer = Buffer.concat(data);
+      // Si es JSON o texto, decodificar
+      const texto = buffer.toString('utf-8');
+      try {
+        resolve(JSON.parse(texto)); // intenta JSON primero
+      } catch {
+        resolve(texto); // sino, devuelve como string
+      }
+    });
+    contenido.data.on('error', reject);
+  });
+}
+
 module.exports = {
   obtenerCarpetasFamosos,
   listarVideos,
@@ -133,4 +226,8 @@ module.exports = {
   hayOAuth,
   getDrive,
   getDriveOAuth,
+  listarCanales,
+  crearCarpetaInsumo,
+  guardarEnInsumo,
+  leerDeInsumo,
 };
