@@ -68,8 +68,7 @@ function guardarApiKey() {
 // historial en otra pestaña) carga ese proceso directo; si no, revisa si esta MISMA
 // pestaña dejó algo a medias (sessionStorage, no localStorage: cada pestaña es independiente).
 async function iniciarSesion() {
-    cargarCanales();
-    cargarProcesos();
+    await cargarCanales(); // primero: cargarHistorial usa canalesMap para mostrar el nombre del canal
     cargarHistorial();
     const cargadoPorURL = await cargarDesdeURL();
     if (!cargadoPorURL) chequearJobPendiente();
@@ -805,23 +804,35 @@ function pasoAnterior() {
     setTimeout(actualizarPasosIndicador, 350);
 }
 
-// Historial real desde la Hoja de Cálculo: título, descripción+hashtags, guion, etc.
+// Historial ÚNICO (jobStore): todo proceso, terminado o no, con badge de estado y paso.
 // Se carga solo (sin botón); muestra las 3 más recientes visibles y el resto con scroll magnético.
-// Click en el título expande/colapsa el resto de la info de ese video.
+// Click en el título expande/colapsa el resto de la info de ese proceso.
+const ESTADO_PROCESO = {
+    terminado: { icon: 'checkCircle', texto: 'Terminado' },
+    en_proceso: { icon: 'lockOpen', texto: 'En proceso' },
+    incompleto: { icon: 'hourglass', texto: 'Incompleto' },
+};
+const PASO_NUM = { lectura: 1, guion: 2, fragmentacion: 3, audio: 4, completado: 5 };
+
 async function cargarHistorial() {
     const cont = document.getElementById('historial-lista');
     cont.style.maxHeight = '';
     cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
     try {
-        const result = await apiCall('/historial');
-        const filas = result.historial || [];
-        if (filas.length === 0) {
+        const result = await apiCall('/jobs');
+        const jobs = result.jobs || [];
+        if (jobs.length === 0) {
             cont.innerHTML = '<p style="color:#666;">Sin registros todavía.</p>';
             return;
         }
         cont.innerHTML = '';
         const items = [];
-        filas.forEach((f, i) => {
+        jobs.forEach(job => {
+            const info = ESTADO_PROCESO[job.estado] || ESTADO_PROCESO.incompleto;
+            const paso = PASO_NUM[job.paso] || 1;
+            const canalNombre = job.folderName || canalesMap[job.canalId] || '-';
+            const fecha = new Date(job.actualizado).toLocaleString();
+
             const item = document.createElement('div');
             item.className = 'historial-item';
             item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
@@ -829,41 +840,46 @@ async function cargarHistorial() {
             const header = document.createElement('div');
             header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
             header.innerHTML = `
-                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.titulo || '(sin título)'}</div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;">
-                    <span>${icon('calendar')} ${f.fecha || '-'}</span>
-                    <span>${icon('userFocus')} ${f.protagonista || '-'}</span>
-                    <span>${icon('televisionSimple')} ${f.canal || '-'}</span>
+                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+                    <span>${icon(info.icon)} ${info.texto}</span>
+                    <span>Paso ${paso}/5</span>
+                    <span>${icon('userFocus')} ${job.protagonista || '-'}</span>
+                    <span>${icon('televisionSimple')} ${canalNombre}</span>
+                    <span>${icon('calendar')} ${fecha}</span>
                 </div>
             `;
 
             const body = document.createElement('div');
             body.style.cssText = 'padding:14px;display:none;';
             body.innerHTML = `
+                ${job.estado !== 'terminado' ? `
+                <p><button class="btn btn-primary" type="button" onclick="window.open('/?jobId=${job.jobId}', '_blank')">${icon('play')} Continuar en pestaña nueva</button></p>
+                ` : ''}
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Título</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
                     </div>
-                    <p class="copy-content">${f.titulo || '-'}</p>
+                    <p class="copy-content">${job.titulo || '-'}</p>
                 </div>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Descripción + Hashtags</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
                     </div>
-                    <p class="copy-content">${f.descripcion || '-'}</p>
+                    <p class="copy-content">${job.descripcion || '-'}</p>
                 </div>
-                <p><strong>Protagonista:</strong> ${f.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${f.canal || '-'}</p>
-                <p><strong>Status:</strong> ${f.status || '-'} &nbsp;|&nbsp; <strong>Archivo:</strong> ${f.nombreArchivo || '-'}</p>
-                ${f.linkRender ? `<p><a href="${f.linkRender}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
-                ${f.guion ? `
+                <p><strong>Protagonista:</strong> ${job.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${canalNombre}</p>
+                ${job.fileName ? `<p><strong>Archivo:</strong> ${job.fileName}</p>` : ''}
+                ${job.driveLink ? `<p><a href="${job.driveLink}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
+                ${job.script ? `
                 <div class="copy-block" style="margin-top:10px;">
                     <div class="copy-header">
                         <label>Guion</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(f.guion)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
+                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.script)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
                     </div>
-                    <p class="copy-content">${f.guion}</p>
+                    <p class="copy-content">${job.script}</p>
                 </div>` : ''}
             `;
 
@@ -995,49 +1011,8 @@ function descartarJobPendiente() {
     log('🗑️ Proceso pendiente descartado');
 }
 
-// Historial de procesos (jobStore): incluye jobs sin terminar, con badge de estado.
-// Click en una tarjeta abre ese proceso en una pestaña nueva (no interrumpe el trabajo actual).
-const ESTADO_PROCESO = {
-    terminado: { icon: 'checkCircle', texto: 'Terminado' },
-    en_proceso: { icon: 'lockOpen', texto: 'En proceso' },
-    incompleto: { icon: 'hourglass', texto: 'Incompleto' },
-};
-const PASO_NUM = { lectura: 1, guion: 2, fragmentacion: 3, audio: 4, completado: 5 };
-
-async function cargarProcesos() {
-    const cont = document.getElementById('procesos-lista');
-    if (!cont) return;
-    cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
-    try {
-        const result = await apiCall('/jobs');
-        const jobs = result.jobs || [];
-        if (jobs.length === 0) {
-            cont.innerHTML = '<p style="color:#666;">Sin procesos todavía.</p>';
-            return;
-        }
-        cont.innerHTML = '';
-        jobs.forEach(job => {
-            const info = ESTADO_PROCESO[job.estado] || ESTADO_PROCESO.incompleto;
-            const paso = PASO_NUM[job.paso] || 1;
-            const div = document.createElement('div');
-            div.className = 'proceso-item';
-            div.style.cssText = 'border:2px solid #000;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;';
-            div.innerHTML = `
-                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
-                    <span>${icon(info.icon)} ${info.texto}</span>
-                    <span>Paso ${paso}/5</span>
-                    <span>${new Date(job.actualizado).toLocaleString()}</span>
-                </div>
-            `;
-            div.title = 'Abrir en una pestaña nueva';
-            div.onclick = () => window.open(`/?jobId=${job.jobId}`, '_blank');
-            cont.appendChild(div);
-        });
-    } catch (error) {
-        cont.innerHTML = `<p style="color:#c0392b;">Error cargando procesos: ${error.message}</p>`;
-    }
-}
+// Nombre de canal a partir de su id (poblado por cargarCanales) — para mostrarlo en el historial
+const canalesMap = {};
 
 // Cargar canales de insumos en el dropdown de Paso 1
 async function cargarCanales() {
@@ -1047,6 +1022,7 @@ async function cargarCanales() {
         select.innerHTML = '';
         if (response.canales && response.canales.length > 0) {
             response.canales.forEach(canal => {
+                canalesMap[canal.id] = canal.name;
                 const option = document.createElement('option');
                 option.value = canal.id;
                 option.textContent = canal.name;
