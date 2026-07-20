@@ -232,3 +232,13 @@ Los 4 verificados con una llamada real a Drive tras cada actualización.
 screen de Google Cloud) expiran solos a los 7 días de inactividad — si esto se repite seguido,
 revisar el "Publishing status" del proyecto OAuth en Google Cloud Console y pasarlo a producción
 (o agregar el usuario como "Test user" no alcanza, hay que publicar la app).
+
+**Bug encontrado al final de la sesión, SIN arreglar todavía — para la próxima sesión**:
+`audiosPendientes` (`server.js`, línea ~55) es un `Map` en memoria, sin persistencia. Cada
+reinicio del server (pasó varias veces hoy por los fixes) lo vacía, y si el usuario tenía un
+`audioToken` de una locución ya aprobada, `/api/generate-video` falla con `"No se encontró la
+locución aprobada: regenera el audio"` aunque el audio siga bien generado — solo se perdió la
+referencia en memoria. Workaround inmediato: volver a Paso 5 y re-aprobar la locución (genera
+token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mismo patrón que
+`jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
+El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
