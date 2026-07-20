@@ -814,78 +814,147 @@ const ESTADO_PROCESO = {
 };
 const PASO_NUM = { lectura: 1, guion: 2, fragmentacion: 3, audio: 4, completado: 5 };
 
+// Tarjeta para un job del jobStore (tiene jobId: siempre se puede reabrir/continuar)
+function crearTarjetaJob(job) {
+    const info = ESTADO_PROCESO[job.estado] || ESTADO_PROCESO.incompleto;
+    const paso = PASO_NUM[job.paso] || 1;
+    const canalNombre = job.folderName || canalesMap[job.canalId] || '-';
+    const fecha = new Date(job.actualizado).toLocaleString();
+
+    const item = document.createElement('div');
+    item.className = 'historial-item';
+    item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+    header.innerHTML = `
+        <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+            <span>${icon(info.icon)} ${info.texto}</span>
+            <span>Paso ${paso}/5</span>
+            <span>${icon('userFocus')} ${job.protagonista || '-'}</span>
+            <span>${icon('televisionSimple')} ${canalNombre}</span>
+            <span>${icon('calendar')} ${fecha}</span>
+        </div>
+    `;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:14px;display:none;';
+    body.innerHTML = `
+        <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} ${job.estado === 'terminado' ? 'Abrir para hacer otro video' : 'Continuar en pestaña nueva'}</a></p>
+        <div class="copy-block">
+            <div class="copy-header">
+                <label>Título</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${job.titulo || '-'}</p>
+        </div>
+        <div class="copy-block">
+            <div class="copy-header">
+                <label>Descripción + Hashtags</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${job.descripcion || '-'}</p>
+        </div>
+        <p><strong>Protagonista:</strong> ${job.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${canalNombre}</p>
+        ${job.fileName ? `<p><strong>Archivo:</strong> ${job.fileName}</p>` : ''}
+        ${job.driveLink ? `<p><a href="${job.driveLink}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
+        ${job.script ? `
+        <div class="copy-block" style="margin-top:10px;">
+            <div class="copy-header">
+                <label>Guion</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.script)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${job.script}</p>
+        </div>` : ''}
+    `;
+    return { item, header, body };
+}
+
+// Tarjeta para una fila de la Hoja de Cálculo (historial real, sin jobId — no se puede reabrir,
+// pero es la fuente autoritativa de TODO video ya publicado, incluidos los de antes del jobStore)
+function crearTarjetaSheet(fila) {
+    const item = document.createElement('div');
+    item.className = 'historial-item';
+    item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+    header.innerHTML = `
+        <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${fila.titulo || '(sin título)'}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+            <span>${icon('checkCircle')} Terminado</span>
+            <span>${icon('userFocus')} ${fila.protagonista || '-'}</span>
+            <span>${icon('televisionSimple')} ${fila.canal || '-'}</span>
+            <span>${icon('calendar')} ${fila.fecha || '-'}</span>
+        </div>
+    `;
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:14px;display:none;';
+    body.innerHTML = `
+        <div class="copy-block">
+            <div class="copy-header">
+                <label>Título</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(fila.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${fila.titulo || '-'}</p>
+        </div>
+        <div class="copy-block">
+            <div class="copy-header">
+                <label>Descripción + Hashtags</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(fila.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${fila.descripcion || '-'}</p>
+        </div>
+        <p><strong>Protagonista:</strong> ${fila.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${fila.canal || '-'}</p>
+        ${fila.nombreArchivo ? `<p><strong>Archivo:</strong> ${fila.nombreArchivo}</p>` : ''}
+        ${fila.linkRender ? `<p><a href="${fila.linkRender}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
+        ${fila.guion ? `
+        <div class="copy-block" style="margin-top:10px;">
+            <div class="copy-header">
+                <label>Guion</label>
+                <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(fila.guion)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
+            </div>
+            <p class="copy-content">${fila.guion}</p>
+        </div>` : ''}
+    `;
+    return { item, header, body };
+}
+
+// Historial ÚNICO: fusiona el jobStore (procesos recientes, con estado/paso, reabribles) con la
+// Hoja de Cálculo (registro real de TODO video publicado, incluidos los de antes de este sistema).
+// Evita duplicar un video que ya está en ambos lados (mismo título) mostrando solo la versión con jobId.
 async function cargarHistorial() {
     const cont = document.getElementById('historial-lista');
     cont.style.maxHeight = '';
     cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
     try {
-        const result = await apiCall('/jobs');
-        const jobs = result.jobs || [];
-        if (jobs.length === 0) {
+        const [jobsResult, sheetResult] = await Promise.all([
+            apiCall('/jobs').catch(() => ({ jobs: [] })),
+            apiCall('/historial').catch(() => ({ historial: [] })),
+        ]);
+        const jobs = jobsResult.jobs || [];
+        const titulosEnJobs = new Set(jobs.map(j => j.titulo).filter(Boolean));
+        const filasSheet = (sheetResult.historial || []).filter(f => !titulosEnJobs.has(f.titulo));
+
+        const entradas = [
+            ...jobs.map(job => ({ fecha: job.actualizado, construir: () => crearTarjetaJob(job) })),
+            ...filasSheet.map(fila => ({ fecha: fila.fecha, construir: () => crearTarjetaSheet(fila) })),
+        ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+        if (entradas.length === 0) {
             cont.innerHTML = '<p style="color:#666;">Sin registros todavía.</p>';
             return;
         }
         cont.innerHTML = '';
         const items = [];
-        jobs.forEach(job => {
-            const info = ESTADO_PROCESO[job.estado] || ESTADO_PROCESO.incompleto;
-            const paso = PASO_NUM[job.paso] || 1;
-            const canalNombre = job.folderName || canalesMap[job.canalId] || '-';
-            const fecha = new Date(job.actualizado).toLocaleString();
-
-            const item = document.createElement('div');
-            item.className = 'historial-item';
-            item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
-
-            const header = document.createElement('div');
-            header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
-            header.innerHTML = `
-                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
-                    <span>${icon(info.icon)} ${info.texto}</span>
-                    <span>Paso ${paso}/5</span>
-                    <span>${icon('userFocus')} ${job.protagonista || '-'}</span>
-                    <span>${icon('televisionSimple')} ${canalNombre}</span>
-                    <span>${icon('calendar')} ${fecha}</span>
-                </div>
-            `;
-
-            const body = document.createElement('div');
-            body.style.cssText = 'padding:14px;display:none;';
-            body.innerHTML = `
-                <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} ${job.estado === 'terminado' ? 'Abrir para hacer otro video' : 'Continuar en pestaña nueva'}</a></p>
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Título</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.titulo || '')}); log('📋 Título copiado del historial')">${icon('copy')} Copiar</button>
-                    </div>
-                    <p class="copy-content">${job.titulo || '-'}</p>
-                </div>
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Descripción + Hashtags</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.descripcion || '')}); log('📋 Descripción copiada del historial')">${icon('copy')} Copiar</button>
-                    </div>
-                    <p class="copy-content">${job.descripcion || '-'}</p>
-                </div>
-                <p><strong>Protagonista:</strong> ${job.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${canalNombre}</p>
-                ${job.fileName ? `<p><strong>Archivo:</strong> ${job.fileName}</p>` : ''}
-                ${job.driveLink ? `<p><a href="${job.driveLink}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
-                ${job.script ? `
-                <div class="copy-block" style="margin-top:10px;">
-                    <div class="copy-header">
-                        <label>Guion</label>
-                        <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.script)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
-                    </div>
-                    <p class="copy-content">${job.script}</p>
-                </div>` : ''}
-            `;
-
+        entradas.forEach(entrada => {
+            const { item, header, body } = entrada.construir();
             header.onclick = () => {
                 body.style.display = body.style.display === 'none' ? 'block' : 'none';
                 actualizarAltoHistorial();
             };
-
             item.appendChild(header);
             item.appendChild(body);
             cont.appendChild(item);
