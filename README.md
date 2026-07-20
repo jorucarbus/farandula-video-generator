@@ -150,7 +150,16 @@ Branch separada, NO tocar `main`/Railway hasta confirmar que funciona óptimo. V
 - ⚠️ **Requisito de permiso**: si la máquina no tiene OAuth configurado en `.env`, `driveCache` cae al Service Account — y ese account necesita compartida `cache-estado` como Editor explícitamente (no la hereda de `Redes_Canales`). Si falta, `restaurar()` fallaba en silencio (bug de logging ya corregido).
 - `respaldar()` y `restaurar()` **verificados end-to-end** (2026-07-17): borré `data/jobs.json` local, reinicié el server, el arranque lo trajo solo de Drive antes de que la app lo necesitara, con el contenido más reciente.
 
-Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: decidir el merge a `main` (solo cuando confirmes que todo funciona óptimo).
+**Bloque E completo — rediseño visual (2026-07-17):**
+- **Scroll-snap on/off**: quitado el badge de texto "👉 Viendo"; el bloque centrado en Procesos/Historial ahora se "enciende" a color pleno (`.snapped`), el resto queda opaco/`grayscale`. Algoritmo por distancia al centro (`observarSnap()` en `public/app.js`) reemplaza el viejo IntersectionObserver — garantiza que SIEMPRE hay exactamente un elemento encendido.
+- **Panel "Productos"** (columna derecha, sobre Historial): 3 casillas — Guion, Audio, Video/Insumos — opacas hasta que el job actual genera ese producto, se encienden con contenido real (extracto de texto, `<audio>` nativo, `<video>`/link). Se apagan solas si se rehace un paso anterior (`lockFrom()` extendido con `resetProductoSlot()`).
+- **Palanca de modo**: los 2 botones "Video final"/"Insumos" se reemplazaron por un switch neobrutalista (`.modo-switch`) con thumb deslizante.
+- **Iconos Phosphor self-hosted**: 34 iconos (bold, MIT) inline en `public/icons.js`, sin CDN — reemplazan casi todos los emoji de la UI (excepto `<select>` de sesgo y el log-box, por limitación técnica/estilo).
+- **Tipografía propia**: Space Grotesk (títulos) + Inter (texto), variable-font woff2 auto-hospedadas en `public/fonts/`, sin dependencia de Google Fonts en producción.
+- Historial: tarjetas compactas (fecha + protagonista + canal), auto-carga sin botón, 1 tarjeta visible + peek de la siguiente.
+- **Verificado en browser real**: switch en ambas direcciones, badges de paso con icono+texto, casillas de producto en ambos estados (opaco y encendido con contenido mock), sin errores de consola nuevos.
+
+Los 5 bloques (A/B/C/D/E) están completos en `test-persistencia`. Pendiente: decidir el merge a `main` (solo cuando confirmes que todo funciona óptimo).
 
 ## Estado (2026-07-13)
 
@@ -173,6 +182,7 @@ Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: deci
 
 - [ ] **Verificar en Railway** que el postinstall de `youtube-dl-exec` baje el binario yt-dlp linux en el build; probar un TikTok/IG real ya desplegado (IG puede pedir cookies; TikTok público suele ir sin ellas)
 - [x] Persistir estado por `jobId` entre recargas — hecho en rama `test-persistencia` (ver sección arriba), pendiente merge a `main`
+- [x] Rediseño visual (iconos propios, tipografía, palanca, panel de productos) — Bloque E, misma rama
 - [ ] Reordenar UI con pasos numerados (guía: screenshot cyberpunk del amigo — solo ORDEN, se mantiene neobrutalism)
 - [ ] Probar un video REAL completo con Hyperframes + subtítulos (todo integrado)
 - [ ] Deploy a Railway: OAuth para Drive (sin carpeta local), leer recursos desde Drive API

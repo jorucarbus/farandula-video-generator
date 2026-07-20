@@ -135,7 +135,8 @@ Service Account de Google Cloud con permiso en:
 - [x] UI no-wizard: grid de pasos 2 cols desktop / 1 col mobile, verde al completar — Bloque B, misma rama
 - [x] Rehacer un paso invalida en cascada lo posterior — Bloque C, misma rama
 - [x] Respaldo en Drive de historial/jobs (Railway borra el disco en cada redeploy) — Bloque D completo, `respaldar()` y `restaurar()` verificados end-to-end (2026-07-17). Ver `.claude/CLAUDE.md` en ese repo.
-- [ ] Los 4 bloques (A/B/C/D) están completos en `test-persistencia`, pendiente merge a `main` (regla: no tocar main/Railway hasta confirmar que funciona óptimo)
+- [x] Rediseño visual: iconos Phosphor self-hosted, tipografía propia (Space Grotesk + Inter), palanca de modo, panel "Productos" con lit/dim, sistema on/off de scroll-snap — Bloque E completo (2026-07-17)
+- [ ] Los 5 bloques (A/B/C/D/E) están completos en `test-persistencia`, pendiente merge a `main` (regla: no tocar main/Railway hasta confirmar que funciona óptimo)
 - [ ] Integrar módulos v3 a v2 (sincronización exacta)
 - [ ] Test e2e v2 + v3 con contenido real
 
@@ -200,7 +201,7 @@ node test-e2e-apis.js         # 6 endpoints con APIs reales
 | **Confiabilidad** | Alta | Alta | Alta |
 | **Líneas Código** | 2189 | 1361 | ~1500 |
 
-**Siguiente Check-in**: evaluar merge de `test-persistencia` (4 bloques completos) a `main`; converger v3 mejoras a v2
+**Siguiente Check-in**: evaluar merge de `test-persistencia` (5 bloques completos: A/B/C/D/E) a `main`; converger v3 mejoras a v2
 
 ---
 
