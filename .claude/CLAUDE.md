@@ -243,6 +243,23 @@ token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mis
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
 
+### 2026-07-20 (Mac) — Bloque F: botones presionados durante procesos (evita doble-click accidental)
+
+**Problema**: usuario presionaba botón 2 veces porque no notaba la pantalla de progreso (banner negro con letras verdes). Botones volvían a activarse, causando duplicación de procesos.
+
+**Solución**: botones ahora se quedan "presionados" (disabled + opacity 0.6) durante todo su proceso, se reactivan cuando termina (éxito o error).
+
+**Cambios**:
+- `public/index.html` — agregué IDs a 9 botones: `btn-read`, `btn-generate-script`, `btn-approve-guion`, `btn-regenerate-guion`, `btn-confirm-assignments`, `btn-approve-audio`, `btn-regenerate-audio-v3`, `btn-regenerate-audio-v2`, `btn-generate-video`.
+- `public/app.js` — función helper `setButtonDisabled(buttonId, disabled)` que deshabilita el botón + cambia opacity (0.6 deshabilitado, 1 habilitado). Todas las funciones async ahora deshabilitan su botón al inicio y lo habilitan en el `finally` (garantiza re-habilitación incluso con error).
+- Funciones modificadas: `handleRead()`, `handleGenerateScript()`, `aprobarGuion()`, `confirmarAsignaciones()`, `regenerarAudio()` (deshabilita ambos botones de audio), `aprobarAudio()`, `regenerarGuion()` (hecha async), `handleGenerateVideo()`.
+
+**Verificado en browser**: botón correcto se deshabilita (opacity 0.6) durante proceso y se reactiva (opacity 1) al terminar, incluso si hay error.
+
+**Commit + push**: hecho a `test-persistencia`. Railway redeployará automáticamente.
+
+**Pendiente**: none. Cambio está listo para verificar en Railway.
+
 ### 2026-07-20 (Mac) — Bloque E: rediseño visual completo
 
 **Iconos Phosphor self-hosted** (34 SVG, bold weight): descargados desde CDN Phosphor, embebidos
