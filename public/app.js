@@ -885,6 +885,7 @@ async function cargarHistorial() {
 
             header.onclick = () => {
                 body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                actualizarAltoHistorial();
             };
 
             item.appendChild(header);
@@ -892,14 +893,26 @@ async function cargarHistorial() {
             cont.appendChild(item);
             items.push(item);
         });
-        // Alto exacto: una tarjeta completa + un pedacito de la siguiente (asoma, invita a scrollear)
-        let alto = 20; // padding-top del contenedor (deja espacio para el badge "Viendo")
-        alto += items[0].offsetHeight;
-        if (items.length > 1) {
-            alto += 8; // separación (margin-bottom) hasta la siguiente tarjeta
-            alto += Math.max(20, Math.round(items[1].offsetHeight * 0.3)); // pedacito visible de la siguiente
+
+        // Alto del contenedor: si nada está expandido, una tarjeta completa + un pedacito de la
+        // siguiente (asoma, invita a scrollear). Si algo se expandió, un alto acotado con scroll
+        // interno (NO el alto de toda la tarjeta abierta ni "toda la página") para poder leerla
+        // completa sin que empuje el resto del layout.
+        function actualizarAltoHistorial() {
+            const hayExpandido = items.some(it => it.children[1].style.display === 'block');
+            if (hayExpandido) {
+                cont.style.maxHeight = '70vh';
+                return;
+            }
+            let alto = 20; // padding-top del contenedor (deja espacio para el badge "Viendo")
+            alto += items[0].offsetHeight;
+            if (items.length > 1) {
+                alto += 8; // separación (margin-bottom) hasta la siguiente tarjeta
+                alto += Math.max(20, Math.round(items[1].offsetHeight * 0.3)); // pedacito visible de la siguiente
+            }
+            cont.style.maxHeight = alto + 'px';
         }
-        cont.style.maxHeight = alto + 'px';
+        actualizarAltoHistorial();
         observarSnap(cont, '.historial-item');
     } catch (error) {
         cont.innerHTML = `<p style="color:#c0392b;">Error cargando historial: ${error.message}</p>`;
