@@ -854,7 +854,7 @@ async function cargarHistorial() {
             body.style.cssText = 'padding:14px;display:none;';
             body.innerHTML = `
                 ${job.estado !== 'terminado' ? `
-                <p><button class="btn btn-primary" type="button" onclick="window.open('/?jobId=${job.jobId}', '_blank')">${icon('play')} Continuar en pestaña nueva</button></p>
+                <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} Continuar en pestaña nueva</a></p>
                 ` : ''}
                 <div class="copy-block">
                     <div class="copy-header">
