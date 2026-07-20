@@ -135,6 +135,24 @@ Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: deci
 a `main` (regla: solo cuando el usuario confirme que todo funciona óptimo, ver memoria
 `farandula_test_version_rule`).
 
+## Despliegues en Railway (2 proyectos distintos, variables independientes)
+
+- **`farandula-insumos`** (producción, repo `farandula-insumos` rama `main`) —
+  `https://farandula-insumos-production.up.railway.app`
+- **`generous-empathy`** (staging, entorno `test-persistencia`) — 3 servicios, redeploy
+  automático en cada push a `test-persistencia` de cada repo:
+  - **`adventurous-reflection`** = este repo (`farandula-video-generator`), rama
+    `test-persistencia` — `https://adventurous-reflection-test-persistencia.up.railway.app`
+    (nombre auto-generado por Railway, no se renombró)
+  - `farandula-insumos` (Sleeping) y `farandula-video-genera...` (Sleeping) — servicios
+    duplicados/sin uso dentro del mismo proyecto, no confundir con `adventurous-reflection`
+    que es el que SÍ está activo
+
+⚠️ Las variables de entorno (API keys, `GOOGLE_OAUTH_REFRESH_TOKEN`, etc.) son independientes
+por servicio — actualizar una NO propaga a las demás. Si se regenera el refresh token OAuth
+(pasa cuando da `invalid_grant` — expiró o fue revocado), actualizar en las 4 ubicaciones:
+`.env` local de ambos repos + `farandula-insumos` (Railway) + `adventurous-reflection` (Railway).
+
 ## Pendiente Verificar (Railway Live — main, sin tocar por ahora)
 
 - [ ] Redeploy de Railway → youtube-dl-exec postinstall descarga binario linux yt-dlp
@@ -198,3 +216,19 @@ quedaba con versiones viejas y parecía que los cambios de UI no aplicaban.
 punta a punta con los efectos ya wireados (se probó `exportarInsumos()` aislado con un video de
 prueba, no el flujo completo `/api/exportar` vía UI). Decidir cuándo mergear `test-persistencia`
 a `main` sigue pendiente (regla: solo cuando el usuario confirme que todo funciona óptimo).
+
+### 2026-07-20 (Windows) — Refresh token OAuth expirado (`invalid_grant`)
+
+`GOOGLE_OAUTH_REFRESH_TOKEN` expiró/fue revocado — `invalid_grant` al generar video (falla
+downloads/uploads que usan `getDriveOAuth()`; los Service Accounts no tienen cuota de Drive así
+que no hay fallback funcional para esas operaciones). Regenerado con `obtener-token.js` (flujo
+manual: usuario abre URL de consentimiento, autoriza, pega el code). Actualizado en **4
+ubicaciones** (son independientes, ninguna se propaga a las otras — ver sección de arriba
+"Despliegues en Railway"): `.env` de ambos repos local, `farandula-insumos` (Railway prod) y
+`adventurous-reflection` (Railway staging `test-persistencia`, recién identificado esta sesión).
+Los 4 verificados con una llamada real a Drive tras cada actualización.
+
+**Si vuelve a pasar**: los refresh tokens de OAuth "Testing" (no "In production" en el consent
+screen de Google Cloud) expiran solos a los 7 días de inactividad — si esto se repite seguido,
+revisar el "Publishing status" del proyecto OAuth en Google Cloud Console y pasarlo a producción
+(o agregar el usuario como "Test user" no alcanza, hay que publicar la app).
