@@ -242,3 +242,50 @@ referencia en memoria. Workaround inmediato: volver a Paso 5 y re-aprobar la loc
 token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mismo patrón que
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
+
+### 2026-07-20 (Mac) — Bloque E: rediseño visual completo
+
+**Iconos Phosphor self-hosted** (34 SVG, bold weight): descargados desde CDN Phosphor, embebidos
+en `public/icons.js` (nuevo) como constante `ICONS = {...}` + helper `icon(nombre, extraClass)`.
+Reemplazan emoji en casi toda la UI (`videoCamera`, `scissors`, `article`, `microphone`,
+`listChecks`, etc.) — excepto `<select>` de sesgo (nativo no permite iconos) y log-box (intención
+de estilo terminal con emoji). Cross-verificado con `grep`: todos los `data-icon`/`icon('...')`
+del código existen en `icons.js`, ninguno falta.
+
+**Tipografía propia** (Google Fonts self-hosted): Space Grotesk (títulos) + Inter (texto),
+variable-font `.woff2` descargados en `public/fonts/` (2 archivos: 22KB SpaceGrotesk + 48KB Inter).
+CSS `@font-face` referencia local, sin CDN en producción. Variable-font: Google sirve UN SOLO
+archivo `.woff2` para ambos weights (400/700 en Inter, 500/700 en SpaceGrotesk), economiza
+descargas.
+
+**Palanca de modo** (reemplaza 2 botones): `.modo-switch` neobrutalista con thumb deslizante
+(`transform: translateX(100%)` bajo `[data-modo="insumos"]`), botones full-width bajo el thumb
+con `pointer-events: auto`, label visual clara. Funciona en ambas direcciones.
+
+**Panel "Productos"** (columna derecha, sobre Historial): 3 casillas (`producto-slot`) —
+Guion/Audio/Video — con status `data-status="pendiente"|"listo"`. Opacas/dim por defecto
+(opacity 0.4, grayscale 65%), se encienden a color pleno con borde verde (#2f8f2f, shadow) cuando
+status="listo". Contenido real: extracto texto (guion), `<audio controls>` nativo (audio),
+`<video>`/link (video). Se apagan auto al rehacer un paso anterior vía `lockFrom()` extendido con
+`resetProductoSlot()`.
+
+**On/off scroll-snap system** (quita badge "👉 Viendo"): nuevo `observarSnap()` por distancia al
+centro (reemplaza IntersectionObserver) en `public/app.js`. El bloque centrado en Procesos/Historial
+queda `.snapped` (encendido: opacity 1, filter none, borde azul, shadow fuerte); resto opaco
+(opacity 0.45, grayscale 55%). Garantiza SIEMPRE exactamente 1 elemento encendido.
+
+**Historial compacto**: tarjetas apiladas (título + fecha/protagonista/canal en fila), auto-load
+sin botón, 1 tarjeta visible + ~30% peek de la siguiente. Botones copiar para título/guion usan
+iconos.
+
+**Verificado en browser local** (rama `test-persistencia`): switch bidireccional, badges de paso
+con icono+texto (⏳/🔓/✅ → hourglass/lockOpen/checkCircle), casillas de producto en ambos estados
+(opaco y lit con contenido mock), sin errores de consola nuevos.
+
+**READMEs actualizados**: README.md + README-ECOSYSTEM.md documentan Bloque E en "Rama de prueba"
+y "Próximas mejoras" (5 bloques A-E completos, pendiente merge a `main`).
+
+**Pendiente**: merge `test-persistencia` → `main` (esperando confirmación del usuario que todo
+funciona óptimo en test-persistencia). Railway actualmente deploya `main` (versión vieja sin Bloque
+E), por eso adventurous-reflection muestra botones normales en lugar de palanca — el redeploy
+automático ocurrirá al mergear.
