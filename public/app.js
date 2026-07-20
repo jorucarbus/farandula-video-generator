@@ -111,7 +111,7 @@ function setStepStatus(stepId, status) {
     if (!el) return;
     el.dataset.status = status;
     actualizarStepBadge(el, status);
-    if (status === 'active') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (status === 'active') el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
 }
 
 // Productos del job actual (columna derecha): opacos hasta que existan, se "encienden" al estar listos.
@@ -613,6 +613,11 @@ async function handleGenerateVideo() {
                     nombreCorto: state.sourceData?.nombreCorto,
                     linkFuente: state.sourceData?.linkFuente,
                 },
+                efectos: {
+                    zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
+                    zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
+                    espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
+                },
             });
             log('✅ Video generado');
         } else {
@@ -630,6 +635,11 @@ async function handleGenerateVideo() {
                     descripcion: state.sourceData?.descripcion,
                     protagonista: state.sourceData?.protagonista,
                     linkFuente: state.sourceData?.linkFuente,
+                },
+                efectos: {
+                    zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
+                    zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
+                    espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                 },
             });
             log('✅ Insumos exportados');
@@ -719,18 +729,22 @@ function copyText(elementId) {
 
 // Scroll magnético: marca con clase 'snapped' SOLO el bloque más cercano al centro del contenedor
 // (por distancia de centros, no por intersección — evita que varios queden "encendidos" a la vez).
-function observarSnap(container, itemSelector) {
+// eje: 'y' (vertical, default) | 'x' (horizontal — usado por el carril de pasos)
+function observarSnap(container, itemSelector, eje) {
     if (!container) return;
+    const horizontal = eje === 'x';
     function actualizar() {
         const items = container.querySelectorAll(itemSelector);
         if (!items.length) return;
         const contRect = container.getBoundingClientRect();
-        const contCenter = contRect.top + contRect.height / 2;
+        const contCenter = horizontal
+            ? contRect.left + contRect.width / 2
+            : contRect.top + contRect.height / 2;
         let masCercano = null;
         let menorDistancia = Infinity;
         items.forEach(item => {
             const r = item.getBoundingClientRect();
-            const centro = r.top + r.height / 2;
+            const centro = horizontal ? r.left + r.width / 2 : r.top + r.height / 2;
             const distancia = Math.abs(centro - contCenter);
             if (distancia < menorDistancia) { menorDistancia = distancia; masCercano = item; }
         });
@@ -743,6 +757,34 @@ function observarSnap(container, itemSelector) {
         requestAnimationFrame(() => { actualizar(); esperando = false; });
     });
     actualizar();
+}
+
+// Carrusel de Procesos: un paso completo a la vez, navegado con flechas + indicador "Paso X de 6".
+function contenedorPasos() {
+    return document.querySelector('.col-procesos .scroll-snap-col');
+}
+
+function actualizarPasosIndicador() {
+    const cont = contenedorPasos();
+    const el = document.getElementById('pasos-nav-indicador');
+    if (!cont || !el || !cont.clientWidth) return;
+    const total = cont.querySelectorAll('.form-section').length;
+    const idx = Math.min(total - 1, Math.max(0, Math.round(cont.scrollLeft / cont.clientWidth)));
+    el.textContent = `Paso ${idx + 1} de ${total}`;
+}
+
+function pasoSiguiente() {
+    const cont = contenedorPasos();
+    if (!cont) return;
+    cont.scrollBy({ left: cont.clientWidth, behavior: 'smooth' });
+    setTimeout(actualizarPasosIndicador, 350);
+}
+
+function pasoAnterior() {
+    const cont = contenedorPasos();
+    if (!cont) return;
+    cont.scrollBy({ left: -cont.clientWidth, behavior: 'smooth' });
+    setTimeout(actualizarPasosIndicador, 350);
 }
 
 // Historial real desde la Hoja de Cálculo: título, descripción+hashtags, guion, etc.
@@ -933,5 +975,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initApiKey();
     chequearJobPendiente();
     if (API_KEY) cargarHistorial();
-    observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section');
+    observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
+    const contPasos = contenedorPasos();
+    if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
+    actualizarPasosIndicador();
 });

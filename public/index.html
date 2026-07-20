@@ -23,31 +23,6 @@
                 <button class="btn btn-primary" onclick="guardarApiKey()">Guardar y continuar</button>
             </div>
 
-            <div class="form-section hidden" id="lectura-section">
-                <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Título</label>
-                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-titulo"></p>
-                </div>
-
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Descripción + Hashtags (para redes)</label>
-                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
-                    </div>
-                    <p class="copy-content" id="res-descripcion"></p>
-                </div>
-
-                <details class="cronica-details">
-                    <summary><span class="icon-slot" data-icon="bookOpen"></span> Ver crónica completa (de qué trata el tema)</summary>
-                    <p class="copy-content" id="res-cronica"></p>
-                </details>
-            </div>
-
             <div class="layout-cols">
             <div class="col-procesos">
             <h2 class="col-title"><span class="icon-slot" data-icon="gear"></span> Procesos</h2>
@@ -68,6 +43,16 @@
                     <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()"><span class="icon-slot" data-icon="play"></span> Continuar donde quedó</button>
                     <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()"><span class="icon-slot" data-icon="trash"></span> Empezar de cero</button>
                 </div>
+            </div>
+
+            <div class="pasos-nav">
+                <button type="button" class="pasos-nav-btn" onclick="pasoAnterior()" aria-label="Paso anterior">
+                    <span class="icon-slot" data-icon="arrowLeft"></span>
+                </button>
+                <span class="pasos-nav-indicador" id="pasos-nav-indicador">Paso 1 de 6</span>
+                <button type="button" class="pasos-nav-btn" onclick="pasoSiguiente()" aria-label="Paso siguiente">
+                    <span class="icon-slot" data-icon="arrowLeft" style="transform:rotate(180deg)"></span>
+                </button>
             </div>
 
             <div class="steps-grid scroll-snap-col">
@@ -204,6 +189,31 @@
                     </select>
                 </div>
 
+                <div class="form-group">
+                    <label for="efecto-zoom">Efecto zoom (activo toda la toma):</label>
+                    <select id="efecto-zoom">
+                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="todos">Todos los clips</option>
+                        <option value="alternado">Alternado (uno sí, uno no)</option>
+                        <option value="intercalado">Intercalado (in / out)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="zoom-pct-group">
+                    <label for="zoom-pct">Intensidad del zoom (%):</label>
+                    <input type="number" id="zoom-pct" value="20" min="5" max="60" step="5">
+                </div>
+
+                <div class="form-group">
+                    <label for="efecto-espejo">Efecto espejo (flip horizontal):</label>
+                    <select id="efecto-espejo">
+                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="todos">Todos los clips</option>
+                        <option value="alternado">Alternado (uno sí, uno no)</option>
+                        <option value="intercalado">Intercalado</option>
+                    </select>
+                </div>
+
                 <button class="btn btn-success" onclick="handleGenerateVideo()">
                     <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
                 </button>
@@ -214,6 +224,32 @@
 
             <div class="col-productos">
             <h2 class="col-title"><span class="icon-slot" data-icon="listChecks"></span> Productos</h2>
+
+            <div class="form-section hidden" id="lectura-section">
+                <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Título</label>
+                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-titulo"></p>
+                </div>
+
+                <div class="copy-block">
+                    <div class="copy-header">
+                        <label>Descripción + Hashtags (para redes)</label>
+                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    </div>
+                    <p class="copy-content" id="res-descripcion"></p>
+                </div>
+
+                <details class="cronica-details">
+                    <summary><span class="icon-slot" data-icon="bookOpen"></span> Ver crónica completa (de qué trata el tema)</summary>
+                    <p class="copy-content" id="res-cronica"></p>
+                </details>
+            </div>
+
             <div class="productos-actual" id="productos-actual">
                 <div class="producto-slot" id="producto-guion" data-status="pendiente">
                     <div class="producto-slot-head"><span class="icon-slot" data-icon="article"></span> Guion</div>
@@ -236,17 +272,17 @@
             <div class="form-section" id="historial-section">
                 <div id="historial-lista" class="scroll-snap-col"></div>
             </div>
-            </div><!-- /.col-productos -->
-            </div><!-- /.layout-cols -->
 
             <div class="progress-section hidden" id="progress-section">
-                <h2 id="progress-title">Procesando...</h2>
+                <div class="progress-head">
+                    <span id="progress-title">Procesando...</span>
+                    <span id="progress-text">0%</span>
+                </div>
                 <div class="progress-bar">
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
-                <p id="progress-text">0%</p>
                 <div class="log-box" id="log-box"></div>
-                <div class="hidden" id="error-actions" style="margin-top:14px;">
+                <div class="hidden" id="error-actions">
                     <p style="font-weight:bold;color:#c0392b;margin-bottom:8px;">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;">
                         <button class="btn btn-primary" id="btn-reintentar" type="button"><span class="icon-slot" data-icon="arrowsClockwise"></span> Reintentar este paso</button>
@@ -254,6 +290,8 @@
                     </div>
                 </div>
             </div>
+            </div><!-- /.col-productos -->
+            </div><!-- /.layout-cols -->
 
             <div class="result-section hidden" id="result-section">
                 <h2><span class="icon-slot" data-icon="checkCircle"></span> Video generado</h2>

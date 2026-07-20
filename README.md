@@ -29,9 +29,21 @@ App web que genera videos verticales de farándula para TikTok de forma automát
 
 ### Sincronización por porcentajes (el corazón del v2)
 
-- Tiempo de cada párrafo = duración REAL del audio (ffprobe) × (caracteres del párrafo / caracteres totales)
-- Párrafos largos se parten en tomas iguales ≤3s (mejor 2 tomas de 2s que 1 alargada)
+- Fragmentación por **oración** (una oración exacta por fragmento, no grupos de 1-3): preserva
+  el contexto narrativo mientras el multi-clip dinámico hace el resto
+- Tiempo de cada fragmento = duración REAL del audio (ffprobe) × (caracteres del fragmento / caracteres totales)
+- Fragmentos largos se parten en tomas iguales ≤3s (mejor 2 tomas de 2s que 1 alargada); una
+  oración corta queda como clip único breve — el ritmo de corte varía según lo que dice el guion,
+  no un tiempo fijo
 - El video calza con la locución POR CONSTRUCCIÓN: sin ajuste de velocidad
+
+### Efectos por clip: zoom (Ken Burns) + espejo
+
+- Zoom activo **toda la duración** del clip (no una imagen fija) vía `zoompan`, 4 presets:
+  `todos` / `alternado` / `intercalado` (in/out) / `ninguno`, intensidad configurable en %
+- Espejo (flip horizontal) con los mismos 4 presets, independiente del zoom
+- Configurable en el Paso 6 de la UI; mismo sistema en `farandula-insumos` (clips individuales
+  para edición manual también llevan los efectos)
 
 ### Selección de clips (rotación sin repetir)
 
@@ -160,6 +172,13 @@ Branch separada, NO tocar `main`/Railway hasta confirmar que funciona óptimo. V
 - **Verificado en browser real**: switch en ambas direcciones, badges de paso con icono+texto, casillas de producto en ambos estados (opaco y encendido con contenido mock), sin errores de consola nuevos.
 
 Los 5 bloques (A/B/C/D/E) están completos en `test-persistencia`. Pendiente: decidir el merge a `main` (solo cuando confirmes que todo funciona óptimo).
+
+**2026-07-19 — Fragmentación por oración + efectos + robustez Gemini** (detalle completo en
+`.claude/CLAUDE.md`, sección "Sesiones recientes"): fragmentación pasó de párrafo a oración exacta
+(multi-clip dinámico real), zoom/espejo con 4 presets (portado también a `farandula-insumos`), UI
+reconciliada con cambios paralelos hechos en la Mac (carrusel de pasos horizontal, "Resultado de
+la lectura" movido a Productos), y Gemini ya no aborta ante un 400/404 — reveló y arregló un bug
+real: ciertos links de YouTube hacían que Gemini fetcheara HTML en vez de leer el video.
 
 ## Estado (2026-07-13)
 

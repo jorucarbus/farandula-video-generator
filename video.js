@@ -358,23 +358,57 @@ async function montarVideoHyper(plan, tecnico, archivos, audioPath, jobId, sfxDi
   };
 }
 
+// ---- Efectos por clip: zoom (Ken Burns, activo toda la duración) + espejo (hflip) ----
+// Presets (mismos para zoom y espejo): 'todos' | 'alternado' | 'intercalado' | 'ninguno'
+const FPS_EFECTOS = 30;
+
+function decidirEfecto(preset, index) {
+  switch (preset) {
+    case 'todos': return { activo: true, direccion: 'in' };
+    case 'alternado': return { activo: index % 2 === 0, direccion: 'in' };
+    // 'intercalado' solo tiene sentido direccional en zoom (in/out); en espejo equivale a alternado.
+    case 'intercalado': return { activo: true, direccion: index % 2 === 0 ? 'in' : 'out' };
+    default: return { activo: false, direccion: 'in' };
+  }
+}
+
+// Zoom lineal durante TODA la duración del clip: 'in' 100%→(100+pct)%, 'out' al revés.
+// zoompan con d=1 procesa cada frame del video una sola vez (no lo congela como Ken Burns de imagen fija).
+function filtroZoom(direccion, pct, duracionClip) {
+  const frames = Math.max(2, Math.round(duracionClip * FPS_EFECTOS));
+  const factor = Math.max(0, pct) / 100;
+  const expr = direccion === 'out'
+    ? `(1+${factor})-on/${frames}*${factor}`
+    : `1+on/${frames}*${factor}`;
+  return `zoompan=z='${expr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
+}
+
 // ---- Montaje v2: por plan de clips (tiempos por porcentaje, sin ajuste de velocidad) ----
 // plan: [{videoId, offset, duracion}], archivos: {videoId: ruta local}
+// efectos: { zoom: preset, zoomPct: number, espejo: preset }
 // La suma de duraciones = duración del audio, así que el video calza por construcción.
-async function montarVideoPlan(plan, archivos, audioPath, jobId) {
+async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   const enc = argsEncoder(await detectarEncoder());
   const segmentos = [];
+  const zoomPreset = efectos.zoom || 'ninguno';
+  const espejoPreset = efectos.espejo || 'ninguno';
+  const zoomPct = Number.isFinite(efectos.zoomPct) ? efectos.zoomPct : 20;
 
   for (let i = 0; i < plan.length; i++) {
     const clip = plan[i];
     if (!clip || !archivos[clip.videoId]) continue;
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
 
+    const filtros = ['scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30'];
+    const zoomInfo = decidirEfecto(zoomPreset, i);
+    if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion));
+    if (decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
+
     await ffmpeg([
       '-ss', clip.offset.toFixed(2),
       '-i', archivos[clip.videoId],
       '-t', clip.duracion.toFixed(3),
-      '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30',
+      '-vf', filtros.join(','),
       '-an',
       ...enc,
       segPath,

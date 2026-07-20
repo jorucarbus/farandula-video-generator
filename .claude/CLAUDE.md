@@ -1,5 +1,36 @@
 # Claude Code Setup — Farandula Video Generator
 
+## ⚠️ Protocolo de sincronización entre máquinas (leer ANTES de tocar código)
+
+Este proyecto se trabaja desde 2 máquinas (PC Windows del usuario + Mac de trabajo), cada una
+con su propia sesión de Claude Code que **NO comparte memoria ni contexto con la otra** — el
+único canal real de comunicación entre sesiones es este repo de git (commits + este archivo).
+
+**Ya pasó una vez (2026-07-19)**: la Mac hizo 5 commits (iconos Phosphor, tipografía, rediseño
+de historial/header) mientras en paralelo, sin saberlo, se rehacía UI similar en Windows sobre
+código desactualizado — hasta que el usuario preguntó por algo que ninguna sesión recordaba
+haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
+
+**Al EMPEZAR a trabajar en este repo (o en `farandula-insumos`, mismo protocolo), SIEMPRE:**
+1. `git fetch origin --prune`
+2. `git log --oneline <rama-actual>..origin/<rama-actual>` — si aparece algo ahí, la OTRA
+   máquina avanzó desde la última vez. Leerlo (`git show --stat <sha>`) antes de tocar los
+   mismos archivos.
+3. Si hay commits remotos nuevos: `git pull` **antes** de empezar a editar. Si ya hay cambios
+   locales sin commitear que pisan lo mismo, parar y preguntarle al usuario cómo reconciliar
+   (nunca descartar nada sin confirmar explícitamente — ver Git Safety Protocol).
+4. Leer "Sesiones recientes" (abajo) para saber qué se tocó y por qué — evita redescubrir o
+   reimplementar algo dos veces (pasó con la verificación de Bloque D: se hizo por separado en
+   ambas máquinas el mismo día sin saberlo).
+
+**Al TERMINAR una sesión (o antes de una pausa larga), SIEMPRE:**
+1. Commit + push de TODO lo terminado — nunca dejar cambios importantes solo locales; la otra
+   máquina no los puede ver hasta que están en el remoto.
+2. Verificar el push: `git rev-parse HEAD` debe coincidir con `git ls-remote origin <rama> | cut -f1`
+   (memoria: se perdieron 5 horas de trabajo por un push que pareció exitoso pero no llegó).
+3. Agregar una entrada en "Sesiones recientes" con: fecha, qué se hizo, qué archivos, qué quedó
+   pendiente o sin verificar. Esto reemplaza la comunicación directa entre máquinas.
+
 ## Graphify Knowledge Graph (Token Saver)
 
 Este proyecto tiene un **grafo de conocimiento** generado con Graphify.
@@ -104,7 +135,110 @@ Los 4 bloques (A/B/C/D) están completos en `test-persistencia`. Pendiente: deci
 a `main` (regla: solo cuando el usuario confirme que todo funciona óptimo, ver memoria
 `farandula_test_version_rule`).
 
+## Despliegues en Railway (2 proyectos distintos, variables independientes)
+
+- **`farandula-insumos`** (producción, repo `farandula-insumos` rama `main`) —
+  `https://farandula-insumos-production.up.railway.app`
+- **`generous-empathy`** (staging, entorno `test-persistencia`) — 3 servicios, redeploy
+  automático en cada push a `test-persistencia` de cada repo:
+  - **`adventurous-reflection`** = este repo (`farandula-video-generator`), rama
+    `test-persistencia` — `https://adventurous-reflection-test-persistencia.up.railway.app`
+    (nombre auto-generado por Railway, no se renombró)
+  - `farandula-insumos` (Sleeping) y `farandula-video-genera...` (Sleeping) — servicios
+    duplicados/sin uso dentro del mismo proyecto, no confundir con `adventurous-reflection`
+    que es el que SÍ está activo
+
+⚠️ Las variables de entorno (API keys, `GOOGLE_OAUTH_REFRESH_TOKEN`, etc.) son independientes
+por servicio — actualizar una NO propaga a las demás. Si se regenera el refresh token OAuth
+(pasa cuando da `invalid_grant` — expiró o fue revocado), actualizar en las 4 ubicaciones:
+`.env` local de ambos repos + `farandula-insumos` (Railway) + `adventurous-reflection` (Railway).
+
 ## Pendiente Verificar (Railway Live — main, sin tocar por ahora)
 
 - [ ] Redeploy de Railway → youtube-dl-exec postinstall descarga binario linux yt-dlp
 - [ ] Test video real TikTok/IG (Instagram a veces pide cookies)
+
+## Sesiones recientes
+
+### 2026-07-19 (Windows) — Fragmentación por oración, efectos, robustez Gemini, reconciliación con la Mac
+
+**Fragmentación por oración + multi-clip dinámico** (`gemini.js`):
+`fragmentarGuionParrafos` ahora segmenta **1 oración exacta por fragmento** (antes agrupaba 1-3).
+Combinado con `CLIP_MAX=3` (`seleccion.js`, ya existía), las oraciones largas se reparten solas en
+2-4 tomas de ≤3s y las cortas quedan como clip único breve. Verificado en render real (Shakira,
+10 fragmentos/28 clips): oración de 29 caracteres → 1 toma de 1.6s; oración de 188 caracteres →
+4 tomas de ~2.6s.
+
+**Efectos zoom (Ken Burns) + espejo** (`video.js`, `server.js`, `public/index.html` Paso 6):
+`decidirEfecto(preset, index)` + `filtroZoom(direccion, pct, duracionClip)` — 4 presets cada uno
+(todos/alternado/intercalado/ninguno), zoom activo **toda** la duración del clip vía `zoompan`
+(no Ken Burns de imagen fija). Verificado visualmente extrayendo frames del render real: zoom
+progresivo confirmado (framing se cierra sobre el sujeto a medida que avanza el clip).
+
+**⚠️ Estos efectos SOLO estaban en este repo — `farandula-insumos` (repo hermano) nunca los tuvo**
+porque tiene su propio `exportar.js` (corta clips individuales para edición manual, no compone un
+video final). El usuario lo notó después: "los insumos salen con cortes planos, sin zoom ni
+espejo". Se portaron `decidirEfecto()`/`filtroZoom()` a `farandula-insumos/exportar.js`,
+`/api/exportar` ahora acepta `efectos` en el body, y este repo's `public/app.js` (frontend
+compartido) ahora manda `efectos` también en el flujo de insumos (antes solo en `/generate-video`).
+Verificado igual: zoom + espejo confirmados en clip exportado por `exportarInsumos()`.
+
+**Reconciliación con 5 commits de la Mac** (mismo día, ver protocolo arriba): la Mac ya había
+rediseñado la UI (iconos Phosphor, tipografía Inter/Space Grotesk, layout `.layout-cols`
+Procesos/Productos, historial compacto). Se descartaron los cambios UI locales en conflicto
+(`app.js`/`index.html`/`style.css`), se hizo `git pull`, y se reaplicaron sobre esa base: pasos en
+carrusel horizontal (un paso a la vez, flechas + "Paso X de 6" — decisión explícita del usuario
+tras ver una versión con "peek" del siguiente paso), controles de zoom/espejo en Paso 6, y
+"Resultado de la lectura" movido de arriba-de-todo a la columna Productos (es un producto del
+paso 1, no un header). Bug real encontrado 2 veces en el camino: un hijo con `overflow-x:auto`
+dentro de una columna CSS grid/flex necesita `min-width:0` en el padre o expande la columna entera
+a su ancho de contenido — pasó primero con `.col-procesos` (1760px) y de nuevo al agregar el
+carrusel.
+
+**Robustez de Gemini** (`gemini.js`, ambos repos): un 400/404 de la API ya NO aborta la cadena de
+`MODELOS` — los alias `-latest` rotan su destino (ahora hacia gemini-3.x) y una misma request
+puede dar 400 en un modelo y funcionar en el siguiente. Solo 401/403 (auth) son fatales. Se
+captura además el mensaje REAL de la API (`error.response.data.error.message`) en vez del genérico
+de axios — esto reveló la causa de fondo de un error reportado como "400" random: era
+`Unsupported MIME type: text/html` al leer ciertos links de YouTube (Shorts, privados/
+age-restricted, páginas de canal) que hacen que Gemini fetchee HTML en vez de leer el video.
+**Fix**: si la lectura directa de YouTube falla, se descarga con `yt-dlp` y se sube por File API
+(mismo camino ya probado de TikTok/IG). Un `}` extra que Gemini a veces agrega al final del JSON
+(rompía el parser) también se arregló: `extraerBalanceado()` en `parsearJsonRobusto()` recorta
+basura después del objeto/array top-level balanceado.
+
+**UI — panel de progreso/log**: era `position:fixed` (barra flotante de medio-pantalla, diseño de
+Bloque B). Pasó a tarjeta normal dentro de `.col-productos`, debajo de Historial; log de 300px a
+110px máx. `express.static` ahora manda `Cache-Control:no-cache` en html/css/js — el navegador se
+quedaba con versiones viejas y parecía que los cambios de UI no aplicaban.
+
+**Sin verificar / pendiente para la próxima sesión**: el flujo de Insumos con un video real de
+punta a punta con los efectos ya wireados (se probó `exportarInsumos()` aislado con un video de
+prueba, no el flujo completo `/api/exportar` vía UI). Decidir cuándo mergear `test-persistencia`
+a `main` sigue pendiente (regla: solo cuando el usuario confirme que todo funciona óptimo).
+
+### 2026-07-20 (Windows) — Refresh token OAuth expirado (`invalid_grant`)
+
+`GOOGLE_OAUTH_REFRESH_TOKEN` expiró/fue revocado — `invalid_grant` al generar video (falla
+downloads/uploads que usan `getDriveOAuth()`; los Service Accounts no tienen cuota de Drive así
+que no hay fallback funcional para esas operaciones). Regenerado con `obtener-token.js` (flujo
+manual: usuario abre URL de consentimiento, autoriza, pega el code). Actualizado en **4
+ubicaciones** (son independientes, ninguna se propaga a las otras — ver sección de arriba
+"Despliegues en Railway"): `.env` de ambos repos local, `farandula-insumos` (Railway prod) y
+`adventurous-reflection` (Railway staging `test-persistencia`, recién identificado esta sesión).
+Los 4 verificados con una llamada real a Drive tras cada actualización.
+
+**Si vuelve a pasar**: los refresh tokens de OAuth "Testing" (no "In production" en el consent
+screen de Google Cloud) expiran solos a los 7 días de inactividad — si esto se repite seguido,
+revisar el "Publishing status" del proyecto OAuth en Google Cloud Console y pasarlo a producción
+(o agregar el usuario como "Test user" no alcanza, hay que publicar la app).
+
+**Bug encontrado al final de la sesión, SIN arreglar todavía — para la próxima sesión**:
+`audiosPendientes` (`server.js`, línea ~55) es un `Map` en memoria, sin persistencia. Cada
+reinicio del server (pasó varias veces hoy por los fixes) lo vacía, y si el usuario tenía un
+`audioToken` de una locución ya aprobada, `/api/generate-video` falla con `"No se encontró la
+locución aprobada: regenera el audio"` aunque el audio siga bien generado — solo se perdió la
+referencia en memoria. Workaround inmediato: volver a Paso 5 y re-aprobar la locución (genera
+token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mismo patrón que
+`jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
+El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.

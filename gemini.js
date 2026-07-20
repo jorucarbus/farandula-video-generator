@@ -125,6 +125,10 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
     } catch (error) {
       // 429 = límite de tasa; 503 = modelo sobrecargado; 500 = error interno. Todos temporales.
       const status = error.response?.status;
+      // Mensaje real de la API (axios solo deja "Request failed with status code 4xx", inútil para
+      // diagnosticar). Lo adjuntamos para que el log/registro diga QUÉ rechazó Gemini.
+      const detalleApi = error.response?.data?.error?.message;
+      if (detalleApi) error.message = `${modelo} → ${status}: ${detalleApi}`;
       const temporal = status === 429 || status === 503 || status === 500;
       if (temporal && intento < MAX_INTENTOS) {
         const espera = (status === 429 ? 20000 : 8000) * intento;
@@ -132,18 +136,20 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
         await new Promise(r => setTimeout(r, espera));
         continue;
       }
-      // 404 = el alias/modelo no respondió a ESTA request. Los alias -latest rotan su destino
-      // (ahora hacia gemini-3) y devuelven 404 intermitente → caer a un modelo concreto lo resuelve.
-      // 429/503/500 también valen para probar el siguiente modelo.
-      error._geminiSiguienteModelo = temporal || status === 404;
+      // Los alias -latest rotan su destino (ahora hacia gemini-3): una MISMA request puede dar 400/404
+      // en un modelo y funcionar en el siguiente (p.ej. un modelo rechaza thinkingBudget:0 o un campo
+      // de config con 400, pero otro lo acepta). Por eso 400 y 404 también caen al siguiente modelo de
+      // la cadena en vez de abortar. Solo 401/403 (auth/permiso) son fatales y no se reintentan.
+      const authFatal = status === 401 || status === 403;
+      error._geminiSiguienteModelo = !authFatal && (temporal || status === 404 || status === 400);
       throw error;
     }
   }
 }
 
 // Función principal para llamar a Gemini. Recorre la cadena de MODELOS:
-// intenta el más reciente y, si se satura tras sus reintentos, cae al siguiente.
-// Un error NO temporal (400/401/permiso…) aborta de una: no lo arregla otro modelo.
+// intenta el más reciente y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
+// Solo 401/403 (auth/permiso) abortan de una: no los arregla otro modelo.
 // El 3er parámetro (intento) se mantiene por compatibilidad con llamarJSON; ya no se usa.
 async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
   const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
@@ -166,8 +172,36 @@ async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
   throw ultimoError;
 }
 
+// Encuentra dónde cierra el primer objeto/array top-level balanceado (cuenta llaves/corchetes
+// respetando strings), ignorando cualquier basura que venga después (ej. Gemini a veces repite
+// un "}" de más al final de la respuesta).
+function extraerBalanceado(t) {
+  const abre = t[0];
+  const cierra = abre === '[' ? ']' : '}';
+  if (abre !== '[' && abre !== '{') return null;
+  let profundidad = 0;
+  let enString = false;
+  let escape = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (enString) {
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') enString = false;
+      continue;
+    }
+    if (c === '"') { enString = true; continue; }
+    if (c === abre) profundidad++;
+    else if (c === cierra) {
+      profundidad--;
+      if (profundidad === 0) return t.slice(0, i + 1);
+    }
+  }
+  return null;
+}
+
 // Parsear JSON de Gemini con reparación de fallas comunes (fences de markdown,
-// texto extra, array truncado a mitad de un elemento)
+// texto extra antes o después, array truncado a mitad de un elemento)
 function parsearJsonRobusto(texto) {
   let t = texto.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   try { return JSON.parse(t); } catch {}
@@ -176,6 +210,12 @@ function parsearJsonRobusto(texto) {
   const inicio = Math.min(...['[', '{'].map(c => { const i = t.indexOf(c); return i === -1 ? Infinity : i; }));
   if (inicio !== Infinity) t = t.slice(inicio);
   try { return JSON.parse(t); } catch {}
+
+  // Basura después del objeto/array balanceado (ej. "}" de más al final)
+  const balanceado = extraerBalanceado(t);
+  if (balanceado) {
+    try { return JSON.parse(balanceado); } catch {}
+  }
 
   // Array truncado: cortar hasta el último objeto completo y cerrar
   if (t.startsWith('[')) {
@@ -376,15 +416,17 @@ function getAngleDescription(angle) {
 // El tiempo en pantalla de cada párrafo se calcula después por porcentaje de caracteres.
 async function fragmentarGuionParrafos(script, carpetas) {
   try {
-    const prompt = `Rol: Editor de contenido para videos de farándula en TikTok.
+    const prompt = `Rol: Editor de contenido para videos de farándula en TikTok, especializado en ritmo de "corte rápido".
 
-TAREA: Divide el guion en párrafos narrativos cortos (1 a 3 oraciones, entre 80 y 250 caracteres cada uno) y asigna a cada párrafo la carpeta del famoso más relevante según de quién se habla en ese momento.
+TAREA: Divide el guion en ORACIONES individuales (una oración = un fragmento) y asigna a cada una la carpeta del famoso más relevante según de quién se habla en ese momento.
 
 REGLAS:
-1. El texto de los párrafos unidos debe reconstruir el guion COMPLETO, en el mismo orden, sin omitir, agregar ni cambiar palabras.
-2. Usa el nombre EXACTO de la carpeta (respeta mayúsculas y guiones bajos).
-3. Si un párrafo habla de dos famosos, elige al que tenga más peso en ese párrafo.
-4. Responde ÚNICAMENTE con un array JSON válido: [{"parrafo": "texto", "carpeta": "Nombre_Carpeta"}]
+1. Cada fragmento es EXACTAMENTE una oración completa (delimitada por punto, signo de exclamación o interrogación). No agrupes varias oraciones en un fragmento, no dejes palabras sueltas.
+2. Si una oración es muy larga (más de ~140 caracteres) y tiene una pausa natural fuerte (coma antes de conector como "pero", "y", "porque", "mientras", "aunque"), puedes partirla en dos fragmentos en ese punto — cada mitad debe conservar sentido propio.
+3. El texto de los fragmentos unidos debe reconstruir el guion COMPLETO, en el mismo orden, sin omitir, agregar ni cambiar palabras.
+4. Usa el nombre EXACTO de la carpeta (respeta mayúsculas y guiones bajos).
+5. Si un fragmento habla de dos famosos, elige al que tenga más peso en ese fragmento.
+6. Responde ÚNICAMENTE con un array JSON válido: [{"parrafo": "texto", "carpeta": "Nombre_Carpeta"}]
 
 Carpetas disponibles: ${carpetas.join(', ')}`;
 

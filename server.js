@@ -23,7 +23,14 @@ const API_KEY = process.env.API_KEY;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+// no-cache en estáticos: el HTML/CSS/JS cambia seguido durante el desarrollo y el
+// navegador se quedaba pegado con versiones viejas (parecía que los cambios no aplicaban).
+app.use(express.static('public', {
+  etag: true,
+  setHeaders: (res, ruta) => {
+    if (/\.(html|css|js)$/i.test(ruta)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // Autenticación por API Key
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
@@ -163,9 +170,22 @@ app.post('/api/read', async (req, res) => {
     // Los selectores "Link de noticia" y "Video (URL)" ambos traen una URL: se autodetecta.
     if (type === 'link' || type === 'video') {
       if (fuentes.esYoutube(contenido)) {
-        // Gemini lee YouTube directo por URL (no hace falta descargar)
-        console.log('📖 Lectura de video de YouTube (Gemini directo)...');
-        result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
+        // Gemini lee YouTube directo por URL (rápido, sin descargar). Pero algunos links
+        // (Shorts, videos privados/age-restricted, o páginas de canal) hacen que Gemini
+        // fetchee HTML y devuelva 400 "Unsupported MIME type: text/html". En ese caso,
+        // fallback: descargar con yt-dlp y subir el mp4 a la File API (como los sociales).
+        try {
+          console.log('📖 Lectura de video de YouTube (Gemini directo)...');
+          result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
+        } catch (e) {
+          console.warn(`⚠️ YouTube directo falló (${e.message}); reintentando con yt-dlp...`);
+          const videoPath = await fuentes.descargarVideo(contenido);
+          try {
+            result = await gemini.procesarLectura('video', videoPath, sesgoElegido);
+          } finally {
+            try { fs.unlinkSync(videoPath); } catch {}
+          }
+        }
       } else if (fuentes.esVideoSocial(contenido) || type === 'video') {
         // TikTok/IG/etc o "Video (URL)": descargar el VIDEO y que Gemini lo VEA (imagen + audio)
         console.log('📖 Descargando video con yt-dlp para que Gemini lo vea...');
@@ -396,7 +416,7 @@ app.post('/api/generate-audio', async (req, res) => {
 app.post('/api/generate-video', async (req, res) => {
   const renderId = `job_${Date.now()}`; // id interno solo para nombrar temporales de este render
   try {
-    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId } = req.body;
+    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId, efectos } = req.body;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
 
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
@@ -448,7 +468,7 @@ app.post('/api/generate-video', async (req, res) => {
     // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
     // (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, efectos || {});
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
