@@ -35,7 +35,7 @@ function setModo(modo) {
     document.getElementById('producto-final-label').textContent = modo === 'video' ? 'Video' : 'Insumos';
     // Volver al inicio (paso 1) con estado limpio
     state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
-    localStorage.removeItem('farandula_job_id');
+    sessionStorage.removeItem('farandula_job_id');
 
     document.getElementById('lectura-section').classList.add('hidden');
     hideProgress();
@@ -61,8 +61,18 @@ function guardarApiKey() {
   API_KEY = key;
   localStorage.setItem('api_key', key);
   document.getElementById('apikey-banner').classList.add('hidden');
-  chequearJobPendiente();
-  cargarHistorial();
+  iniciarSesion();
+}
+
+// Punto único de arranque tras tener API_KEY: si la URL trae ?jobId= (click desde el
+// historial en otra pestaña) carga ese proceso directo; si no, revisa si esta MISMA
+// pestaña dejó algo a medias (sessionStorage, no localStorage: cada pestaña es independiente).
+async function iniciarSesion() {
+    cargarCanales();
+    cargarProcesos();
+    cargarHistorial();
+    const cargadoPorURL = await cargarDesdeURL();
+    if (!cargadoPorURL) chequearJobPendiente();
 }
 
 function pedirApiKeyDeNuevo() {
@@ -308,7 +318,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
         // jobId: persiste el progreso en el server. Solo existe en modo 'video' (mismo backend).
         if (result.jobId) {
             state.jobId = result.jobId;
-            localStorage.setItem('farandula_job_id', result.jobId);
+            sessionStorage.setItem('farandula_job_id', result.jobId);
         }
         updateProgress(30);
 
@@ -884,7 +894,7 @@ async function cargarHistorial() {
 let jobPendiente = null;
 
 async function chequearJobPendiente() {
-    const jobId = localStorage.getItem('farandula_job_id');
+    const jobId = sessionStorage.getItem('farandula_job_id');
     if (!jobId || !API_KEY) return;
     try {
         const job = await apiCall(`/jobs/${jobId}`);
@@ -892,11 +902,29 @@ async function chequearJobPendiente() {
             jobPendiente = job;
             document.getElementById('recuperar-banner').classList.remove('hidden');
         } else {
-            localStorage.removeItem('farandula_job_id');
+            sessionStorage.removeItem('farandula_job_id');
         }
     } catch {
         // Job no encontrado (expiró, se podó, o server reiniciado): limpiar referencia vieja
-        localStorage.removeItem('farandula_job_id');
+        sessionStorage.removeItem('farandula_job_id');
+    }
+}
+
+// Carga directa (sin banner) de un job pasado por ?jobId= en la URL — usado al abrir
+// un proceso del historial en una pestaña nueva. true si logró cargar algo.
+async function cargarDesdeURL() {
+    const jobId = new URLSearchParams(location.search).get('jobId');
+    if (!jobId || !API_KEY) return false;
+    try {
+        const job = await apiCall(`/jobs/${jobId}`);
+        if (!job) return false;
+        jobPendiente = job;
+        sessionStorage.setItem('farandula_job_id', jobId);
+        await recuperarJobPendiente();
+        return true;
+    } catch (e) {
+        log(`⚠️ No se pudo cargar el proceso ${jobId}: ${e.message}`);
+        return false;
     }
 }
 
@@ -961,10 +989,54 @@ async function recuperarJobPendiente() {
 }
 
 function descartarJobPendiente() {
-    localStorage.removeItem('farandula_job_id');
+    sessionStorage.removeItem('farandula_job_id');
     jobPendiente = null;
     document.getElementById('recuperar-banner').classList.add('hidden');
     log('🗑️ Proceso pendiente descartado');
+}
+
+// Historial de procesos (jobStore): incluye jobs sin terminar, con badge de estado.
+// Click en una tarjeta abre ese proceso en una pestaña nueva (no interrumpe el trabajo actual).
+const ESTADO_PROCESO = {
+    terminado: { icon: 'checkCircle', texto: 'Terminado' },
+    en_proceso: { icon: 'lockOpen', texto: 'En proceso' },
+    incompleto: { icon: 'hourglass', texto: 'Incompleto' },
+};
+const PASO_NUM = { lectura: 1, guion: 2, fragmentacion: 3, audio: 4, completado: 5 };
+
+async function cargarProcesos() {
+    const cont = document.getElementById('procesos-lista');
+    if (!cont) return;
+    cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
+    try {
+        const result = await apiCall('/jobs');
+        const jobs = result.jobs || [];
+        if (jobs.length === 0) {
+            cont.innerHTML = '<p style="color:#666;">Sin procesos todavía.</p>';
+            return;
+        }
+        cont.innerHTML = '';
+        jobs.forEach(job => {
+            const info = ESTADO_PROCESO[job.estado] || ESTADO_PROCESO.incompleto;
+            const paso = PASO_NUM[job.paso] || 1;
+            const div = document.createElement('div');
+            div.className = 'proceso-item';
+            div.style.cssText = 'border:2px solid #000;border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;';
+            div.innerHTML = `
+                <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+                    <span>${icon(info.icon)} ${info.texto}</span>
+                    <span>Paso ${paso}/5</span>
+                    <span>${new Date(job.actualizado).toLocaleString()}</span>
+                </div>
+            `;
+            div.title = 'Abrir en una pestaña nueva';
+            div.onclick = () => window.open(`/?jobId=${job.jobId}`, '_blank');
+            cont.appendChild(div);
+        });
+    } catch (error) {
+        cont.innerHTML = `<p style="color:#c0392b;">Error cargando procesos: ${error.message}</p>`;
+    }
 }
 
 // Cargar canales de insumos en el dropdown de Paso 1
@@ -1008,9 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
     log('✅ App iniciada');
     initApiKey();
     if (API_KEY) {
-        cargarCanales();
-        chequearJobPendiente();
-        cargarHistorial();
+        iniciarSesion();
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
     const contPasos = contenedorPasos();

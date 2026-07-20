@@ -276,8 +276,13 @@ app.post('/api/generate-script', async (req, res) => {
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
     if (jobId) {
-      try { jobStore.actualizarJob(jobId, { paso: 'guion', script, palabras }); }
-      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+      try {
+        const job = jobStore.actualizarJob(jobId, { paso: 'guion', script, palabras });
+        if (job.carpetaInsumoId) {
+          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'guion.json', JSON.stringify({ script, palabras }, null, 2))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar guion.json en Drive: ${e.message}`));
+        }
+      } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
     res.json({
@@ -326,8 +331,13 @@ app.post('/api/fragment', async (req, res) => {
     const protagonistaSinCarpeta = Boolean(p) && !carpetas.some(c => norm(c).includes(p) || p.includes(norm(c)));
 
     if (jobId) {
-      try { jobStore.actualizarJob(jobId, { paso: 'fragmentacion', fragments: conPorcentaje, carpetas }); }
-      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+      try {
+        const job = jobStore.actualizarJob(jobId, { paso: 'fragmentacion', fragments: conPorcentaje, carpetas });
+        if (job.carpetaInsumoId) {
+          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'fragments.json', JSON.stringify(conPorcentaje, null, 2))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar fragments.json en Drive: ${e.message}`));
+        }
+      } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
     res.json({
@@ -392,8 +402,14 @@ app.post('/api/generar-audio', async (req, res) => {
     console.log(`  ⏱️ ${duracion.toFixed(1)}s (${audio.modelo}) — esperando aprobación`);
 
     if (jobId) {
-      try { jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: audio.modelo }); }
-      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+      try {
+        const job = jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: audio.modelo });
+        if (job.carpetaInsumoId) {
+          fs.promises.readFile(audio.audioPath)
+            .then(buffer => driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'audio.mp3', buffer))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar audio.mp3 en Drive: ${e.message}`));
+        }
+      } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
     res.json({
@@ -573,8 +589,13 @@ app.post('/api/generate-video', async (req, res) => {
     try { fs.unlinkSync(audioPath); } catch {}
 
     if (jobId) {
-      try { jobStore.actualizarJob(jobId, { paso: 'completado', fileName, folderName, driveLink }); }
-      catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+      try {
+        const job = jobStore.actualizarJob(jobId, { paso: 'completado', fileName, folderName, driveLink });
+        if (job.carpetaInsumoId) {
+          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'resultado.json', JSON.stringify({ fileName, folderName, driveLink }, null, 2))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar resultado.json en Drive: ${e.message}`));
+        }
+      } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
     console.log(`✅ [${renderId}] Video guardado: ${fileName}`);

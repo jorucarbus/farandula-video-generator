@@ -49,14 +49,29 @@ function actualizarJob(jobId, cambios) {
   return jobs[jobId];
 }
 
+// Estado visible en el historial: terminado (paso completado), en_proceso (tocado hace poco)
+// o incompleto (abandonado a medio camino, sin actividad reciente — recuperable igual).
+const MINUTOS_ABANDONO = 30;
+function calcularEstado(job) {
+  if (job.paso === 'completado') return 'terminado';
+  const minutos = (Date.now() - new Date(job.actualizado).getTime()) / 60000;
+  return minutos > MINUTOS_ABANDONO ? 'incompleto' : 'en_proceso';
+}
+
+function conEstado(job) {
+  return { ...job, estado: calcularEstado(job) };
+}
+
 function obtenerJob(jobId) {
-  return cargar()[jobId] || null;
+  const job = cargar()[jobId];
+  return job ? conEstado(job) : null;
 }
 
 function listarJobs(limite = 20) {
   return Object.values(cargar())
     .sort((a, b) => new Date(b.actualizado) - new Date(a.actualizado))
-    .slice(0, limite);
+    .slice(0, limite)
+    .map(conEstado);
 }
 
 module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs };

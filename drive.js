@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 
 let drive;      // Service Account: lee/descarga clips de famosos
 let driveOAuth; // OAuth (cuenta del usuario): sube renders (el Service Account no tiene cuota)
@@ -154,14 +155,9 @@ async function crearCarpetaInsumo(canalId, nombreCarpeta) {
 async function guardarEnInsumo(carpetaId, nombreArchivo, contenido) {
   const cliente = getDriveOAuth() || getDrive();
 
-  let body;
-  if (typeof contenido === 'string') {
-    body = contenido; // texto, JSON, etc.
-  } else if (Buffer.isBuffer(contenido)) {
-    body = contenido; // audio MP3, etc.
-  } else {
-    body = JSON.stringify(contenido); // objetos
-  }
+  const buffer = Buffer.isBuffer(contenido)
+    ? contenido
+    : Buffer.from(typeof contenido === 'string' ? contenido : JSON.stringify(contenido));
 
   const mimeType = nombreArchivo.endsWith('.mp3') ? 'audio/mpeg' : 'application/octet-stream';
 
@@ -172,7 +168,9 @@ async function guardarEnInsumo(carpetaId, nombreArchivo, contenido) {
     },
     media: {
       mimeType,
-      body: Buffer.isBuffer(body) ? body : Buffer.from(body),
+      // media.body debe ser un stream: googleapis-common hace part.body.pipe() internamente
+      // en el multipart upload — un Buffer crudo revienta con "part.body.pipe is not a function".
+      body: Readable.from(buffer),
     },
     fields: 'id, name, webViewLink',
     supportsAllDrives: true,
