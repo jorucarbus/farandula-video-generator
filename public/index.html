@@ -94,7 +94,7 @@
                     </select>
                 </div>
 
-                <button class="btn btn-primary" onclick="handleRead()">
+                <button class="btn btn-primary" id="btn-read" onclick="handleRead()">
                     <span class="icon-slot" data-icon="bookOpen"></span> Leer y procesar
                 </button>
             </div>
@@ -138,7 +138,7 @@
                     <textarea id="custom-angle" placeholder="Describe tu enfoque..." rows="3"></textarea>
                 </div>
 
-                <button class="btn btn-primary" onclick="handleGenerateScript()">
+                <button class="btn btn-primary" id="btn-generate-script" onclick="handleGenerateScript()">
                     <span class="icon-slot" data-icon="pencilSimple"></span> Generar guion
                 </button>
             </div>
@@ -154,8 +154,8 @@
                     <textarea id="guion-editor" rows="10" style="width:100%;resize:vertical;" oninput="actualizarStatsGuion()"></textarea>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
-                    <button class="btn btn-success" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
-                    <button class="btn btn-primary" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
+                    <button class="btn btn-success" id="btn-approve-guion" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
+                    <button class="btn btn-primary" id="btn-regenerate-guion" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
                     <button class="btn btn-secondary" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
                 </div>
                 <p style="color:#666;font-size:0.85rem;margin-top:8px;">
@@ -169,7 +169,7 @@
                 <div id="aviso-protagonista" class="hidden" style="background:#ffe5e5;border:1px solid #e74c3c;border-radius:8px;padding:10px 14px;margin-bottom:12px;color:#c0392b;font-weight:bold;"></div>
                 <p style="color:#666;font-size:0.9rem;margin-bottom:10px;">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
                 <div id="lista-asignaciones"></div>
-                <button class="btn btn-success" style="margin-top:12px;" onclick="confirmarAsignaciones()"><span class="icon-slot" data-icon="check"></span> Confirmar asignaciones</button>
+                <button class="btn btn-success" id="btn-confirm-assignments" style="margin-top:12px;" onclick="confirmarAsignaciones()"><span class="icon-slot" data-icon="check"></span> Confirmar asignaciones</button>
             </div>
 
             <div class="form-section" id="audio-section" data-status="locked">
@@ -178,9 +178,9 @@
                 <p id="audio-info" style="color:#666;font-size:0.9rem;margin-bottom:8px;"></p>
                 <audio id="audio-player" controls style="width:100%;margin-bottom:12px;"></audio>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button class="btn btn-success" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
-                    <button class="btn btn-primary" onclick="regenerarAudio('eleven_v3')"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (v3, actúa marcas)</button>
-                    <button class="btn btn-secondary" onclick="regenerarAudio('eleven_multilingual_v2')"><span class="icon-slot" data-icon="microphone"></span> Regenerar con v2 (acento forzado español)</button>
+                    <button class="btn btn-success" id="btn-approve-audio" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
+                    <button class="btn btn-primary" id="btn-regenerate-audio-v3" onclick="regenerarAudio('eleven_v3')"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (v3, actúa marcas)</button>
+                    <button class="btn btn-secondary" id="btn-regenerate-audio-v2" onclick="regenerarAudio('eleven_multilingual_v2')"><span class="icon-slot" data-icon="microphone"></span> Regenerar con v2 (acento forzado español)</button>
                 </div>
                 <p style="color:#666;font-size:0.85rem;margin-top:8px;">
                     v3 actúa las emociones pero a veces cambia el acento. v2 fuerza el idioma (más estable) pero lee plano.
@@ -222,7 +222,7 @@
                     </select>
                 </div>
 
-                <button class="btn btn-success" onclick="handleGenerateVideo()">
+                <button class="btn btn-success" id="btn-generate-video" onclick="handleGenerateVideo()">
                     <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
                 </button>
             </div>

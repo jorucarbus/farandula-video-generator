@@ -12,6 +12,16 @@ let MODO = 'video';
 function apiBase() { return BACKENDS[MODO]; }
 function cfg() { return FLUJO[MODO]; }
 
+// Helper: deshabilitar/habilitar botón mientras proceso está activo
+function setButtonDisabled(buttonId, disabled) {
+    const btn = document.getElementById(buttonId);
+    if (btn) {
+        btn.disabled = disabled;
+        if (disabled) btn.style.opacity = '0.6';
+        else btn.style.opacity = '1';
+    }
+}
+
 // Bloque C: rehacer un paso ya completado (editar y reenviar) invalida todo lo posterior.
 // Se llama al INICIO de cada función que muta el pipeline, antes de la llamada a la API.
 const STEP_ORDER = ['fuente-section', 'script-section', 'guion-section', 'revision-section', 'audio-section', 'destination-section'];
@@ -280,7 +290,12 @@ async function handleRead() {
         alert('Por favor ingresa un link o texto');
         return;
     }
-    await leerFuente(sourceType, sourceInput, sesgo, canalId);
+    setButtonDisabled('btn-read', true);
+    try {
+        await leerFuente(sourceType, sourceInput, sesgo, canalId);
+    } finally {
+        setButtonDisabled('btn-read', false);
+    }
 }
 
 // Lectura reutilizable (también para regenerar con otro sesgo al final)
@@ -371,6 +386,7 @@ async function handleGenerateScript() {
         }
     }
 
+    setButtonDisabled('btn-generate-script', true);
     try {
         // Rehacer el guion (nuevo ángulo o regenerar) invalida asignaciones/audio/destino ya hechos
         state.fragments = null;
@@ -410,6 +426,8 @@ async function handleGenerateScript() {
     } catch (error) {
         mostrarError(`Error generando guion: ${error.message}`,
             () => handleGenerateScript(), 'script-section');
+    } finally {
+        setButtonDisabled('btn-generate-script', false);
     }
 }
 
@@ -438,6 +456,7 @@ async function aprobarGuion() {
     renderProductoGuion(texto);
     log('✅ Guion aprobado');
 
+    setButtonDisabled('btn-approve-guion', true);
     try {
         // Rehacer la aprobación (guion editado) invalida audio/destino ya hechos
         state.audioToken = null;
@@ -462,6 +481,8 @@ async function aprobarGuion() {
     } catch (error) {
         mostrarError(`Error asignando carpetas: ${error.message}`,
             () => aprobarGuion(), 'guion-section');
+    } finally {
+        setButtonDisabled('btn-approve-guion', false);
     }
 }
 
@@ -500,11 +521,18 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
 
 // Confirmar asignaciones → generar locución para aprobación
 async function confirmarAsignaciones() {
-    await regenerarAudio('eleven_v3');
+    setButtonDisabled('btn-confirm-assignments', true);
+    try {
+        await regenerarAudio('eleven_v3');
+    } finally {
+        setButtonDisabled('btn-confirm-assignments', false);
+    }
 }
 
 // Generar (o regenerar) la locución y mostrarla para aprobación
 async function regenerarAudio(modelo) {
+    setButtonDisabled('btn-regenerate-audio-v3', true);
+    setButtonDisabled('btn-regenerate-audio-v2', true);
     try {
         // Rehacer la locución invalida el destino ya elegido
         state.selectedDestFolder = null;
@@ -535,6 +563,9 @@ async function regenerarAudio(modelo) {
     } catch (error) {
         mostrarError(`Error generando locución: ${error.message}`,
             () => regenerarAudio(modelo), 'revision-section');
+    } finally {
+        setButtonDisabled('btn-regenerate-audio-v3', false);
+        setButtonDisabled('btn-regenerate-audio-v2', false);
     }
 }
 
@@ -544,16 +575,26 @@ async function aprobarAudio() {
         alert('No hay locución generada');
         return;
     }
-    log('✅ Locución aprobada');
-    await loadDestinationFolders();
-    setStepStatus('audio-section', 'done');
-    setStepStatus('destination-section', 'active');
+    setButtonDisabled('btn-approve-audio', true);
+    try {
+        log('✅ Locución aprobada');
+        await loadDestinationFolders();
+        setStepStatus('audio-section', 'done');
+        setStepStatus('destination-section', 'active');
+    } finally {
+        setButtonDisabled('btn-approve-audio', false);
+    }
 }
 
 // RECHAZO: regenerar con el mismo ángulo
-function regenerarGuion() {
-    log('🔄 Regenerando guion (mismo ángulo)...');
-    handleGenerateScript();
+async function regenerarGuion() {
+    setButtonDisabled('btn-regenerate-guion', true);
+    try {
+        log('🔄 Regenerando guion (mismo ángulo)...');
+        await handleGenerateScript();
+    } finally {
+        setButtonDisabled('btn-regenerate-guion', false);
+    }
 }
 
 // RECHAZO: volver a elegir ángulo
@@ -600,6 +641,7 @@ async function handleGenerateVideo() {
 
     state.selectedDestFolder = destFolder;
 
+    setButtonDisabled('btn-generate-video', true);
     try {
         showProgress(MODO === 'video' ? `${icon('rocketLaunch')} Generando video...` : `${icon('rocketLaunch')} Exportando insumos...`);
         log(MODO === 'video' ? '🚀 Iniciando generación de video...' : '🚀 Iniciando exportación de insumos...');
@@ -669,6 +711,8 @@ async function handleGenerateVideo() {
         // Reintentar aquí repite SOLO el render/export: el guion y la locución ya están en state.
         mostrarError(`Error en ${MODO === 'video' ? 'la generación del video' : 'la exportación'}: ${error.message}`,
             () => handleGenerateVideo(), 'destination-section');
+    } finally {
+        setButtonDisabled('btn-generate-video', false);
     }
 }
 
