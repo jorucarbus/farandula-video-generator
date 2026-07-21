@@ -569,6 +569,44 @@ async function regenerarAudio(modelo) {
     }
 }
 
+// Recargar el audio.mp3 desde la carpeta de insumos en Drive (voz hecha en otra parte).
+// No pasa por ElevenLabs: baja el archivo que el usuario dejó en Drive y lo deja aprobable.
+async function recargarAudioDeDrive() {
+    if (!state.jobId) {
+        alert('No hay un proceso activo con carpeta en Drive');
+        return;
+    }
+    setButtonDisabled('btn-recargar-audio', true);
+    try {
+        // Cambiar la locución invalida el destino ya elegido
+        state.selectedDestFolder = null;
+        lockFrom('destination-section');
+
+        showProgress(`${icon('arrowsClockwise')} Recargando audio desde Drive...`);
+        log('♻️ Recargando audio desde Drive...');
+        updateProgress(65);
+        const result = await apiCall('/recargar-audio', 'POST', { jobId: state.jobId });
+        state.audioToken = result.audioToken;
+
+        document.getElementById('audio-info').textContent =
+            `Duración: ${result.duracion}s | Origen: Drive`;
+        const player = document.getElementById('audio-player');
+        player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
+        player.load();
+        renderProductoAudio(player.src);
+
+        hideProgress();
+        setStepStatus('revision-section', 'done');
+        setStepStatus('audio-section', 'active');
+        log('🎧 Audio de Drive cargado. Escúchalo y apruébalo.');
+    } catch (error) {
+        mostrarError(`Error recargando audio: ${error.message}`,
+            () => recargarAudioDeDrive(), 'audio-section');
+    } finally {
+        setButtonDisabled('btn-recargar-audio', false);
+    }
+}
+
 // Locución aprobada → elegir carpeta de destino
 async function aprobarAudio() {
     if (!state.audioToken) {

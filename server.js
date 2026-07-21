@@ -57,10 +57,15 @@ const audiosPendientes = new Map();
 // Recuperar el audio.mp3 de un job desde su carpeta de insumos en Drive, a disco local.
 // Se usa cuando el Map audiosPendientes se vació (reinicio del server / redeploy de Railway)
 // pero el audio ya fue generado y respaldado. Devuelve la ruta local, o null si no hay nada.
-async function recuperarAudioDeDrive(job) {
+async function recuperarAudioDeDrive(job, force = false) {
   if (!job || !job.carpetaInsumoId) return null;
   const destPath = path.join(__dirname, 'temp-videos', `audio_recuperado_${job.jobId}.mp3`);
-  if (fs.existsSync(destPath)) return destPath; // ya restaurado en una llamada anterior
+  // force=true: el usuario reemplazó el audio.mp3 en Drive y quiere re-bajarlo aunque
+  // ya haya una copia local cacheada (botón "Recargar audio desde Drive").
+  if (fs.existsSync(destPath)) {
+    if (!force) return destPath; // ya restaurado en una llamada anterior
+    try { fs.unlinkSync(destPath); } catch {}
+  }
   try {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
     const ruta = await driveHelper.descargarDeInsumo(job.carpetaInsumoId, 'audio.mp3', destPath);
@@ -450,6 +455,45 @@ app.post('/api/generar-audio', async (req, res) => {
     });
   } catch (e) {
     console.error('Error generando audio:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Recargar el audio.mp3 desde la carpeta de insumos en Drive (force). Sirve para
+// incorporar un audio generado/editado fuera de la app: el usuario lo sube a la
+// carpeta del job en Drive y este endpoint lo baja, mide su duración, y lo deja
+// aprobable (nuevo token en el Map) sin pasar por ElevenLabs.
+app.post('/api/recargar-audio', async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    if (!job.carpetaInsumoId) {
+      return res.status(400).json({ error: 'Este job no tiene carpeta de insumos en Drive' });
+    }
+
+    const ruta = await recuperarAudioDeDrive(job, true); // force: re-baja aunque haya caché
+    if (!ruta || !fs.existsSync(ruta)) {
+      return res.status(404).json({ error: 'No hay audio.mp3 en la carpeta de insumos de Drive' });
+    }
+
+    const duracion = await video.obtenerDuracion(ruta);
+    const token = crypto.randomBytes(16).toString('hex');
+    audiosPendientes.set(token, { path: ruta, duracion, modelo: 'drive' });
+    jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: 'drive' });
+
+    console.log(`♻️ Audio recargado desde Drive (${jobId}): ${duracion.toFixed(1)}s`);
+    res.json({
+      status: 'success',
+      audioToken: token,
+      audioUrl: `/api/audio/${token}`,
+      duracion: Math.round(duracion),
+      modelo: 'drive',
+    });
+  } catch (e) {
+    console.error('Error recargando audio:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
