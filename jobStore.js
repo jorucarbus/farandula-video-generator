@@ -67,6 +67,12 @@ function obtenerJob(jobId) {
   return job ? conEstado(job) : null;
 }
 
+// Buscar el job dueño de un audioToken (para recuperar su audio.mp3 desde Drive
+// cuando el Map en memoria se vació por un reinicio del server).
+function buscarPorAudioToken(token) {
+  return Object.values(cargar()).find(j => j.audioToken === token) || null;
+}
+
 function listarJobs(limite = 20) {
   return Object.values(cargar())
     .sort((a, b) => new Date(b.actualizado) - new Date(a.actualizado))
@@ -74,4 +80,4 @@ function listarJobs(limite = 20) {
     .map(conEstado);
 }
 
-module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs };
+module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken };

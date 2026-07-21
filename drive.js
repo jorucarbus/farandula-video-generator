@@ -215,6 +215,35 @@ async function leerDeInsumo(carpetaId, nombreArchivo) {
   });
 }
 
+// Descargar un archivo BINARIO (ej. audio.mp3) de una carpeta de insumo a disco local.
+// A diferencia de leerDeInsumo (que decodifica a texto/JSON y corrompería un mp3), esto
+// escribe el stream crudo a destPath. Devuelve destPath, o null si el archivo no existe.
+async function descargarDeInsumo(carpetaId, nombreArchivo, destPath) {
+  const res = await getDrive().files.list({
+    q: `'${carpetaId}' in parents and name='${nombreArchivo.replace(/'/g, "\\'")}' and trashed=false`,
+    fields: 'files(id)',
+    pageSize: 1,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  if (!res.data.files.length) return null;
+
+  const fileId = res.data.files[0].id;
+  const resp = await getDrive().files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'stream' }
+  );
+
+  await new Promise((resolve, reject) => {
+    const out = fs.createWriteStream(destPath);
+    resp.data.pipe(out);
+    out.on('finish', resolve);
+    out.on('error', reject);
+  });
+
+  return destPath;
+}
+
 module.exports = {
   obtenerCarpetasFamosos,
   listarVideos,
@@ -227,5 +256,6 @@ module.exports = {
   listarCanales,
   crearCarpetaInsumo,
   guardarEnInsumo,
+  descargarDeInsumo,
   leerDeInsumo,
 };

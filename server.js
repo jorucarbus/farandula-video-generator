@@ -54,9 +54,38 @@ const previews = new Map();
 // Audios pendientes de aprobación: token -> {path, duracion, modelo}
 const audiosPendientes = new Map();
 
+// Recuperar el audio.mp3 de un job desde su carpeta de insumos en Drive, a disco local.
+// Se usa cuando el Map audiosPendientes se vació (reinicio del server / redeploy de Railway)
+// pero el audio ya fue generado y respaldado. Devuelve la ruta local, o null si no hay nada.
+async function recuperarAudioDeDrive(job) {
+  if (!job || !job.carpetaInsumoId) return null;
+  const destPath = path.join(__dirname, 'temp-videos', `audio_recuperado_${job.jobId}.mp3`);
+  if (fs.existsSync(destPath)) return destPath; // ya restaurado en una llamada anterior
+  try {
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    const ruta = await driveHelper.descargarDeInsumo(job.carpetaInsumoId, 'audio.mp3', destPath);
+    if (ruta) console.log(`♻️ Audio recuperado desde Drive: ${job.jobId}`);
+    return ruta;
+  } catch (e) {
+    console.warn(`⚠️ No se pudo recuperar audio de Drive (${job.jobId}): ${e.message}`);
+    return null;
+  }
+}
+
 // Servir un audio para escucharlo en la UI (público: el tag <audio> no envía headers)
-app.get('/api/audio/:token', (req, res) => {
-  const audio = audiosPendientes.get(req.params.token);
+app.get('/api/audio/:token', async (req, res) => {
+  const token = req.params.token;
+  let audio = audiosPendientes.get(token);
+  // Fallback: si el Map se vació tras un reinicio, recuperar el audio desde Drive
+  // usando el job dueño de este token, y repoblar el Map para próximas lecturas.
+  if (!audio || !fs.existsSync(audio.path)) {
+    const job = jobStore.buscarPorAudioToken(token);
+    const ruta = await recuperarAudioDeDrive(job);
+    if (ruta) {
+      audio = { path: ruta, duracion: job.duracion, modelo: job.modelo };
+      audiosPendientes.set(token, audio);
+    }
+  }
   if (!audio || !fs.existsSync(audio.path)) {
     return res.status(404).json({ error: 'Audio no disponible' });
   }
@@ -466,7 +495,13 @@ app.post('/api/generate-video', async (req, res) => {
     }
     // Audio: preferir el aprobado por token; compatibilidad con audioPath directo
     const audioAprobado = audioToken ? audiosPendientes.get(audioToken) : null;
-    const audioPath = audioAprobado?.path || audioPathBody;
+    let audioPath = audioAprobado?.path || audioPathBody;
+    // Fallback: si el Map se vació tras un reinicio, recuperar el audio.mp3 del job
+    // desde su carpeta de insumos en Drive antes de dar por perdida la locución.
+    if ((!audioPath || !fs.existsSync(audioPath)) && jobId) {
+      const ruta = await recuperarAudioDeDrive(jobStore.obtenerJob(jobId));
+      if (ruta) audioPath = ruta;
+    }
     if (!audioPath || !fs.existsSync(audioPath)) {
       return res.status(400).json({ error: 'No se encontró la locución aprobada: regenera el audio' });
     }
