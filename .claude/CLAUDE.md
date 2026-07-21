@@ -243,6 +243,24 @@ token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mis
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
 
+### 2026-07-21 (Mac) — Botón "Recargar audio desde Drive" (Paso 5)
+
+Permite incorporar una voz hecha/editada FUERA de la app: el usuario sube su `audio.mp3`
+a la carpeta de insumos del job en Drive, y el botón lo baja y lo deja aprobable sin pasar
+por ElevenLabs.
+
+- `server.js` — `recuperarAudioDeDrive(job, force)` ahora acepta `force`: borra la copia
+  local cacheada y re-baja (el usuario reemplazó el archivo). Endpoint nuevo
+  `POST /api/recargar-audio {jobId}`: baja el audio.mp3 con force, mide duración con
+  ffprobe, crea token nuevo en el Map + actualiza el job (`modelo: 'drive'`).
+- `public/index.html` — botón `btn-recargar-audio` + nota en Paso 5.
+- `public/app.js` — `recargarAudioDeDrive()`: llama al endpoint, actualiza reproductor,
+  token y estados de paso (invalida destino, igual que regenerar).
+
+**Verificado en Mac**: botón presente en DOM + función definida + endpoint valida jobId y
+existencia del job. La descarga real necesita un job con audio.mp3 en su carpeta + OAuth
+(no probado e2e acá). **Alcance elegido por el usuario**: solo audio (no guion/fragmentos).
+
 ### 2026-07-21 (Mac) — Recuperación de audio desde Drive (fix del bug audiosPendientes)
 
 **Problema** (pendiente desde 2026-07-20 Windows): `audiosPendientes` era un `Map` en
