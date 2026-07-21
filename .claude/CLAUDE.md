@@ -243,6 +243,39 @@ token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mis
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
 
+### 2026-07-21 (Mac) — Recuperación de audio desde Drive (fix del bug audiosPendientes)
+
+**Problema** (pendiente desde 2026-07-20 Windows): `audiosPendientes` era un `Map` en
+memoria. Al reiniciar el server (o redeploy Railway) se vaciaba, y aunque el `audio.mp3`
+seguía respaldado en Drive, se perdía la referencia → `/api/generate-video` fallaba con
+"No se encontró la locución aprobada: regenera el audio". El usuario tenía que regenerar
+la voz aunque ya existía.
+
+**Hallazgo clave**: el `audio.mp3` YA se respaldaba en la carpeta de insumos de CADA job
+(la carpeta se crea en el paso de lectura, server.js:226, tanto en modo Video como
+Insumos). El token + duracion + modelo YA se persistían en `jobs.json` (server.js:406).
+Solo faltaba la RECUPERACIÓN: nadie bajaba el mp3 de Drive cuando el Map estaba vacío.
+
+**Fix (de raíz, no toca el flujo feliz)**:
+- `drive.js` — `descargarDeInsumo(carpetaId, nombre, destPath)` (nuevo): baja un archivo
+  BINARIO (mp3) a disco. `leerDeInsumo` existente NO servía: decodifica a texto/JSON y
+  corrompía el mp3.
+- `jobStore.js` — `buscarPorAudioToken(token)` (nuevo): halla el job dueño de un token.
+- `server.js` — helper `recuperarAudioDeDrive(job)`: baja `audio.mp3` de la carpeta de
+  insumos a `temp-videos/audio_recuperado_{jobId}.mp3` (cachea si ya existe). Usado como
+  fallback en 2 lugares:
+  - `/api/audio/:token` (ahora async): si el Map se vació, busca job por token, recupera
+    de Drive y REPUEBLA el Map. El `<audio>` del Paso 5 vuelve a sonar al retomar.
+  - `/api/generate-video`: si no hay audio en memoria ni en disco, recupera del job por
+    `jobId` antes de dar el error.
+
+**Verificado en Mac**: server bootea limpio (Drive conectado); token falso a
+`/api/audio/:token` ejecuta el fallback sin crashear y devuelve 404 correcto
+(job no existe → recuperar retorna null → 404). El camino de descarga exitosa NO se
+probó e2e acá (necesita un job real con audio.mp3 en su carpeta + OAuth; esta Mac no
+tiene las vars OAuth). **Pendiente verificar en Railway staging**: retomar un job viejo
+y generar video sin regenerar audio.
+
 ### 2026-07-20 (Mac) — Bug fix: zoompan filter (Bloque E video composition)
 
 **Problema**: Al generar video con zoom activo ("Intercalado in/out", 20%), FFmpeg fallaba con `libx264 error -22 (Invalid argument)` + "Nothing was written into output file".
