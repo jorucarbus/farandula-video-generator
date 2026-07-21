@@ -380,7 +380,7 @@ function filtroZoom(direccion, pct, duracionClip) {
   const expr = direccion === 'out'
     ? `(1+${factor})-on/${frames}*${factor}`
     : `1+on/${frames}*${factor}`;
-  return `zoompan=z='${expr}':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
+  return `zoompan=z='${expr}':d=${duracionClip}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
 }
 
 // ---- Montaje v2: por plan de clips (tiempos por porcentaje, sin ajuste de velocidad) ----
