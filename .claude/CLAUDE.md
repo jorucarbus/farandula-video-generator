@@ -243,6 +243,28 @@ token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mis
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
 
+### 2026-07-21 (Mac) — Fix REAL del crash zoompan -22 + fallback por segmento
+
+El fix anterior (`d=duracionClip`) NO sirvió: el crash `-22 (Invalid argument)` volvió en
+Railway. **Causa raíz encontrada reproduciendo con ffmpeg real**: `zoompan` exige que `d`
+sea un ENTERO de frames. `d=${duracionClip}` es un decimal (ej. `d=2.456`) → ffmpeg estricto
+(Railway) lo rechaza con -22. (El ffmpeg-static local es tolerante y lo truncaba, por eso no
+crasheaba acá — se confirmó probando variantes en /tmp con testsrc.)
+
+**Recorrido de valores de `d`**: `d=1` (suave, correcto) → `d=frames` (congela, imagen fija)
+→ `d=duracionClip` (crash -22 decimal) → **`d=1` de nuevo, el correcto**. `d=1` = 1 frame de
+salida por frame de entrada; la expresión `z='1+on/frames*factor'` con `on` avanzando da el
+zoom progresivo (verificado: 75 frames para clip de 2.5s, zoom 1.0→1.20).
+
+**Fallback agregado** (`video.js` `montarVideoPlan`): si un segmento CON efectos falla al
+codificar, se reintenta ESE segmento plano (sin zoom/hflip) en vez de abortar todo el render.
+Así el video siempre se genera aunque el zoom falle en algún entorno/clip; el log dice
+`⚠️ Segmento N falló con efectos, reintentando plano`.
+
+**Verificado en Mac**: sintaxis OK; `d=1` produce 75 frames válidos con zoom progresivo.
+El crash exacto de Railway NO se reprodujo local (ffmpeg tolerante) — **verificar en Railway**
+que ahora genera con zoom. Si aún fallara, el fallback garantiza video plano igual.
+
 ### 2026-07-21 (Mac) — Botón "Recargar audio desde Drive" (Paso 5)
 
 Permite incorporar una voz hecha/editada FUERA de la app: el usuario sube su `audio.mp3`
