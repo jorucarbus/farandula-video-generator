@@ -380,7 +380,10 @@ function filtroZoom(direccion, pct, duracionClip) {
   const expr = direccion === 'out'
     ? `(1+${factor})-on/${frames}*${factor}`
     : `1+on/${frames}*${factor}`;
-  return `zoompan=z='${expr}':d=${duracionClip}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
+  // d DEBE ser un entero de frames. d=1 = 1 frame de salida por frame de entrada
+  // (zoom suave sobre el video). d=decimal (ej. d=2.456) rompe con -22 "Invalid
+  // argument" en ffmpeg estricto (Railway); d=frames congela el clip (imagen fija).
+  return `zoompan=z='${expr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
 }
 
 // ---- Montaje v2: por plan de clips (tiempos por porcentaje, sin ajuste de velocidad) ----
@@ -399,20 +402,34 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     if (!clip || !archivos[clip.videoId]) continue;
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
 
-    const filtros = ['scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30'];
+    const base = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30';
+    const filtros = [base];
     const zoomInfo = decidirEfecto(zoomPreset, i);
     if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion));
     if (decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
 
-    await ffmpeg([
+    const argsSegmento = (vf) => [
       '-ss', clip.offset.toFixed(2),
       '-i', archivos[clip.videoId],
       '-t', clip.duracion.toFixed(3),
-      '-vf', filtros.join(','),
+      '-vf', vf,
       '-an',
       ...enc,
       segPath,
-    ]);
+    ];
+
+    try {
+      await ffmpeg(argsSegmento(filtros.join(',')));
+    } catch (e) {
+      // Si el clip con efectos falla (ej. zoompan rechazado por ffmpeg estricto),
+      // no abortar todo el render: reintentar ESE segmento sin efectos (plano).
+      if (filtros.length > 1) {
+        console.warn(`  ⚠️ Segmento ${i} falló con efectos, reintentando plano: ${e.message}`);
+        await ffmpeg(argsSegmento(base));
+      } else {
+        throw e;
+      }
+    }
     segmentos.push(segPath);
   }
 
