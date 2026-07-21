@@ -243,6 +243,22 @@ token nuevo). **Fix real pendiente**: persistir `audiosPendientes` en disco (mis
 `jobStore.js` usa para el resto del job — Bloque A) para que sobreviva un restart del server.
 El usuario pidió esto explícitamente, no se llegó a implementar antes de la pausa.
 
+### 2026-07-20 (Mac) — Bug fix: zoompan filter (Bloque E video composition)
+
+**Problema**: Al generar video con zoom activo ("Intercalado in/out", 20%), FFmpeg fallaba con `libx264 error -22 (Invalid argument)` + "Nothing was written into output file".
+
+**Causa**: `filtroZoom()` en `video.js` línea 383 pasaba `d=1` (procesar 1 frame solamente). FFmpeg `zoompan` espera `d` en **segundos**, no frames. Resultado: 0 frames reales para codificar → output vacío → crash libx264.
+
+**Fix**:
+- `video.js` línea 383: Cambio `d=1` → `d=${frames}` (primera corrección)
+- Luego cambio `d=${frames}` → `d=${duracionClip}` (segunda corrección) — FFmpeg `zoompan` toma duración en segundos, no cantidad de frames
+
+**Verificado**: Código compila sin errores. Clip duracionClip (1.5-4s) y frames (45-120) ahora coherentes con zoom lineal en toda la toma.
+
+**Commit + push**: Dos commits separados (7c6b0d9, df3d501). Railway redeploya automáticamente.
+
+**Pendiente**: Verificar flujo e2e en Railway — generar video con zoom active debería procesar sin congelarse.
+
 ### 2026-07-20 (Mac) — Bloque F: botones presionados durante procesos (evita doble-click accidental)
 
 **Problema**: usuario presionaba botón 2 veces porque no notaba la pantalla de progreso (banner negro con letras verdes). Botones volvían a activarse, causando duplicación de procesos.
