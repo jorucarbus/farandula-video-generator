@@ -395,3 +395,47 @@ y "Próximas mejoras" (5 bloques A-E completos, pendiente merge a `main`).
 funciona óptimo en test-persistencia). Railway actualmente deploya `main` (versión vieja sin Bloque
 E), por eso adventurous-reflection muestra botones normales en lugar de palanca — el redeploy
 automático ocurrirá al mergear.
+
+### 2026-07-22 (Mac) — Evolución del generador de guiones (modo iteración/conceptualización)
+
+**Objetivo**: mejorar el generador de guiones para producir variantes más viralizables en TikTok,
+no limitado a 5 ángulos fijos sino explorando "caminos más viralizables" según contexto + literatura.
+
+**Visión (3 capas, diseño arquitectónico — SIN implementar todavía)**:
+
+1. **Capa de Literatura** (base de conocimiento): textos consolidados sobre viralidad en TikTok
+   + farandula, actualizado, con buenas reseñas. Fuentes: libros (ej. "Contagious" Jonah Berger),
+   papers académicos sobre TikTok+algoritmo, blogs actuales (Hootsuite, Think With Google). El
+   usuario mencionó acceso a **zepl.films** (curso de guion cinematográfico de Nicolás Amelio-Ortiz)
+   que quiere sintetizar — video-only sin transcripts descargables. **Opción propuesta**: Puppeteer
+   que navega sesión autorizada, captura pantalla de cada lección, Claude Vision sintetiza 5 puntos
+   clave por lección, compila en documento reutilizable.
+
+2. **Capa de Generador mejorado** (propone + rankea + flexible):
+   - Lee noticia/contexto
+   - Consulta base de literatura + grafo (ver capa 3) para explorar qué patrones funcionan
+   - Genera 5 variantes (NO solo 5 ángulos fijos del prompt actual) ordenadas por viralidad predicha
+   - Usuario elige 1-3 opciones independientes (o combina elementos de varias, o personaliza)
+   - Cada opción elegida se convierte en video (igual a hoy: texto → audio → video)
+
+3. **Capa de Grafo incremental** (futuro monitor de noticias): dos fuentes alimentan el grafo:
+   - **Literatura**: patrones narrativos consolidados extraídos de textos
+   - **Noticias/Guiones generados**: usuario carga noticias (manualmente) o la app los genera;
+     se "compactan" en grafo (extrae entidades: personas, eventos, relaciones; patrones narrativos
+     que funcionaron). Sistema crece con el tiempo.
+
+**Pregunta técnica abierta**: ¿Cómo calcular "viralidad predicha" en el ranking? Combinación de
+literatura ("este patrón explota Gen Z", etc.) + grafo ("este contexto + patrón ganó 3 veces en
+últimas 2 semanas"). Pendiente detalle en próxima sesión.
+
+**Decisiones del usuario confirmadas esta sesión**:
+- Agregar literatura (acepta sugerencias, busca textos más actuales posible)
+- NO limitarse a 5 ángulos (explorar caminos viralizables)
+- Ranking de 5 opciones por viralidad
+- Opción de elegir 1-3 independientes, combinarlas o personalizar
+- Monitor de noticias separado (tool independiente)
+- Grafo crece con: noticias cargadas + links + guiones generados
+
+**Pendiente primer paso**: extraer síntesis de zepl.films (Puppet + Claude Vision). User decidirá
+si comenzamos ahí o primero documentamos literatura/patrones en grafo. Sin implementar até que user
+confirme dirección.
