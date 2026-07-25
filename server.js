@@ -15,6 +15,7 @@ const seleccion = require('./seleccion');
 const subtitulos = require('./subtitulos');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
+const exportar = require('./exportar');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -688,6 +689,115 @@ app.post('/api/generate-video', async (req, res) => {
     });
   } catch (error) {
     console.error(`Error video [${renderId}]:`, error);
+    video.limpiarTemporales(renderId);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ETAPA 6 (modo Insumos): Exportar fragmentos numerados + locución, sin componer video final.
+// A diferencia de generate-video, no pide destFolder: usa la carpeta de insumos que el job ya
+// tiene desde /api/read (mismo canal elegido en Paso 1, sin preguntar destino de nuevo).
+app.post('/api/exportar', async (req, res) => {
+  const renderId = `job_${Date.now()}`;
+  try {
+    const { fragments, audioToken, guion, metadatos, jobId, efectos } = req.body;
+
+    if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
+      return res.status(400).json({ error: 'Faltan fragments' });
+    }
+    const job = jobId ? jobStore.obtenerJob(jobId) : null;
+    if (!job || !job.carpetaInsumoId) {
+      return res.status(400).json({ error: 'Job no encontrado o sin carpeta de insumos en Drive' });
+    }
+
+    const audioAprobado = audioToken ? audiosPendientes.get(audioToken) : null;
+    let audioPath = audioAprobado?.path;
+    if (!audioPath || !fs.existsSync(audioPath)) {
+      const ruta = await recuperarAudioDeDrive(job);
+      if (ruta) audioPath = ruta;
+    }
+    if (!audioPath || !fs.existsSync(audioPath)) {
+      return res.status(400).json({ error: 'No se encontró la locución aprobada: regenera el audio' });
+    }
+
+    const durAudio = await video.obtenerDuracion(audioPath);
+    console.log(`✂️ [${renderId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
+
+    const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
+    const nombresNecesarios = [...new Set(fragments.map(f => f.famoso))];
+    const inventario = {};
+    for (const nombre of nombresNecesarios) {
+      const folderId = mapaCarpetas[nombre];
+      if (folderId) {
+        inventario[nombre] = await driveHelper.listarVideos(folderId);
+        console.log(`  📂 ${nombre}: ${inventario[nombre].length} videos`);
+      } else {
+        console.warn(`  ⚠️ Carpeta no encontrada: ${nombre}`);
+        inventario[nombre] = [];
+      }
+    }
+
+    const plan = seleccion.planificarClips(fragments, durAudio, inventario);
+    const clipsValidos = plan.filter(Boolean);
+    console.log(`  🎯 Plan: ${clipsValidos.length} fragmentos`);
+
+    console.log(`⬇️ [${renderId}] Descargando clips...`);
+    const archivos = {};
+    for (const videoId of [...new Set(clipsValidos.map(c => c.videoId))]) {
+      archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
+    }
+
+    const tmpDir = path.join(video.TEMP_DIR, `${renderId}_out`);
+    console.log(`✂️ [${renderId}] Cortando fragmentos...`);
+    const resultado = await exportar.exportarInsumos(plan, archivos, audioPath, tmpDir, efectos || {});
+
+    console.log(`⬆️ [${renderId}] Subiendo ${resultado.archivos.length + 1} archivos a Drive...`);
+    for (const nombre of resultado.archivos) {
+      await driveHelper.subirVideo(path.join(tmpDir, nombre), nombre, job.carpetaInsumoId, 'video/mp4');
+    }
+    await driveHelper.subirVideo(path.join(tmpDir, 'locucion.mp3'), 'locucion.mp3', job.carpetaInsumoId, 'audio/mpeg');
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+
+    video.limpiarTemporales(renderId);
+    if (audioToken) audiosPendientes.delete(audioToken);
+
+    const driveLink = `https://drive.google.com/drive/folders/${job.carpetaInsumoId}`;
+    const canalNombre = await driveHelper.nombreCarpeta(job.canalId).catch(() => job.canalId);
+
+    if (jobId) {
+      try {
+        jobStore.actualizarJob(jobId, { paso: 'completado', insumosExportados: resultado.fragmentos, driveLink });
+        driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'resultado.json', JSON.stringify({ fragmentos: resultado.fragmentos, driveLink }, null, 2))
+          .catch(e => console.warn(`⚠️ No se pudo respaldar resultado.json en Drive: ${e.message}`));
+      } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+    }
+
+    try {
+      await sheets.registrarVideo({
+        fecha: new Date().toISOString().slice(0, 10),
+        titulo: metadatos?.titulo,
+        descripcion: metadatos?.descripcion,
+        protagonista: metadatos?.protagonista,
+        canal: canalNombre,
+        nombreArchivo: job.nombreCorto || metadatos?.nombreCorto || renderId,
+        linkFuente: metadatos?.linkFuente,
+        linkRender: driveLink,
+        guion: guion || '',
+        status: 'insumos_exportados',
+      });
+    } catch (e) {
+      console.warn(`⚠️ [${renderId}] No se pudo registrar en Sheets: ${e.message}`);
+    }
+
+    console.log(`✅ [${renderId}] ${resultado.fragmentos} fragmentos + locucion.mp3 exportados`);
+    res.json({
+      status: 'success',
+      fragmentos: resultado.fragmentos,
+      folderName: canalNombre,
+      driveLink,
+    });
+  } catch (error) {
+    console.error(`Error exportando insumos [${renderId}]:`, error);
     video.limpiarTemporales(renderId);
     res.status(500).json({ error: error.message });
   }

@@ -485,4 +485,11 @@ module.exports = {
   duracionFragmento,
   limpiarTemporales,
   TEMP_DIR,
+  // Reusados por exportar.js (corte de insumos individuales) para no duplicar
+  // la detección de encoder ni los efectos de zoom/espejo.
+  ffmpeg,
+  detectarEncoder,
+  argsEncoder,
+  decidirEfecto,
+  filtroZoom,
 };

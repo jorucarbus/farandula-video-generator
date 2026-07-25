@@ -1,12 +1,15 @@
-// Config — backend por modo (arreglado: antes apuntaba a localhost:3000 fijo)
+// Config — backend por modo. Consolidado 2026-07-25: video e insumos son el MISMO server
+// (antes insumos vivía en un servicio Railway aparte, farandula-insumos). Los endpoints de
+// lectura/guion/fragmentación/audio ya eran genéricos (no les importa el formato final), así
+// que FLUJO.insumos reusa los mismos nombres que FLUJO.video — solo cambia el paso final
+// (generate-video compone 1 mp4, exportar corta fragmentos numerados + locución).
 const BACKENDS = {
-    video: window.location.origin, // servido por video-generator (mismo origen)
-    insumos: 'https://farandula-insumos-production.up.railway.app',
+    video: window.location.origin,
+    insumos: window.location.origin,
 };
-// Diferencias de endpoint/parámetro entre los dos backends
 const FLUJO = {
     video:   { asignar: '/fragment', asignarParam: 'script', parrafosKey: 'fragments', audioParam: 'fragments', destinos: '/folders', destinosKey: 'folders' },
-    insumos: { asignar: '/asignar',  asignarParam: 'guion',  parrafosKey: 'parrafos', audioParam: 'parrafos',  destinos: '/canales', destinosKey: 'canales' },
+    insumos: { asignar: '/fragment', asignarParam: 'script', parrafosKey: 'fragments', audioParam: 'fragments', destinos: '/canales', destinosKey: 'canales' },
 };
 let MODO = 'video';
 function apiBase() { return BACKENDS[MODO]; }
@@ -670,7 +673,6 @@ async function loadDestinationFolders() {
 async function handleGenerateVideo() {
     const select = document.getElementById('dest-folder');
     const destFolder = select.value;
-    const destNombre = select.options[select.selectedIndex]?.dataset.name || '';
 
     if (!destFolder) {
         alert('Selecciona una carpeta de destino');
@@ -722,10 +724,8 @@ async function handleGenerateVideo() {
             updateProgress(70);
             resultado = await apiCall('/exportar', 'POST', {
                 guion: state.guion,
-                canal: destNombre,
-                canalId: state.selectedDestFolder,
-                nombreCorto: state.sourceData?.nombreCorto,
-                parrafos: state.fragments,
+                jobId: state.jobId,
+                fragments: state.fragments,
                 audioToken: state.audioToken,
                 metadatos: {
                     titulo: state.sourceData?.titulo,
