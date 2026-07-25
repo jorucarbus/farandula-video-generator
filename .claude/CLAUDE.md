@@ -439,3 +439,53 @@ literatura ("este patrón explota Gen Z", etc.) + grafo ("este contexto + patró
 **Pendiente primer paso**: extraer síntesis de zepl.films (Puppet + Claude Vision). User decidirá
 si comenzamos ahí o primero documentamos literatura/patrones en grafo. Sin implementar até que user
 confirme dirección.
+
+### 2026-07-25 (Windows) — Consolidación: modo Insumos ya NO depende de un servicio separado
+
+Contexto: el usuario quiere **un solo programa en producción** (antes: 2 servicios Railway
+independientes, `farandula-video-generator` main + `farandula-insumos` aparte). El frontend
+compartido ya tenía un switch visual Video/Insumos, pero por debajo `BACKENDS.insumos` apuntaba a
+una URL externa (`farandula-insumos-production...`) — no estaba unificado en el código, solo en la UI.
+
+**Port hecho** (detalle completo del código en el commit `4e8550c`):
+- `exportar.js` (nuevo, en este repo): `exportarInsumos()` portado desde `farandula-insumos`,
+  reusa los helpers de `video.js` (`ffmpeg`/`detectarEncoder`/`argsEncoder`/`decidirEfecto`/
+  `filtroZoom`, ahora exportados) en vez de duplicarlos.
+- `server.js`: nuevo `POST /api/exportar`. Más simple que el original de `farandula-insumos`:
+  no pide `canalId`/`canal` en el body — usa `job.carpetaInsumoId` (ya fijado en `/api/read`,
+  Paso 1), así que exportar ya no vuelve a preguntar destino a nivel de datos (aunque la UI de
+  Paso 6 lo sigue mostrando por ahora — queda ignorado por el server, ver "pendiente" abajo).
+- `public/app.js`: `BACKENDS.insumos` → `window.location.origin`. `FLUJO.insumos` unificado con
+  `FLUJO.video` (mismos endpoints `/fragment` y `/generar-audio`, que ya eran genéricos — no le
+  importaba a esos endpoints si el resultado final era 1 video o N fragmentos). Se eliminó la
+  necesidad de un `/api/asignar` separado. Fix de paso: la llamada a `/exportar` mandaba `parrafos`
+  (nombre viejo) y nunca mandaba `jobId` — tal como estaba, jamás hubiera funcionado ni siquiera
+  contra el servicio viejo con el `server.js` nuevo.
+
+**Verificado DOS VECES, no solo unitario**:
+1. Por API directa (curl, job sintético): 30 fragmentos + locucion.mp3, zoom+espejo confirmados
+   visualmente en frames extraídos.
+2. **Por la UI real, click por click** (cambiar a modo Insumos, elegir canal, pegar texto, leer,
+   elegir ángulo, aprobar guion, confirmar asignaciones, aprobar audio, setear efectos, exportar):
+   13 fragmentos exportados correctamente, link de Drive válido, mensaje "🎉 ¡Insumos listos!".
+   Carpetas de prueba de ambas verificaciones borradas de Drive al terminar.
+
+**Bug preexistente encontrado de paso** (no es de esta sesión, sin arreglar): `decidirEfecto
+('intercalado', i)` en `video.js` devuelve `activo:true` para TODO índice — el comentario dice
+que en espejo debería equivaler a `alternado`, pero el código no lo hace (mirror queda en TODOS
+los clips con preset "intercalado", no alternado).
+
+**Gap encontrado**: faltaba `GOOGLE_DRIVE_INSUMOS_FOLDER_ID` en el `.env` local de esta máquina
+(Windows) — no estaba documentado en ningún README. Se dedujo consultando el padre de una carpeta
+de canal conocida vía Drive API y se agregó al `.env` local (no se sube a git, avisar a la Mac que
+también lo necesita si corre esto local).
+
+**Pendiente / decisiones del usuario todavía sin tomar**:
+- El merge de `test-persistencia` → `main` sigue sin hacerse (este commit vive en
+  `test-persistencia`; `main` sigue con el server.js viejo que llama al servicio separado).
+- Decidir cuándo apagar el servicio Railway separado (`farandula-insumos` — el proyecto standalone
+  de producción, no confundir con el servicio "Sleeping" del mismo nombre dentro de
+  `generous-empathy`). Mientras no se apague, ambos caminos coexisten sin conflicto.
+- Limpieza de UX menor: Paso 6 en modo Insumos sigue pidiendo "selecciona destino" aunque ya no
+  se usa para nada (el server ignora ese valor) — podría simplificarse a un solo botón de
+  confirmación sin selector, ya que el canal se elige una sola vez en Paso 1.
