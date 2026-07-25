@@ -480,12 +480,27 @@ los clips con preset "intercalado", no alternado).
 de canal conocida vía Drive API y se agregó al `.env` local (no se sube a git, avisar a la Mac que
 también lo necesita si corre esto local).
 
-**Pendiente / decisiones del usuario todavía sin tomar**:
-- El merge de `test-persistencia` → `main` sigue sin hacerse (este commit vive en
-  `test-persistencia`; `main` sigue con el server.js viejo que llama al servicio separado).
-- Decidir cuándo apagar el servicio Railway separado (`farandula-insumos` — el proyecto standalone
-  de producción, no confundir con el servicio "Sleeping" del mismo nombre dentro de
-  `generous-empathy`). Mientras no se apague, ambos caminos coexisten sin conflicto.
+**Cerrado el mismo día — merge a `main` + apagado del servicio viejo (2026-07-25)**:
+- `test-persistencia` → `main` mergeado (fast-forward limpio, sin conflictos, commit `df5996b`).
+  `main` y `test-persistencia` quedaron en el mismo commit.
+- Topología real de Railway (aclarada esta sesión, corrige confusión anterior): proyecto único
+  `generous-empathy`, 2 entornos — **production** (`farandula-video-generator` service, dominio
+  `farandula-video-generator-production.up.railway.app` = la app real que el usuario usa a
+  diario) y **test-persistencia** (`adventurous-reflection`, staging). Cada entorno tenía TAMBIÉN
+  un servicio separado `farandula-insumos` (el viejo backend aparte, dominio
+  `farandula-insumos-production.up.railway.app`) — dos despliegues por entorno, cuatro en total.
+- Al desplegar el merge en `farandula-video-generator-production`, faltaba la variable
+  `GOOGLE_DRIVE_INSUMOS_FOLDER_ID` (nueva, nunca la tuvo ese servicio) — agregada
+  (`1TpsxFGmeZU4ot9fG9CzcLM3dpCu0Qi4x`), verificado `/api/canales` 200 tras el redeploy.
+- **Servicio `farandula-insumos` de producción APAGADO** (borrado desde Railway UI) — confirmado
+  con `curl`: `farandula-insumos-production.up.railway.app` da 404, `farandula-video-generator-
+  production.up.railway.app` sigue sano (200). El de `test-persistencia`/`adventurous-reflection`
+  (staging) sigue como estaba, sin tocar — decisión de apagarlo pendiente, aparte.
+
+**Pendiente real que queda**:
 - Limpieza de UX menor: Paso 6 en modo Insumos sigue pidiendo "selecciona destino" aunque ya no
   se usa para nada (el server ignora ese valor) — podría simplificarse a un solo botón de
   confirmación sin selector, ya que el canal se elige una sola vez en Paso 1.
+- El servicio `farandula-insumos` DENTRO del entorno `test-persistencia` (staging) sigue
+  desplegado (Sleeping) — nadie lo usa tampoco, pero no se apagó esta sesión (menor prioridad,
+  es staging no producción).
