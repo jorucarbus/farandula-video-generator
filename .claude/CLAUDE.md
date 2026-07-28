@@ -504,3 +504,45 @@ también lo necesita si corre esto local).
 - El servicio `farandula-insumos` DENTRO del entorno `test-persistencia` (staging) sigue
   desplegado (Sleeping) — nadie lo usa tampoco, pero no se apagó esta sesión (menor prioridad,
   es staging no producción).
+
+### 2026-07-27 (Windows) — Refresh token OAuth expirado otra vez + fix de concurrencia + apagado del `farandula-insumos` de staging
+
+**Refresh token `invalid_grant` de nuevo** (tercera vez, ver sesiones 2026-07-20/21): esta vez
+el proyecto OAuth YA estaba en "En producción" en Google Cloud Console (el usuario lo confirmó
+en el momento), así que la causa NO fue el vencimiento de 7 días de "Testing" — el token se
+invalidó por otra razón (revocación manual, límite de tokens del cliente, etc., sin confirmar
+cuál). Regenerado con el mismo flujo de siempre (URL de consentimiento → código → intercambio).
+Como el servicio `farandula-insumos` de producción ya está apagado (sesión 2026-07-25), esta vez
+solo hubo que actualizar en **3 lugares** (antes eran 4): `.env` local, Railway
+`farandula-video-generator` (producción) y Railway `adventurous-reflection` (staging,
+`test-persistencia`). Verificado con `curl` real a `/api/canales` en los 3 — los 3 devuelven
+231 carpetas de Famosos correctamente.
+
+**Fix de concurrencia en `limpiarTemporales()`** (`video.js`): un job terminando (éxito o error)
+borraba TODOS los `src_*.mp4` cacheados (caché de clips fuente, compartido entre jobs a
+propósito para no re-descargar el mismo clip de Drive en cada video). Si dos generaciones
+corrían cerca en el tiempo, la que terminaba primero borraba los clips que la otra acababa de
+descargar y estaba por leer con ffmpeg → `Error opening input file ... No such file or
+directory`. Reproducido en vivo en `adventurous-reflection` (screenshot del usuario). Fix:
+`limpiarTemporales(jobId)` ya no toca `src_*` — solo borra archivos que empiezan con el
+`jobId` de ESE render. La limpieza de `src_*` por antigüedad la sigue haciendo
+`limpiarCache()` (TTL 1h) en `server.js`, que sí filtra correctamente por actividad reciente.
+Commit `ec79935` en `test-persistencia`, pusheado y verificado (SHA remoto = SHA local).
+Railway redeployó `adventurous-reflection` automáticamente.
+
+**Apagado el `farandula-insumos` de staging** (el que quedaba pendiente desde la sesión
+2026-07-25, ambiente `test-persistencia`): confirmado por el usuario que era un duplicado mal
+configurado — mismo repo `farandula-video-generator` pero con la rama `main` conectada en vez
+de `test-persistencia`, sin tráfico (Sleeping). Apagado desde Railway UI (Settings → Danger →
+Remove Service). En `test-persistencia` solo queda ahora `adventurous-reflection` (activo,
+rama correcta).
+
+**Contexto aparte (otro repo, mencionado aquí para que quede registrado)**: se creó
+`farandula-video-family` (repo nuevo, proyecto Railway nuevo) — versión para los hermanos del
+usuario, sin ElevenLabs (suben su propio MP3), sin escritura a Drive (todo se descarga local,
+ZIP para insumos), con login/registro y PostgreSQL para historial por usuario. Reusa
+`gemini.js`/`video.js`/`seleccion.js` tal cual, y un `drive.js` recortado a SOLO LECTURA
+(Service Account, mismo `credentials.json` que este repo) para leer los clips de `Famosos/`.
+Verificado end-to-end con datos reales de Drive: video final (MP4 1080x1920 H264/AAC) e
+insumos (ZIP con `clips/` + `locucion.mp3`) ambos generados y confirmados con ffprobe/unzip.
+Pendiente: desplegar a Railway (aún no tiene proyecto propio en producción).
