@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Readable } = require('stream');
 
 let drive;      // Service Account: lee/descarga clips de famosos
@@ -76,22 +77,35 @@ async function listarVideos(folderId) {
   }));
 }
 
-// Descargar un archivo de Drive a una ruta local (con caché por fileId)
+// Descargar un archivo de Drive a una ruta local (con caché por fileId).
+// Descarga a un archivo temporal único y renombra al final: así `existsSync(destPath)`
+// nunca ve un archivo a medio escribir. Sin esto, dos jobs concurrentes pidiendo el mismo
+// clip (caché compartido a propósito) podían chocar: el segundo veía el archivo "ya existe"
+// mientras el primero todavía lo estaba descargando, y ffmpeg leía un mp4 truncado
+// ("Nothing was written into output file... received no packets", crash -22).
 async function descargarVideo(fileId, destDir) {
   const destPath = path.join(destDir, `src_${fileId}.mp4`);
   if (fs.existsSync(destPath)) return destPath; // caché
+
+  const tmpPath = path.join(destDir, `.tmp-src_${fileId}-${process.pid}-${crypto.randomBytes(4).toString('hex')}.mp4`);
 
   const res = await getDrive().files.get(
     { fileId, alt: 'media', supportsAllDrives: true },
     { responseType: 'stream' }
   );
 
-  await new Promise((resolve, reject) => {
-    const out = fs.createWriteStream(destPath);
-    res.data.pipe(out);
-    out.on('finish', resolve);
-    out.on('error', reject);
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmpPath);
+      res.data.pipe(out);
+      out.on('finish', resolve);
+      out.on('error', reject);
+    });
+    fs.renameSync(tmpPath, destPath); // atómico: destPath solo aparece completo
+  } catch (e) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw e;
+  }
 
   return destPath;
 }
