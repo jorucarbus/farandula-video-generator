@@ -546,3 +546,33 @@ ZIP para insumos), con login/registro y PostgreSQL para historial por usuario. R
 Verificado end-to-end con datos reales de Drive: video final (MP4 1080x1920 H264/AAC) e
 insumos (ZIP con `clips/` + `locucion.mp3`) ambos generados y confirmados con ffprobe/unzip.
 Pendiente: desplegar a Railway (aún no tiene proyecto propio en producción).
+
+### 2026-07-28 (Mac) — Fix: carrera en `descargarVideo()` (crash -22 en producción, distinto del bug de zoompan)
+
+**Reportado por el usuario**: screenshot de `adventurous-reflection` (staging) al 70% de
+"Generando video...", mismo log que el crash de zoompan ya arreglado (2026-07-20/21):
+`Task finished with error code -22 (Invalid argument)` / `Nothing was written into output
+file, because at least one of its streams received no packets`.
+
+**Causa real (distinta a la de zoompan)**: `drive.js` `descargarVideo(fileId, destDir)` —
+`fs.existsSync(destPath)` se chequeaba como "caché" ANTES de que terminara de escribirse el
+archivo (`createWriteStream` + pipe). El caché de clips fuente (`src_*.mp4`) es compartido
+a propósito entre jobs concurrentes (evita redescargar el mismo clip para otro video) — si
+dos jobs pedían el mismo `fileId` casi al mismo tiempo, el segundo veía `existsSync==true`
+mientras el primero todavía escribía, y tomaba el archivo a medio descargar como listo.
+ffmpeg lo leía truncado → mismo síntoma exacto que zoompan (`-22`, 0 frames), pero sin
+relación con el filtro. Como el fallback "reintentar sin efectos" (`video.js`) usa el MISMO
+archivo fuente roto, también fallaba — por eso llegaba hasta el error genérico de UI en vez
+del auto-reintento.
+
+**Fix** (`drive.js`, commit `96c2e29`): descarga a un temporal único
+(`.tmp-src_<fileId>-<pid>-<random>.mp4`) y `fs.renameSync()` atómico al nombre final SOLO al
+terminar con éxito (con cleanup del temporal si falla). `existsSync(destPath)` ya nunca ve
+un archivo incompleto.
+
+**Verificado con Drive real** (Service Account local, sin necesitar OAuth): 5 llamadas
+concurrentes a `descargarVideo()` con el mismo `fileId` real (carpeta
+`Dany_Alexis_bebeshita`) → las 5 resuelven a la misma ruta, 0 archivos `.tmp-` sueltos,
+mp4 final íntegro confirmado con `ffprobe` (duración correcta, ~11s). No se pudo probar
+e2e en Railway (esta sesión no tiene acceso de deploy) — **pendiente confirmar que el
+crash no vuelve a aparecer en staging con generaciones concurrentes reales**.
