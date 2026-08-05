@@ -576,3 +576,77 @@ concurrentes a `descargarVideo()` con el mismo `fileId` real (carpeta
 mp4 final íntegro confirmado con `ffprobe` (duración correcta, ~11s). No se pudo probar
 e2e en Railway (esta sesión no tiene acceso de deploy) — **pendiente confirmar que el
 crash no vuelve a aparecer en staging con generaciones concurrentes reales**.
+
+### 2026-08-05 (Windows) — Dos diagnósticos SIN implementar: fragmentación por cambio de sujeto y carpetas congeladas al retomar un job
+
+Sesión de análisis, **no se tocó código**. Ambos hallazgos quedaron acordados con el usuario para
+ejecutarse en `test-persistencia`. Estimado del primero: ~50 min.
+
+**A) Modelos Gemini — la cadena NO está desactualizada (verificado, no re-chequear)**
+
+El usuario vio "3.6 Flash — Nuevo" en la UI de Gemini y preguntó si la app estaba atrasada. No:
+el alias `gemini-flash-latest` que ya encabeza `MODELOS` en `gemini.js` **resuelve a
+`gemini-3.6-flash`**, confirmado leyendo el campo `modelVersion` de una respuesta real de la API.
+Los 4 modelos de la cadena existen en la cuenta. No "actualizar" la cadena pensando que está
+vieja. Único cambio defendible (opcional): fijar `gemini-3.6-flash` explícito de primero y dejar
+`-latest` de segundo, para que una rotación futura del alias no cambie el comportamiento en
+silencio — riesgo ya documentado en el comentario de las líneas 6-10 de `gemini.js`.
+
+**B) Asignación de famosos por fragmento — el prompt ordena el bug**
+
+Síntoma del usuario: los fragmentos salen casi por párrafo y, cuando la narración pasa a hablar
+de otra persona a mitad del fragmento, en pantalla sigue el famoso anterior.
+
+Causa raíz en `fragmentarGuionParrafos()` (`gemini.js`): la **regla 5** del prompt dice literal
+*"Si un fragmento habla de dos famosos, elige al que tenga más peso en ese fragmento"* — o sea,
+ante un cambio de sujeto le ordena NO partir sino elegir un ganador. Y la **regla 2** hace que
+partir sea opcional (`puedes partirla`) y disparado por LONGITUD (>140 chars), no por cambio de
+sujeto. Por eso `"Shakira apareció radiante en la alfombra roja, pero Piqué prefirió quedarse en
+casa."` (83 chars, dos personas) nunca se parte: corta para la regla 2, y la 5 manda elegir uno.
+
+Causa secundaria, silenciosa: nadie verifica que los fragmentos reconstruyan el guion. La regla 3
+lo pide, nada lo comprueba. Como el tiempo en pantalla sale de `chars_fragmento / chars_total`
+(`seleccion.js`), si Gemini recorta o reescribe palabras se corren los tiempos de TODOS los clips.
+
+Plan acordado — 3 cambios, ~40 líneas:
+1. Arreglar reglas 2 y 5: partir cuando cambia el sujeto, sin importar el largo.
+2. Verificación de reconstrucción (~10 líneas): pegar los fragmentos y comparar contra el guion;
+   loguear alerta si no coinciden. Convierte una falla silenciosa en visible.
+3. Guarda de duración mínima en `seleccion.js` (~10 líneas): al partir más aparecen fragmentos de
+   ~0.6s (parpadeo). Si el tiempo calculado baja de ~0.7s, fusionar con el vecino del mismo famoso.
+
+Se evaluó y **descartó por ahora** un rediseño mayor (cortar oraciones con regex determinista y
+que Gemini solo devuelva quién/dónde, nunca texto): usa exactamente el mismo juicio del mismo
+modelo, solo agrega garantías estructurales. Primero probar si con la instrucción correcta el 3.6
+ya lo hace bien; si desobedece o corrompe texto, ahí el rediseño queda justificado por datos.
+
+Al probar, vigilar el efecto colateral: más fragmentos = más transiciones y SFX (`video.js` los
+dispara en cada cambio de `parrafoIdx`) y más ventanas de subtítulo (`subtitulos.js`). Revisar que
+hyperframes no meta un efecto de sonido en cada micro-corte. Truco para iterar rápido: llamar
+`fragmentarGuionParrafos()` directo con guiones que tengan cambios de sujeto, sin correr el
+pipeline completo (~30s por corrida en vez de lectura+guion cada vez).
+
+**C) Las carpetas de famosos se congelan al retomar un proceso del historial**
+
+Síntoma: "no está actualizando la información de las carpetas de los famosos".
+
+NO es caché ni permisos ni paginación — se descartaron los tres: `drive.js` y `server.js` no
+cachean nada (ambos consultan Drive en vivo con `pageSize: 1000`), el Service Account ve las 243
+carpetas actuales incluidas las creadas el mismo día, y no hay nombres duplicados (243 archivos =
+243 nombres únicos, así que el mapa `nombre → id` de `obtenerCarpetasFamosos()` no pisa ninguna).
+
+La causa es el snapshot del job:
+- `server.js:370` — al fragmentar, la lista se guarda DENTRO del job:
+  `actualizarJob(jobId, { paso: 'fragmentacion', fragments, carpetas })`. Es una foto del momento.
+- `public/app.js:1148` — al retomar ese job: `state.carpetas = job.carpetas || []`. Lee la foto.
+- `public/app.js:512` — los desplegables de asignación se arman desde `state.carpetas`.
+
+Entonces al retomar un proceso viejo los desplegables muestran las carpetas de ESE día; todo
+famoso creado después no aparece. En procesos nuevos no pasa (lista en vivo). Se volvió visible
+ahora porque el usuario viene creando muchas carpetas (12 en los últimos días).
+
+Fix propuesto (~20 líneas, sin implementar): endpoint `GET /api/carpetas-famosos` (hoy la lista
+solo vuelve dentro del POST `/api/fragment`) y que la recuperación de job la pida en vivo en vez
+de usar `job.carpetas`. Detalle importante: **unir** la lista viva con la guardada, para que si
+una carpeta fue renombrada o borrada la asignación existente no se quede sin opción en el
+desplegable.
