@@ -663,6 +663,34 @@ Verificado en browser real con un job simulado que tenía lista vieja (3 carpeta
 asignado a una carpeta inexistente en Drive: pasó a 248 opciones, conservó las dos selecciones,
 mantuvo disponible la carpeta borrada, y el aviso de protagonista se apagó al aparecer `Rosalia`.
 
+### 2026-08-05 (Windows) — Merge a `main` y despliegue en producción
+
+Por pedido explícito del usuario ("implementalo en railway"). `test-persistencia` → `main`
+fast-forward limpio (`f5b1efa`), 7 commits: los dos fixes de concurrencia (`ec79935` mío sobre
+`limpiarTemporales`, `96c2e29` de la Mac sobre `descargarVideo`), el cron de limpieza de
+insumos, el botón de actualizar carpetas y 3 de documentación. `main` y `test-persistencia`
+quedaron en el mismo commit.
+
+**Sin variables de entorno nuevas**: `INSUMOS_RETENCION_HORAS` es opcional (default 48) y
+`GOOGLE_DRIVE_INSUMOS_FOLDER_ID` ya estaba en producción desde el 25/07.
+
+**Truco de verificación de despliegue**: usar un endpoint NUEVO como sonda
+(`/api/carpetas-famosos` en este caso) en vez de `/api/health` — health responde 200 con el
+build viejo también, así que no distingue "servicio vivo" de "código nuevo desplegado". Con la
+sonda se confirmó el deploy a los ~40s.
+
+**Verificado en producción**: el endpoint nuevo devuelve las 246 carpetas incluidas las creadas
+hoy; `/api/canales` 200 (Drive + OAuth sanos); el `index.html` servido trae `btn-refrescar-carpetas`
+y el `app.js` trae `refrescarCarpetas` y `nota-limpieza`. Staging sigue sano.
+
+**Ojo**: producción y staging apuntan a la MISMA carpeta de insumos en Drive, así que el cron de
+limpieza ahora corre desde los dos servicios. Es inofensivo (el segundo ya no ve lo que el primero
+mandó a la papelera, y `listarSubcarpetas` filtra `trashed=false`), pero no confundirse si en los
+logs aparece la limpieza dos veces.
+
+**Pendiente**: el fix de `descargarVideo` de la Mac se estrena en producción sin haber sido
+verificado e2e en Railway (ver su nota del 28/07). Si vuelve un `-22`, empezar por ahí.
+
 ### 2026-08-05 (Windows) — Limpieza automática de insumos en Drive a las 48h (IMPLEMENTADO)
 
 **Problema**: las carpetas de insumos que crea cada job (`crearCarpetaInsumo`, con guion,
