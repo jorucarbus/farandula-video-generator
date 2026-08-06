@@ -31,6 +31,17 @@ haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
 3. Agregar una entrada en "Sesiones recientes" con: fecha, qué se hizo, qué archivos, qué quedó
    pendiente o sin verificar. Esto reemplaza la comunicación directa entre máquinas.
 
+## ⏭️ Trabajo aprobado y sin empezar
+
+- **[plan-multifuente-reskin.md](plan-multifuente-reskin.md)** — dos features acordadas con el
+  usuario el 2026-08-05: (A) varias fuentes por noticia con acumulación en "actas" y **solo
+  audio**, nunca video, a Gemini; (B) reskin neutro tomando como referencia
+  `monitoreo-medios-cancilleria`. Todas las decisiones de diseño ya están consultadas y
+  confirmadas ahí — leerlo antes de empezar y no re-preguntar.
+- **Fragmentación por cambio de sujeto** (~50 min) — diagnóstico y plan en la entrada del
+  2026-08-05 más abajo, sección B. Es lo más barato de lo pendiente y arregla algo que molesta
+  en cada video.
+
 ## Graphify Knowledge Graph (Token Saver)
 
 Este proyecto tiene un **grafo de conocimiento** generado con Graphify.
