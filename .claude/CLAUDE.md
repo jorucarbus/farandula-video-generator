@@ -650,3 +650,47 @@ solo vuelve dentro del POST `/api/fragment`) y que la recuperación de job la pi
 de usar `job.carpetas`. Detalle importante: **unir** la lista viva con la guardada, para que si
 una carpeta fue renombrada o borrada la asignación existente no se quede sin opción en el
 desplegable.
+
+### 2026-08-05 (Windows) — Limpieza automática de insumos en Drive a las 48h (IMPLEMENTADO)
+
+**Problema**: las carpetas de insumos que crea cada job (`crearCarpetaInsumo`, con guion,
+`audio.mp3`, `fragments.json`, `resultado.json`) nunca se borraban. Habían llegado a **117
+carpetas / 1.17 GB**, la más antigua del 12/07. El caché local (`temp-videos/`) NO era el
+problema: ya se limpia solo a la hora (`limpiarCache()` en `server.js`), eran 2.5 MB.
+
+**Decisión del usuario**: retención de 48h. Razón textual suya: *"un audio en 48 horas pierde
+toda vigencia sobre todo porque hago noticias"*. Acepta explícitamente el efecto secundario de
+que retomar un job de más de 48h ya no pueda recuperar su locución desde Drive.
+
+**Limpieza manual hecha en el momento**: 103 carpetas a la papelera (1164 MB), conservando las
+14 de menos de 48h. **A la papelera, nunca borrado permanente** — recuperable ~30 días.
+Verificado post-borrado que `Videos_Famosos_Carpetas` (246 carpetas), `renders` y `cache-estado`
+quedaron intactos. ⚠️ Al verificar, Drive devolvió un conteo equivocado (94 en vez de 14) por
+**consistencia eventual**: el índice tarda en reflejar los borrados. Re-medir un minuto después
+da el número real — no asumir que algo salió mal por un conteo raro recién borrado.
+
+**Código nuevo (rama `test-persistencia`)**:
+- `limpiezaInsumos.js` (nuevo) — cron cada 6h, retención 48h configurable con
+  `INSUMOS_RETENCION_HORAS`. Recorre canal → job dentro de `GOOGLE_DRIVE_INSUMOS_FOLDER_ID`.
+  **Guarda de seguridad**: si esa raíz coincide con `GOOGLE_DRIVE_FOLDER_ID` (famosos),
+  `GOOGLE_DRIVE_RENDERS_FOLDER_ID` o `GOOGLE_DRIVE_CACHE_FOLDER_ID`, aborta sin borrar nada y
+  loguea el error. La primera pasada se demora 60s a propósito: `driveCache.restaurar()` está
+  trayendo `jobs.json` al arrancar y pisaría las marcas si limpiáramos de inmediato.
+- `drive.js` — `listarSubcarpetas(parentId)` y `enviarAPapelera(fileId)` (Service Account con
+  fallback a OAuth).
+- `jobStore.js` — `marcarInsumosLimpiados(carpetaIds)`: marca `insumosLimpiados` y borra el
+  `driveLink` **solo si apunta a la carpeta de insumos**. En modo Video el `driveLink` apunta al
+  render (carpeta del canal, que no se limpia) y se conserva — verificado en datos reales.
+- `public/app.js` + `style.css` — nota en el historial explicando por qué ya no hay link.
+
+**Reconciliación** (`reconciliar()` dentro del cron): marca también jobs cuya carpeta ya no
+existe aunque la haya borrado otra cosa (limpieza manual, o el usuario desde Drive). Sin esto,
+las 103 borradas a mano habrían dejado links muertos sin explicación en Railway para siempre.
+
+**Verificado**: servidor arranca con el cron activo; las dos guardas abortan correctamente al
+apuntar a famosos y a renders; `enviarAPapelera` probado con una carpeta descartable; pasadas
+sucesivas son idempotentes; en el browser real se renderizan exactamente 2 notas (los 2 jobs
+afectados) y el job de modo Video conserva su link a `renders`.
+
+**Pendiente**: no se probó en Railway. Ojo que el `jobs.json` de cada entorno es independiente,
+así que la reconciliación correrá por separado en producción y en staging la primera vez.

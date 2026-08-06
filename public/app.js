@@ -941,6 +941,7 @@ function crearTarjetaJob(job) {
         <p><strong>Protagonista:</strong> ${job.protagonista || '-'} &nbsp;|&nbsp; <strong>Canal:</strong> ${canalNombre}</p>
         ${job.fileName ? `<p><strong>Archivo:</strong> ${job.fileName}</p>` : ''}
         ${job.driveLink ? `<p><a href="${job.driveLink}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
+        ${job.insumosLimpiados ? `<p class="nota-limpieza">${icon('trash')} Insumos borrados por antigüedad (más de 48h). El guion y la descripción siguen acá; la locución habría que regenerarla.</p>` : ''}
         ${job.script ? `
         <div class="copy-block" style="margin-top:10px;">
             <div class="copy-header">

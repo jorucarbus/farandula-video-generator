@@ -629,6 +629,14 @@ footer {
     border-radius: 0 0 16px 16px;
 }
 
+/* Nota del historial cuando la limpieza automática ya borró los insumos del job */
+.nota-limpieza {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    font-style: italic;
+    margin-top: 6px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     header { padding: 16px 14px; }

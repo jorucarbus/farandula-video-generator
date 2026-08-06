@@ -80,4 +80,23 @@ function listarJobs(limite = 20) {
     .map(conEstado);
 }
 
-module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken };
+// Marcar los jobs cuya carpeta de insumos ya fue borrada por la limpieza automática.
+// El historial usa la marca para no ofrecer un link muerto. En modo Video el driveLink
+// apunta al render (carpeta del canal, que NO se limpia) y por eso se conserva; solo se
+// borra cuando apunta a la carpeta de insumos, que es el caso del modo Insumos.
+// Bulk a propósito: carga y guarda una sola vez (cada guardar() dispara un respaldo a Drive).
+function marcarInsumosLimpiados(carpetaIds) {
+  const objetivo = new Set(carpetaIds);
+  const jobs = cargar();
+  let marcados = 0;
+  for (const job of Object.values(jobs)) {
+    if (!job.carpetaInsumoId || !objetivo.has(job.carpetaInsumoId) || job.insumosLimpiados) continue;
+    job.insumosLimpiados = true;
+    if (job.driveLink && job.driveLink.includes(job.carpetaInsumoId)) delete job.driveLink;
+    marcados++;
+  }
+  if (marcados) guardar(jobs);
+  return marcados;
+}
+
+module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken, marcarInsumosLimpiados };

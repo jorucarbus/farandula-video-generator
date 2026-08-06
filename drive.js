@@ -258,6 +258,34 @@ async function descargarDeInsumo(carpetaId, nombreArchivo, destPath) {
   return destPath;
 }
 
+// Listar subcarpetas de una carpeta, con su fecha de creación. Usado por la limpieza
+// automática de insumos para decidir cuáles ya pasaron su tiempo de retención.
+async function listarSubcarpetas(parentId) {
+  const res = await getDrive().files.list({
+    q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name, createdTime)',
+    pageSize: 1000,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return res.data.files;
+}
+
+// Mandar un archivo/carpeta a la PAPELERA de Drive (recuperable ~30 días), nunca borrado
+// permanente: si la limpieza automática se equivoca, el usuario puede restaurar.
+// Intenta con el Service Account (dueño de las carpetas de insumo) y cae a OAuth si no
+// tiene permiso sobre ese ítem en particular.
+async function enviarAPapelera(fileId) {
+  const cuerpo = { fileId, requestBody: { trashed: true }, supportsAllDrives: true };
+  try {
+    await getDrive().files.update(cuerpo);
+  } catch (e) {
+    const oauth = getDriveOAuth();
+    if (!oauth) throw e;
+    await oauth.files.update(cuerpo);
+  }
+}
+
 module.exports = {
   obtenerCarpetasFamosos,
   listarVideos,
@@ -272,4 +300,6 @@ module.exports = {
   guardarEnInsumo,
   descargarDeInsumo,
   leerDeInsumo,
+  listarSubcarpetas,
+  enviarAPapelera,
 };

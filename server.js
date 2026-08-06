@@ -15,6 +15,7 @@ const seleccion = require('./seleccion');
 const subtitulos = require('./subtitulos');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
+const limpiezaInsumos = require('./limpiezaInsumos');
 const exportar = require('./exportar');
 
 const app = express();
@@ -855,6 +856,10 @@ initializeDrive();
 // (Railway lo borra en cada redeploy). Fire-and-forget: no bloquea el arranque.
 driveCache.restaurar(path.join(__dirname, 'historial.json'), 'historial.json');
 driveCache.restaurar(path.join(__dirname, 'data', 'jobs.json'), 'jobs.json');
+
+// Las carpetas de insumos en Drive crecían sin límite (nadie las borraba). Al ser
+// contenido noticioso pierden vigencia rápido: se mandan a la papelera a las 48h.
+limpiezaInsumos.start();
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
