@@ -645,11 +645,23 @@ Entonces al retomar un proceso viejo los desplegables muestran las carpetas de E
 famoso creado después no aparece. En procesos nuevos no pasa (lista en vivo). Se volvió visible
 ahora porque el usuario viene creando muchas carpetas (12 en los últimos días).
 
-Fix propuesto (~20 líneas, sin implementar): endpoint `GET /api/carpetas-famosos` (hoy la lista
-solo vuelve dentro del POST `/api/fragment`) y que la recuperación de job la pida en vivo en vez
-de usar `job.carpetas`. Detalle importante: **unir** la lista viva con la guardada, para que si
-una carpeta fue renombrada o borrada la asignación existente no se quede sin opción en el
-desplegable.
+**RESUELTO el mismo día**, por pedido del usuario, con un botón manual en vez de refresco
+automático al recuperar el job:
+- `server.js` — endpoint nuevo `GET /api/carpetas-famosos` (antes la lista solo volvía dentro
+  del POST `/api/fragment`).
+- `public/index.html` — botón "Actualizar lista de carpetas" en el Paso 4, sobre la lista de
+  asignaciones, con una nota explicando para qué sirve.
+- `public/app.js` — `refrescarCarpetas()`: pide la lista viva y hace la **unión** con la
+  guardada y con las ya asignadas. La unión importa: si una carpeta fue renombrada o borrada en
+  Drive, el fragmento que la tenía asignada no se queda sin su opción seleccionada. Las
+  selecciones se conservan solas porque `sel.onchange` ya las escribe en
+  `state.fragments[i].famoso` y `renderAsignaciones()` repinta desde ahí.
+- Recalcula además el aviso de "protagonista sin carpeta" con el mismo criterio que el server:
+  si el usuario crea justo esa carpeta en Drive y refresca, el aviso desaparece solo.
+
+Verificado en browser real con un job simulado que tenía lista vieja (3 carpetas) y un fragmento
+asignado a una carpeta inexistente en Drive: pasó a 248 opciones, conservó las dos selecciones,
+mantuvo disponible la carpeta borrada, y el aviso de protagonista se apagó al aparecer `Rosalia`.
 
 ### 2026-08-05 (Windows) — Limpieza automática de insumos en Drive a las 48h (IMPLEMENTADO)
 

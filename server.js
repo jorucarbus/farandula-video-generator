@@ -155,6 +155,22 @@ async function listarCarpetasFamosos() {
   return response.data.files;
 }
 
+// Lista viva de carpetas de famosos. La usa el botón "Actualizar lista de carpetas" del
+// Paso 4: al retomar un job, las carpetas salen de la foto guardada en el job
+// (jobStore), así que un famoso creado en Drive DESPUÉS de fragmentar no aparecía en los
+// desplegables. Este endpoint permite refrescarla sin rehacer la fragmentación.
+app.get('/api/carpetas-famosos', async (req, res) => {
+  try {
+    if (!driveClient) return res.status(500).json({ error: 'Drive no inicializado' });
+    const folders = await listarCarpetasFamosos();
+    const carpetas = folders.map(f => f.name).sort((a, b) => a.localeCompare(b));
+    res.json({ carpetas });
+  } catch (error) {
+    console.error('Error listando carpetas de famosos:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Carpetas de destino para renders (hijas de la carpeta de renders, una por canal)
 app.get('/api/folders', async (req, res) => {
   try {

@@ -522,6 +522,43 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     });
 }
 
+// Trae la lista de carpetas viva desde Drive y repinta los desplegables del Paso 4.
+// Necesario porque al retomar un job las carpetas vienen de la foto guardada al fragmentar:
+// un famoso creado en Drive después de ese momento no aparecía en las opciones.
+// Las carpetas guardadas se CONSERVAN en la unión — si alguna fue renombrada o borrada en
+// Drive, el fragmento que la tenía asignada no se queda sin su opción seleccionada.
+async function refrescarCarpetas() {
+    setButtonDisabled('btn-refrescar-carpetas', true);
+    const nota = document.getElementById('nota-carpetas');
+    try {
+        const { carpetas } = await apiCall('/carpetas-famosos');
+        const antes = state.carpetas.length;
+        const asignadas = state.fragments ? state.fragments.map(f => f.famoso) : [];
+        state.carpetas = [...new Set([...carpetas, ...state.carpetas, ...asignadas])]
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b));
+        const nuevas = state.carpetas.length - antes;
+
+        // Recalcular el aviso de "protagonista sin carpeta" con la lista nueva (mismo
+        // criterio que usa el server al fragmentar): si el usuario acaba de crear esa
+        // carpeta en Drive y refresca, el aviso tiene que desaparecer solo.
+        const norm = s => (s || '').toLowerCase().replace(/[_\s]/g, '');
+        const protagonista = state.sourceData ? state.sourceData.protagonista : '';
+        const p = norm(protagonista);
+        const sinCarpeta = Boolean(p) && !state.carpetas.some(c => norm(c).includes(p) || p.includes(norm(c)));
+        renderAsignaciones(sinCarpeta, protagonista);
+        nota.textContent = nuevas > 0
+            ? `✅ Lista actualizada: ${nuevas} carpeta(s) nueva(s). Total ${state.carpetas.length}.`
+            : `✅ Lista actualizada: ya estaba al día (${state.carpetas.length} carpetas).`;
+        log(`📂 Carpetas actualizadas desde Drive: ${state.carpetas.length}${nuevas > 0 ? ` (+${nuevas})` : ''}`);
+    } catch (error) {
+        nota.textContent = `❌ No se pudo actualizar la lista: ${error.message}`;
+        log(`❌ Error actualizando carpetas: ${error.message}`);
+    } finally {
+        setButtonDisabled('btn-refrescar-carpetas', false);
+    }
+}
+
 // Confirmar asignaciones → generar locución para aprobación
 async function confirmarAsignaciones() {
     setButtonDisabled('btn-confirm-assignments', true);
