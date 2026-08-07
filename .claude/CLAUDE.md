@@ -41,6 +41,13 @@ haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
 - **Fragmentación por cambio de sujeto** (~50 min) — diagnóstico y plan en la entrada del
   2026-08-05 más abajo, sección B. Es lo más barato de lo pendiente y arregla algo que molesta
   en cada video.
+- **[borrador-automatizacion-video.md](borrador-automatizacion-video.md)** — ⚠️ **BORRADOR, no
+  ejecutar**: automatización completa (música, subtítulos con timing real, transiciones `xfade`
+  con rampas, director de edición) y evaluación de TTS propio en RunPod. Tiene decisiones
+  abiertas a propósito. Lo importante que ya está resuelto ahí: ffmpeg 6.1.1 tiene todos los
+  filtros necesarios (verificado), el límite de 3s por clip **ya existe** (`CLIP_MAX`) y hay que
+  cuidar que las capas nuevas no lo rompan, y los timestamps conviene sacarlos por alineación
+  forzada y no del proveedor de TTS.
 
 ## Limpieza de código muerto (2026-08-05)
 
