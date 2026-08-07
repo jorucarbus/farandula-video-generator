@@ -42,6 +42,34 @@ haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
   2026-08-05 más abajo, sección B. Es lo más barato de lo pendiente y arregla algo que molesta
   en cada video.
 
+## Limpieza de código muerto (2026-08-05)
+
+Se borraron ~540 líneas que no ejecutaba nadie, en **ambos** repos. El render activo es
+`montarVideoPlan` (cortes limpios de ffmpeg + zoom/espejo opcionales); todo lo demás eran
+capas viejas que quedaron colgadas.
+
+**Borrado**: `subtitulos.js` entero (su `require` en `server.js` era la única referencia);
+en `video.js` → `montarVideoHyper` (hyperframes, ya marcado como retirado en un comentario de
+`server.js`), `montarVideo` (v1), `asignarVideos` (lo reemplazó `seleccion.planificarClips`) y
+sus auxiliares privadas `elegirSfx`/`rutaFiltro`/`cargarUso`/`guardarUso`/`duracionFragmento`,
+más las constantes que solo ellas usaban y el `usage.json` que dejaban en disco; en `gemini.js`
+→ `fragmentarGuion` (v1) y `generarGuionTecnico`, con `PROMPTS.fragmentacion`.
+En `farandula-video-family`, además, `agregarMarcas` y `PROMPTS.marcas` (prosodia de
+ElevenLabs, que esa versión no usa).
+
+**Se conservó a propósito** — no volver a "limpiarlo":
+- `decidirEfecto` / `filtroZoom` — zoom y espejo **siguen activos**, decisión explícita del
+  usuario. Si los presets están en "ninguno" el resultado son cortes limpios, pero el código
+  corre.
+- `fuentes.descargarAudio()` — hoy sin llamadas, pero es el camino principal del plan de
+  multifuente. Borrarla es tirar trabajo que hay que rehacer.
+- `fuentes.descargarVideo()` — fallback de YouTube.
+
+**Método, por si se repite**: contar llamadas reales con grep antes de borrar, y revisar qué
+auxiliares privadas quedan huérfanas al sacar una función grande (fue el caso de las cinco de
+`video.js`). Verificar después que los módulos carguen, que el server arranque y con un **render
+real** — un chequeo de sintaxis no prueba que el pipeline siga entero.
+
 ## Graphify Knowledge Graph (Token Saver)
 
 Este proyecto tiene un **grafo de conocimiento** generado con Graphify.
