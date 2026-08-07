@@ -12,7 +12,6 @@ const video = require('./video');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
-const subtitulos = require('./subtitulos');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
