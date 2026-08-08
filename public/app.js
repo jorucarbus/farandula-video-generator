@@ -43,7 +43,7 @@ function setModo(modo) {
     document.getElementById('modo-selector').dataset.modo = modo;
     document.getElementById('producto-final-label').textContent = modo === 'video' ? 'Video' : 'Insumos';
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral' };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuente: null, sesgo: 'neutral', avisoReconstruccion: null };
     sessionStorage.removeItem('farandula_job_id');
 
     document.getElementById('lectura-section').classList.add('hidden');
@@ -106,6 +106,7 @@ let state = {
     audioToken: null,
     fuente: null,   // {type, content} para regenerar con otro sesgo
     sesgo: 'neutral',
+    avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
 };
 
 // Funciones auxiliares (Bloque B: todos los pasos visibles a la vez, sin wizard)
@@ -472,6 +473,7 @@ async function aprobarGuion() {
         });
         state.fragments = result[cfg().parrafosKey];
         state.carpetas = result.carpetas;
+        state.avisoReconstruccion = result.avisoReconstruccion || null;
         renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
         hideProgress();
@@ -493,6 +495,17 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
         aviso.classList.remove('hidden');
     } else {
         aviso.classList.add('hidden');
+    }
+
+    // Los fragmentos deben reconstruir el guion palabra por palabra: el tiempo en pantalla de
+    // cada clip sale de su proporción de caracteres. Si no coinciden, todos los clips quedan
+    // corridos respecto de la locución — y no falla nada a la vista, por eso hay que avisarlo.
+    const avisoRec = document.getElementById('aviso-reconstruccion');
+    if (state.avisoReconstruccion) {
+        avisoRec.textContent = `⚠️ ${state.avisoReconstruccion}`;
+        avisoRec.classList.remove('hidden');
+    } else {
+        avisoRec.classList.add('hidden');
     }
 
     const lista = document.getElementById('lista-asignaciones');

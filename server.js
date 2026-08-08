@@ -391,12 +391,19 @@ app.post('/api/fragment', async (req, res) => {
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
+    // Si los fragmentos no reconstruyen el guion, los tiempos de TODOS los clips quedan
+    // corridos. No aborta (el video igual sale) pero el usuario tiene que enterarse.
+    const avisoReconstruccion = fragments.verificacion && !fragments.verificacion.ok
+      ? fragments.verificacion.mensaje
+      : null;
+
     res.json({
       status: 'success',
       fragments: conPorcentaje,
       carpetas,
       protagonista,
       protagonistaSinCarpeta,
+      avisoReconstruccion,
     });
   } catch (error) {
     console.error('Error fragmentación:', error);
