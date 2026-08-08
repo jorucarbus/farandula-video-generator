@@ -14,11 +14,11 @@
         </header>
 
         <main>
-            <div class="form-section hidden" id="apikey-banner" style="background:#fff8e1;border:1px solid #ffca28;">
+            <div class="form-section banner-warning hidden" id="apikey-banner">
                 <h2><span class="icon-slot" data-icon="key"></span> Ingresa tu API Key</h2>
-                <p style="color:#666;font-size:0.9rem;margin-bottom:8px;">La que está en el <code>.env</code> del servidor (variable <code>API_KEY</code>).</p>
+                <p class="hint">La que está en el <code>.env</code> del servidor (variable <code>API_KEY</code>).</p>
                 <div class="form-group">
-                    <input type="password" id="apikey-input" placeholder="API Key..." style="width:100%;padding:10px;" onkeydown="if(event.key==='Enter')guardarApiKey()">
+                    <input type="password" id="apikey-input" placeholder="API Key..." onkeydown="if(event.key==='Enter')guardarApiKey()">
                 </div>
                 <button class="btn btn-primary" onclick="guardarApiKey()">Guardar y continuar</button>
             </div>
@@ -37,9 +37,9 @@
                 </button>
             </div>
 
-            <div class="form-section hidden" id="recuperar-banner" style="background:#e8f4fd;border:1px solid #3498db;">
-                <p style="margin:0 0 10px;"><strong><span class="icon-slot" data-icon="repeat"></span> Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div class="form-section banner-info hidden" id="recuperar-banner">
+                <p><strong><span class="icon-slot" data-icon="repeat"></span> Hay un proceso sin terminar</strong> (guardado antes de recargar o de un fallo).</p>
+                <div class="btn-row">
                     <button class="btn btn-primary" type="button" onclick="recuperarJobPendiente()"><span class="icon-slot" data-icon="play"></span> Continuar donde quedó</button>
                     <button class="btn btn-secondary" type="button" onclick="descartarJobPendiente()"><span class="icon-slot" data-icon="trash"></span> Empezar de cero</button>
                 </div>
@@ -51,7 +51,7 @@
                 </button>
                 <span class="pasos-nav-indicador" id="pasos-nav-indicador">Paso 1 de 6</span>
                 <button type="button" class="pasos-nav-btn" onclick="pasoSiguiente()" aria-label="Paso siguiente">
-                    <span class="icon-slot" data-icon="arrowLeft" style="transform:rotate(180deg)"></span>
+                    <span class="icon-slot icon-flip" data-icon="arrowLeft"></span>
                 </button>
             </div>
 
@@ -80,7 +80,7 @@
                 <div class="form-group">
                     <label for="source-input">Ingresa aquí:</label>
                     <textarea id="source-input" placeholder="Pega un link de noticia, YouTube, TikTok o Instagram — o texto directo" rows="4"></textarea>
-                    <p style="color:#666;font-size:0.82rem;margin-top:6px;">
+                    <p class="hint">
                         Los videos de TikTok/IG se descargan y Gemini los <strong>ve</strong> (imagen + audio). YouTube lo lee directo.
                     </p>
                 </div>
@@ -151,14 +151,14 @@
                         <label id="guion-stats">Guion</label>
                         <button class="btn-copy" onclick="copyGuion()"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
                     </div>
-                    <textarea id="guion-editor" rows="10" style="width:100%;resize:vertical;" oninput="actualizarStatsGuion()"></textarea>
+                    <textarea id="guion-editor" rows="10" oninput="actualizarStatsGuion()"></textarea>
                 </div>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+                <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-guion" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
                     <button class="btn btn-primary" id="btn-regenerate-guion" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
                     <button class="btn btn-secondary" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
                 </div>
-                <p style="color:#666;font-size:0.85rem;margin-top:8px;">
+                <p class="hint">
                     Puedes editar el texto directamente antes de aprobar. Solo el guion aprobado pasa a locución y edición.
                 </p>
             </div>
@@ -166,29 +166,29 @@
             <div class="form-section" id="revision-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 4: Revisa las asignaciones de carpetas</h2>
-                <div id="aviso-protagonista" class="hidden" style="background:#ffe5e5;border:1px solid #e74c3c;border-radius:8px;padding:10px 14px;margin-bottom:12px;color:#c0392b;font-weight:bold;"></div>
-                <p style="color:#666;font-size:0.9rem;margin-bottom:10px;">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
-                <button class="btn btn-secondary" id="btn-refrescar-carpetas" style="margin-bottom:10px;" onclick="refrescarCarpetas()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Actualizar lista de carpetas</button>
-                <p id="nota-carpetas" style="color:#666;font-size:0.82rem;margin:0 0 10px;">Si creaste una carpeta nueva en Drive y no aparece abajo, actualizá la lista sin perder lo ya asignado.</p>
+                <div id="aviso-protagonista" class="banner-danger hidden"></div>
+                <p class="hint">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
+                <button class="btn btn-secondary mb-sm" id="btn-refrescar-carpetas" onclick="refrescarCarpetas()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Actualizar lista de carpetas</button>
+                <p id="nota-carpetas" class="hint">Si creaste una carpeta nueva en Drive y no aparece abajo, actualizá la lista sin perder lo ya asignado.</p>
                 <div id="lista-asignaciones"></div>
-                <button class="btn btn-success" id="btn-confirm-assignments" style="margin-top:12px;" onclick="confirmarAsignaciones()"><span class="icon-slot" data-icon="check"></span> Confirmar asignaciones</button>
+                <button class="btn btn-success mt-sm" id="btn-confirm-assignments" onclick="confirmarAsignaciones()"><span class="icon-slot" data-icon="check"></span> Confirmar asignaciones</button>
             </div>
 
             <div class="form-section" id="audio-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 5: Escucha y aprueba la locución</h2>
-                <p id="audio-info" style="color:#666;font-size:0.9rem;margin-bottom:8px;"></p>
-                <audio id="audio-player" controls style="width:100%;margin-bottom:12px;"></audio>
-                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <p id="audio-info" class="hint"></p>
+                <audio id="audio-player" controls class="mb-sm"></audio>
+                <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-audio" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
                     <button class="btn btn-primary" id="btn-regenerate-audio-v3" onclick="regenerarAudio('eleven_v3')"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (v3, actúa marcas)</button>
                     <button class="btn btn-secondary" id="btn-regenerate-audio-v2" onclick="regenerarAudio('eleven_multilingual_v2')"><span class="icon-slot" data-icon="microphone"></span> Regenerar con v2 (acento forzado español)</button>
                     <button class="btn btn-secondary" id="btn-recargar-audio" onclick="recargarAudioDeDrive()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Recargar audio desde Drive</button>
                 </div>
-                <p style="color:#666;font-size:0.85rem;margin-top:8px;">
+                <p class="hint">
                     ¿Reemplazaste el <code>audio.mp3</code> de la carpeta de insumos en Drive con una voz hecha en otra parte? Pulsa "Recargar audio desde Drive" para incorporarla.
                 </p>
-                <p style="color:#666;font-size:0.85rem;margin-top:8px;">
+                <p class="hint">
                     v3 actúa las emociones pero a veces cambia el acento. v2 fuerza el idioma (más estable) pero lee plano.
                 </p>
             </div>
@@ -279,8 +279,8 @@
                 </div>
             </div>
 
-            <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 16px;">
-                <h2 class="col-title" style="margin-bottom:0;"><span class="icon-slot" data-icon="package"></span> Historial</h2>
+            <div class="section-header-row">
+                <h2 class="col-title mb-0"><span class="icon-slot" data-icon="package"></span> Historial</h2>
                 <button class="btn-copy" type="button" onclick="cargarHistorial()" title="Actualizar historial"><span class="icon-slot" data-icon="arrowsClockwise"></span></button>
             </div>
             <div class="form-section" id="historial-section">
@@ -297,8 +297,8 @@
                 </div>
                 <div class="log-box" id="log-box"></div>
                 <div class="hidden" id="error-actions">
-                    <p style="font-weight:bold;color:#c0392b;margin-bottom:8px;">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
-                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <p class="error-text">Algo falló en este paso. Puedes reintentarlo sin rehacer lo anterior.</p>
+                    <div class="btn-row">
                         <button class="btn btn-primary" id="btn-reintentar" type="button"><span class="icon-slot" data-icon="arrowsClockwise"></span> Reintentar este paso</button>
                         <button class="btn btn-secondary" id="btn-volver" type="button"><span class="icon-slot" data-icon="arrowLeft"></span> Volver atrás</button>
                     </div>

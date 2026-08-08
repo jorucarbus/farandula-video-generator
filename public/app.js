@@ -18,11 +18,7 @@ function cfg() { return FLUJO[MODO]; }
 // Helper: deshabilitar/habilitar botón mientras proceso está activo
 function setButtonDisabled(buttonId, disabled) {
     const btn = document.getElementById(buttonId);
-    if (btn) {
-        btn.disabled = disabled;
-        if (disabled) btn.style.opacity = '0.6';
-        else btn.style.opacity = '1';
-    }
+    if (btn) btn.disabled = disabled; // .btn:disabled ya baja la opacidad por CSS
 }
 
 // Bloque C: rehacer un paso ya completado (editar y reenviar) invalida todo lo posterior.
@@ -151,7 +147,7 @@ function renderProductoGuion(texto) {
     const body = document.querySelector('#producto-guion .producto-slot-body');
     body.innerHTML = '';
     const p = document.createElement('p');
-    p.style.cssText = 'white-space:pre-wrap;';
+    p.className = 'pre-wrap';
     p.textContent = texto.length > 160 ? texto.slice(0, 160) + '…' : texto;
     body.appendChild(p);
 }
@@ -172,7 +168,7 @@ function renderProductoFinal(resultado) {
         const video = document.createElement('video');
         video.controls = true;
         video.playsInline = true;
-        video.style.cssText = 'max-width:180px;aspect-ratio:9/16;background:#000;display:block;';
+        video.className = 'thumb-video';
         video.src = resultado.previewUrl;
         body.appendChild(video);
     } else if (resultado.driveLink) {
@@ -215,14 +211,14 @@ function mostrarError(mensaje, reintentarFn, volverStepId) {
     const btnV = document.getElementById('btn-volver');
     btnR.onclick = () => { ocultarError(); reintentarFn(); };
     if (volverStepId) {
-        btnV.style.display = '';
+        btnV.classList.remove('hidden');
         btnV.onclick = () => {
             ocultarError();
             hideProgress();
             setStepStatus(volverStepId, 'active');
         };
     } else {
-        btnV.style.display = 'none';
+        btnV.classList.add('hidden');
     }
     bar.classList.remove('hidden');
 }
@@ -503,12 +499,11 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     lista.innerHTML = '';
     state.fragments.forEach((f, i) => {
         const div = document.createElement('div');
-        div.style.cssText = 'border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:8px;';
+        div.className = 'asignacion-row';
         const p = document.createElement('p');
-        p.style.cssText = 'margin:0 0 6px;font-size:0.9rem;';
+        p.className = 'asignacion-label';
         p.textContent = `${i + 1}. (${f.porcentaje}%) ${f.texto}`;
         const sel = document.createElement('select');
-        sel.style.width = '100%';
         state.carpetas.forEach(c => {
             const o = document.createElement('option');
             o.value = c; o.textContent = c;
@@ -805,19 +800,19 @@ function showResult(videoData) {
             <p><strong>${icon('checkCircle')} Insumos exportados</strong></p>
             <p>${icon('folderOpen')} Carpeta creada en el canal seleccionado con los fragmentos numerados + <code>locucion.mp3</code></p>
             ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Abrir carpeta en Google Drive</a></p>` : ''}
-            <p style="color:#666;font-size:0.9rem;margin-top:15px;">Listo para editar a mano en tu editor de video.</p>
+            <p class="hint mt-md">Listo para editar a mano en tu editor de video.</p>
         `;
         log('🎉 ¡Insumos listos!');
         return;
     }
 
     const playerHtml = videoData.previewUrl
-        ? `<video controls playsinline style="width:100%;max-width:320px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block;margin:0 auto 15px;" src="${videoData.previewUrl}"></video>`
+        ? `<video controls playsinline class="result-video-player" src="${videoData.previewUrl}"></video>`
         : '';
     const nombresSesgo = { neutral: `${icon('scales')} Neutral`, favor: `${icon('heart')} A favor`, contra: `${icon('flame')} En contra` };
     const otrosSesgos = ['neutral', 'favor', 'contra'].filter(s => s !== state.sesgo);
     const botonesSesgo = otrosSesgos.map(s =>
-        `<button class="btn btn-primary" style="margin-right:8px;" onclick="otroSesgo('${s}')">${nombresSesgo[s]}</button>`
+        `<button class="btn btn-primary" onclick="otroSesgo('${s}')">${nombresSesgo[s]}</button>`
     ).join('');
 
     resultInfo.innerHTML = `
@@ -827,9 +822,9 @@ function showResult(videoData) {
         <p>${icon('pencilSimple')} Nombre del archivo: <code>${videoData.fileName}</code></p>
         <p>${icon('hourglass')} Duración: ${videoData.duration}s</p>
         <p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Ver en Google Drive</a></p>
-        <p style="margin-top:15px;"><strong>${icon('repeat')} Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
-        <p>${botonesSesgo}</p>
-        <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">
+        <p class="mt-md"><strong>${icon('repeat')} Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
+        <p class="btn-row">${botonesSesgo}</p>
+        <p class="hint mt-md">
             El video está listo para publicar en redes sociales.
         </p>
     `;
@@ -942,13 +937,12 @@ function crearTarjetaJob(job) {
 
     const item = document.createElement('div');
     item.className = 'historial-item';
-    item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
 
     const header = document.createElement('div');
-    header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+    header.className = 'historial-item-header';
     header.innerHTML = `
-        <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${job.titulo || job.nombreCorto || '(sin título)'}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+        <div class="historial-item-titulo">${job.titulo || job.nombreCorto || '(sin título)'}</div>
+        <div class="historial-item-meta">
             <span>${icon(info.icon)} ${info.texto}</span>
             <span>Paso ${paso}/5</span>
             <span>${icon('userFocus')} ${job.protagonista || '-'}</span>
@@ -958,9 +952,9 @@ function crearTarjetaJob(job) {
     `;
 
     const body = document.createElement('div');
-    body.style.cssText = 'padding:14px;display:none;';
+    body.className = 'historial-item-body';
     body.innerHTML = `
-        <p><a class="btn btn-primary" href="/?jobId=${job.jobId}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">${icon('play')} ${job.estado === 'terminado' ? 'Abrir para hacer otro video' : 'Continuar en pestaña nueva'}</a></p>
+        <p><a class="btn btn-primary link-btn" href="/?jobId=${job.jobId}" target="_blank" rel="noopener">${icon('play')} ${job.estado === 'terminado' ? 'Abrir para hacer otro video' : 'Continuar en pestaña nueva'}</a></p>
         <div class="copy-block">
             <div class="copy-header">
                 <label>Título</label>
@@ -980,7 +974,7 @@ function crearTarjetaJob(job) {
         ${job.driveLink ? `<p><a href="${job.driveLink}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
         ${job.insumosLimpiados ? `<p class="nota-limpieza">${icon('trash')} Insumos borrados por antigüedad (más de 48h). El guion y la descripción siguen acá; la locución habría que regenerarla.</p>` : ''}
         ${job.script ? `
-        <div class="copy-block" style="margin-top:10px;">
+        <div class="copy-block mt-sm">
             <div class="copy-header">
                 <label>Guion</label>
                 <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(job.script)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
@@ -996,13 +990,12 @@ function crearTarjetaJob(job) {
 function crearTarjetaSheet(fila) {
     const item = document.createElement('div');
     item.className = 'historial-item';
-    item.style.cssText = 'border:2px solid #000;border-radius:8px;margin-bottom:8px;';
 
     const header = document.createElement('div');
-    header.style.cssText = 'padding:8px 12px;cursor:pointer;background:#f0f0f0;border-radius:6px 6px 0 0;';
+    header.className = 'historial-item-header';
     header.innerHTML = `
-        <div style="font-weight:900;font-size:0.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${fila.titulo || '(sin título)'}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;color:#666;font-weight:600;font-size:0.7rem;margin-top:3px;align-items:center;">
+        <div class="historial-item-titulo">${fila.titulo || '(sin título)'}</div>
+        <div class="historial-item-meta">
             <span>${icon('checkCircle')} Terminado</span>
             <span>${icon('userFocus')} ${fila.protagonista || '-'}</span>
             <span>${icon('televisionSimple')} ${fila.canal || '-'}</span>
@@ -1011,7 +1004,7 @@ function crearTarjetaSheet(fila) {
     `;
 
     const body = document.createElement('div');
-    body.style.cssText = 'padding:14px;display:none;';
+    body.className = 'historial-item-body';
     body.innerHTML = `
         <div class="copy-block">
             <div class="copy-header">
@@ -1031,7 +1024,7 @@ function crearTarjetaSheet(fila) {
         ${fila.nombreArchivo ? `<p><strong>Archivo:</strong> ${fila.nombreArchivo}</p>` : ''}
         ${fila.linkRender ? `<p><a href="${fila.linkRender}" target="_blank">${icon('link')} Ver video en Drive</a></p>` : ''}
         ${fila.guion ? `
-        <div class="copy-block" style="margin-top:10px;">
+        <div class="copy-block mt-sm">
             <div class="copy-header">
                 <label>Guion</label>
                 <button class="btn-copy" onclick="navigator.clipboard.writeText(${JSON.stringify(fila.guion)}); log('📋 Guion copiado del historial')">${icon('copy')} Copiar</button>
@@ -1048,7 +1041,7 @@ function crearTarjetaSheet(fila) {
 async function cargarHistorial() {
     const cont = document.getElementById('historial-lista');
     cont.style.maxHeight = '';
-    cont.innerHTML = '<p style="color:#666;">Cargando...</p>';
+    cont.innerHTML = '<p class="hint">Cargando...</p>';
     try {
         const [jobsResult, sheetResult] = await Promise.all([
             apiCall('/jobs').catch(() => ({ jobs: [] })),
@@ -1064,7 +1057,7 @@ async function cargarHistorial() {
         ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
         if (entradas.length === 0) {
-            cont.innerHTML = '<p style="color:#666;">Sin registros todavía.</p>';
+            cont.innerHTML = '<p class="hint">Sin registros todavía.</p>';
             return;
         }
         cont.innerHTML = '';
@@ -1072,7 +1065,7 @@ async function cargarHistorial() {
         entradas.forEach(entrada => {
             const { item, header, body } = entrada.construir();
             header.onclick = () => {
-                body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                body.classList.toggle('abierto');
                 actualizarAltoHistorial();
             };
             item.appendChild(header);
@@ -1086,7 +1079,7 @@ async function cargarHistorial() {
         // interno (NO el alto de toda la tarjeta abierta ni "toda la página") para poder leerla
         // completa sin que empuje el resto del layout.
         function actualizarAltoHistorial() {
-            const hayExpandido = items.some(it => it.children[1].style.display === 'block');
+            const hayExpandido = items.some(it => it.children[1].classList.contains('abierto'));
             if (hayExpandido) {
                 cont.style.maxHeight = '70vh';
                 return;
@@ -1102,7 +1095,7 @@ async function cargarHistorial() {
         actualizarAltoHistorial();
         observarSnap(cont, '.historial-item');
     } catch (error) {
-        cont.innerHTML = `<p style="color:#c0392b;">Error cargando historial: ${error.message}</p>`;
+        cont.innerHTML = `<p class="error-text">Error cargando historial: ${error.message}</p>`;
     }
 }
 
