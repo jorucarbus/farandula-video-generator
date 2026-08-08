@@ -12,6 +12,7 @@ const video = require('./video');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
+const tiempos = require('./tiempos');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
@@ -558,8 +559,19 @@ app.post('/api/generar-audio', async (req, res) => {
 
     console.log('🎙️ Generando locución para aprobación...');
     const marcado = await gemini.agregarMarcas(fragments);
-    const audio = await elevenlabs.generarAudio(marcado, modelo || 'eleven_v3');
-    const duracion = await video.obtenerDuracion(audio.audioPath);
+    // Fase 5: audio + alineación carácter-por-carácter en la misma llamada (sin costo extra
+    // sobre lo que ya se pagaba). Si algo falla, cae al TTS simple — el render no se detiene.
+    let audio, duracion, duracionesReales;
+    try {
+      audio = await tiempos.generarConTiempos(marcado, { modelo: modelo || 'eleven_v3' });
+      duracion = await video.obtenerDuracion(audio.audioPath);
+      duracionesReales = tiempos.duracionesPorFragmento(fragments, audio, duracion);
+    } catch (errTiempos) {
+      console.warn(`  ⚠️ Tiempos reales fallaron (${errTiempos.message}), cae a TTS simple + % de caracteres`);
+      audio = await elevenlabs.generarAudio(marcado, modelo || 'eleven_v3');
+      duracion = await video.obtenerDuracion(audio.audioPath);
+      duracionesReales = null;
+    }
 
     const token = crypto.randomBytes(16).toString('hex');
     // Conservar solo los 4 audios más recientes
@@ -568,7 +580,7 @@ app.post('/api/generar-audio', async (req, res) => {
       try { fs.unlinkSync(a.path); } catch {}
       audiosPendientes.delete(t);
     }
-    audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo });
+    audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo, duracionesReales });
 
     console.log(`  ⏱️ ${duracion.toFixed(1)}s (${audio.modelo}) — esperando aprobación`);
 
@@ -710,8 +722,9 @@ app.post('/api/generate-video', async (req, res) => {
       }
     }
 
-    // 3. Plan de clips: % por caracteres → tiempo por párrafo → tomas ≤3s con rotación sin repetir
-    const plan = seleccion.planificarClips(fragments, durAudio, inventario);
+    // 3. Plan de clips: tiempo real por fragmento (Fase 5) si el audio aprobado lo trae, si no
+    // % por caracteres → tomas ≤3s con rotación sin repetir
+    const plan = seleccion.planificarClips(fragments, durAudio, inventario, audioAprobado?.duracionesReales);
     const clipsValidos = plan.filter(Boolean);
     console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)`);
 
@@ -873,7 +886,7 @@ app.post('/api/exportar', async (req, res) => {
       }
     }
 
-    const plan = seleccion.planificarClips(fragments, durAudio, inventario);
+    const plan = seleccion.planificarClips(fragments, durAudio, inventario, audioAprobado?.duracionesReales);
     const clipsValidos = plan.filter(Boolean);
     console.log(`  🎯 Plan: ${clipsValidos.length} fragmentos`);
 

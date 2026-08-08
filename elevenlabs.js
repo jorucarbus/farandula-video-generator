@@ -35,6 +35,31 @@ async function pedirTTS(texto, modelId, extra = {}) {
   );
 }
 
+// Igual que pedirTTS pero devuelve también la alineación carácter-por-carácter
+// (endpoint /with-timestamps). Respuesta viene en JSON, no en binario.
+async function pedirTTSConTiempos(texto, modelId, extra = {}) {
+  return axios.post(
+    `${ELEVENLABS_API_URL}/text-to-speech/${ELEVENLABS_VOICE_ID}/with-timestamps`,
+    {
+      text: texto,
+      model_id: modelId,
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75,
+        ...extra.voiceSettings,
+      },
+      ...extra.body,
+    },
+    {
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      responseType: 'json',
+    }
+  );
+}
+
 // Generar audio a partir del guion con marcas.
 // modeloPreferido:
 //   'eleven_v3' → actúa las marcas [excited] etc., pero el acento puede variar
@@ -80,6 +105,87 @@ async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
   }
 
   return guardarAudio(response, guionConMarcas, modeloUsado);
+}
+
+// Igual que generarAudio pero además devuelve la alineación carácter-por-carácter
+// que ElevenLabs mide sobre el TEXTO QUE REALMENTE MANDÓ A HABLAR (con o sin marcas
+// según el modelo que terminó respondiendo). Fase 5: fuente real de tiempos, en vez
+// de estimar por % de caracteres.
+async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_v3') {
+  if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
+    throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
+  }
+
+  console.log(`🎙️ Generando audio + tiempos con ElevenLabs (${modeloPreferido})...`);
+  let response;
+  let modeloUsado;
+  let textoEnviado;
+
+  if (modeloPreferido === 'eleven_multilingual_v2') {
+    textoEnviado = quitarMarcas(guionConMarcas);
+    response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
+      body: { language_code: 'es' },
+      voiceSettings: { style: 0.6, use_speaker_boost: true },
+    });
+    return guardarAudioConTiempos(response, textoEnviado, 'eleven_multilingual_v2');
+  }
+
+  try {
+    textoEnviado = guionConMarcas;
+    response = await pedirTTSConTiempos(textoEnviado, 'eleven_v3');
+    modeloUsado = 'eleven_v3';
+  } catch (errV3) {
+    const detalle = errV3.response?.data
+      ? JSON.stringify(errV3.response.data).slice(0, 200)
+      : errV3.message;
+    console.warn(`  ⚠️ eleven_v3 (with-timestamps) no disponible (${errV3.response?.status}): ${detalle}`);
+    console.log('  ↩️ Usando eleven_multilingual_v2 (marcas removidas)...');
+
+    try {
+      textoEnviado = quitarMarcas(guionConMarcas);
+      response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
+        body: { language_code: 'es' },
+        voiceSettings: { style: 0.6, use_speaker_boost: true },
+      });
+      modeloUsado = 'eleven_multilingual_v2';
+    } catch (errV2) {
+      console.error('Error ElevenLabs (with-timestamps):', errV2.response?.data ? JSON.stringify(errV2.response.data).slice(0, 300) : errV2.message);
+      throw new Error(`Error generando audio con tiempos: ${errV2.message}`);
+    }
+  }
+
+  return guardarAudioConTiempos(response, textoEnviado, modeloUsado);
+}
+
+// Guarda el MP3 (viene en base64 dentro del JSON) y devuelve la alineación cruda
+// junto al texto exacto que se le mandó a hablar — hace falta para casar cada
+// fragmento del guion contra su tramo de la alineación.
+function guardarAudioConTiempos(response, textoEnviado, modeloUsado) {
+  const tempDir = path.join(__dirname, 'temp-videos');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const audioFile = `audio_${Date.now()}.mp3`;
+  const audioPath = path.join(tempDir, audioFile);
+  const buffer = Buffer.from(response.data.audio_base64, 'base64');
+  fs.writeFileSync(audioPath, buffer);
+
+  const align = response.data.alignment || {};
+  const caracteres = align.characters || [];
+  const inicios = align.character_start_times_seconds || [];
+  const fines = align.character_end_times_seconds || [];
+
+  console.log(`✅ Audio + tiempos generados con ${modeloUsado}: ${audioPath} (${caracteres.length} caracteres alineados)`);
+  return {
+    audioPath,
+    audioFile,
+    modelo: modeloUsado,
+    textoEnviado,
+    caracteres,
+    inicios,
+    fines,
+  };
 }
 
 // Guardar el MP3 en la carpeta temporal
@@ -128,5 +234,6 @@ async function verificarVoz() {
 
 module.exports = {
   generarAudio,
+  generarAudioConTiempos,
   verificarVoz,
 };

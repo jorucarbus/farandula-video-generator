@@ -82,14 +82,22 @@ function agruparParaClips(parrafos, tiempos) {
 // parrafos: [{texto, famoso, caracteres}] en orden narrativo
 // duracionAudio: segundos reales de la locución (ffprobe)
 // inventario: {famoso: [{id, name, duracion|null}]}
+// duracionesReales (Fase 5, opcional): tiempo real por párrafo medido con la alineación de
+// ElevenLabs (ver tiempos.js). Si no llega, o no calza en longitud con parrafos, se cae al
+// reparto por % de caracteres — mismo comportamiento de siempre, sin romper nada.
 // Devuelve: [{videoId, nombre, famoso, offset, duracion, parrafoIdx}] en orden de línea de tiempo
-function planificarClips(parrafos, duracionAudio, inventario) {
+function planificarClips(parrafos, duracionAudio, inventario, duracionesReales = null) {
   const historial = cargarHistorial();
   const totalChars = parrafos.reduce((s, p) => s + p.caracteres, 0);
   if (!totalChars) throw new Error('Párrafos sin caracteres');
 
-  // 1. Línea de tiempo: cada párrafo → su tiempo → agrupar los muy cortos → sus tomas
-  const tiempos = parrafos.map(p => duracionAudio * (p.caracteres / totalChars));
+  // 1. Línea de tiempo: tiempo real por párrafo si está disponible; si no, estimado por %
+  // de caracteres (techo de calidad anterior a la Fase 5). Agrupar los muy cortos → sus tomas.
+  const usaReales = Array.isArray(duracionesReales) && duracionesReales.length === parrafos.length;
+  if (usaReales) console.log('  ⏱️ Usando tiempos reales de la locución (no % de caracteres)');
+  const tiempos = usaReales
+    ? duracionesReales
+    : parrafos.map(p => duracionAudio * (p.caracteres / totalChars));
   const bloques = agruparParaClips(parrafos, tiempos);
   const fusionados = parrafos.length - bloques.length;
   if (fusionados > 0) {

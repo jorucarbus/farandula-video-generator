@@ -122,9 +122,13 @@ REGLAS DE ORO:
 2. Efecto Slingshot: El final debe ser un disparo de energía. Termina con [fast] o [excited] que se corte abruptamente.
 3. No Alterar Texto: Mantén palabras intactas, solo saturarlas de etiquetas.
 4. Bloque Único: Resultado en un solo bloque denso. Sin introducciones.
+5. El "Nombre_Famoso: " que precede a cada línea de entrada es SOLO para que sepas de quién habla
+   ese fragmento — NUNCA lo repitas en la salida. La salida es el texto narrado con etiquetas,
+   nada más. Si el nombre o los dos puntos aparecen en tu respuesta, la voz los va a leer en
+   voz alta, y eso rompe el video.
 
 FORMATO DE RESPUESTA:
-Un solo bloque con el guion fragmentado saturado de etiquetas.`
+Un solo bloque con el guion fragmentado saturado de etiquetas. Nunca el nombre del famoso.`
 };
 
 // Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
@@ -650,6 +654,17 @@ async function fragmentarGuionParrafos(script, carpetas, modo = 'guion') {
 }
 
 // ETAPA 4: Agregar Marcas ElevenLabs
+// Quita "Nombre_Famoso: " si se coló en la respuesta de Gemini, pese a la regla 5 del prompt.
+// Nunca se probó en vacío: en la primera corrida real Gemini SÍ dejó pasar el label
+// ("[excited]Gerard_Pique: Piqué..."), y eso ElevenLabs lo habría leído en voz alta. Regla de
+// robustez: no confiar solo en el prompt, limpiar también del lado del código.
+function limpiarEtiquetasFamoso(texto, nombres) {
+  if (!nombres.length) return texto;
+  const escapar = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const patron = new RegExp(`\\b(${nombres.map(escapar).join('|')})\\s*:\\s*`, 'g');
+  return texto.replace(patron, '');
+}
+
 async function agregarMarcas(guionFragmentado) {
   try {
     const guionText = guionFragmentado
@@ -659,7 +674,8 @@ async function agregarMarcas(guionFragmentado) {
     const userMessage = `Procesa este guion fragmentado y agrega las etiquetas de actuación:\n\n${guionText}`;
     const response = await callGemini(PROMPTS.marcas, userMessage, TAREAS.marcas);
 
-    return response.trim();
+    const nombres = [...new Set(guionFragmentado.map(f => f.famoso))];
+    return limpiarEtiquetasFamoso(response.trim(), nombres);
   } catch (error) {
     throw new Error(`Error agregando marcas: ${error.message}`);
   }
