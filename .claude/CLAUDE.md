@@ -216,7 +216,7 @@ por servicio — actualizar una NO propaga a las demás. Si se regenera el refre
 
 ## Sesiones recientes
 
-### 2026-08-08 (Windows) — Fases 1, 2 y 3 del plan maestro + protocolo de traspaso a Codex
+### 2026-08-08 (Windows) — Fases 1, 2, 3 y 4 del plan maestro + protocolo de traspaso a Codex
 
 Estado detallado en **[estado-vivo.md](estado-vivo.md)** (archivo nuevo). Resumen:
 
@@ -272,8 +272,34 @@ Al portar, revisar **qué más quedó dentro del rango**, no solo que compile.
 famoso del fragmento anterior. No es el bug que se arregló, la alternativa no tiene respuesta
 obvia, y el usuario lo corrige en el Paso 4.
 
-**Pendiente**: nada a medio hacer. Sigue la Fase 4 (multifuente + solo audio), que es el ahorro
-grande de verdad: dejar de mandar video a Gemini (~263 tokens/s contra ~32 del audio).
+**Fase 4 — multifuente + solo audio** (`8a4bc19`, portada a family en `fce9aa1`).
+
+⚠️ **Bug preexistente encontrado y arreglado, importante para cualquiera que trabaje local en
+Windows**: `youtube-dl-exec` activa `shell:true` cuando la ruta del binario tiene un espacio
+(pasa en esta máquina: `D:\claude pro apps\...`). En ese modo Node NO escapa los demás
+argumentos — cualquier flag con espacios (como `--output` apuntando a esta misma carpeta) se
+corta en el primer espacio. `descargarAudio()`/`descargarVideo()` fallaban SIEMPRE en esta
+máquina, en silencio, desde que existen — nunca se notó porque Railway no tiene espacios en su
+path. Arreglado en `fuentes.js`: yt-dlp se invoca ahora con `execFile` directo (sin shell).
+
+La fase en sí: `extraerActa()` saca hechos neutrales de UNA fuente (sesgo-independiente —
+"solo lo que se dice, nunca gestos ni imagen", pedido explícito del usuario);
+`sintetizarCronica()` combina 1-3 actas en una crónica. `/api/read` acumula fuentes por
+`jobId` (máximo 3, rechaza la 4ta); `/api/resintetizar` cambia de sesgo sin re-descargar nada
+(reemplaza lo que hacía `otroSesgo()`, que volvía a bajar y subir el video entero). YouTube:
+transcripción (subtítulos, texto puro) → audio → Gemini lee la URL directo → video completo
+(último recurso) — cada escalón que falla cae al siguiente, no aborta.
+
+Verificado con un link real de Instagram (lo pasó el usuario): descarga de audio, acta correcta,
+crónica sintetizada. Multifuente probado por HTTP contra el servidor local: 3 fuentes
+acumuladas incorporando cada dato nuevo y resolviendo una contradicción entre fuentes con
+naturalidad, 4ta rechazada. Resíntesis: 3.8s sin descargas contra 14.4s con descarga, confirmado
+en el log ("sin re-descargar", sin línea de audio). YouTube: transcripción y audio están
+bloqueados AHORA MISMO por el anti-bot de YouTube (externo, cambia con el tiempo) — pero el
+fallback a Gemini-directo se probó real: degrada exactamente al comportamiento que la app ya
+tenía antes de esta fase, sin romper nada.
+
+**Pendiente**: nada a medio hacer. Sigue la Fase 5 (fuente de tiempos intercambiable).
 
 
 ### 2026-07-19 (Windows) — Fragmentación por oración, efectos, robustez Gemini, reconciliación con la Mac

@@ -9,9 +9,29 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1, 2 y 3 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
-`test-persistencia` en `1dbb633`, `farandula-video-family` `main` en `80fa63d` (los dos push
+**Fases 1, 2, 3 y 4 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
+`test-persistencia` en `8a4bc19`, `farandula-video-family` `main` en `fce9aa1` (los dos push
 verificados). `main` del principal sigue en `f801076` — sin mergear a propósito.
+
+**Fase 4 (multifuente + solo audio), commit `8a4bc19`** + portada en `fce9aa1`. Dos cosas:
+
+1. **Bug preexistente encontrado y arreglado**: `youtube-dl-exec` rompía en silencio en esta
+   máquina (path con espacio, "D:\claude pro apps\...") — `descargarAudio`/`descargarVideo`
+   fallaban SIEMPRE localmente, nunca en Railway. Arreglado invocando yt-dlp con `execFile`
+   directo (sin shell) en `fuentes.js`.
+2. **La fase en sí**: `extraerActa()` saca hechos neutrales de UNA fuente (sesgo-independiente,
+   "solo lo que se dice, nunca gestos"); `sintetizarCronica()` combina 1-3 actas en una crónica.
+   `/api/read` acumula fuentes por `jobId` (máx 3); `/api/resintetizar` cambia de sesgo sin
+   re-descargar nada. YouTube: transcripción → audio → Gemini-directo → video, cada escalón cae
+   al siguiente sin abortar.
+
+Verificado con Instagram real (link del usuario) y HTTP real contra el servidor: 3 fuentes
+acumuladas, 4ta rechazada, resíntesis 3.8s sin descargas (vs 14.4s con descarga). YouTube:
+transcripción/audio bloqueados ahora mismo por el anti-bot de YouTube (externo) pero el
+fallback a Gemini-directo se probó real y funciona — degrada al comportamiento que ya existía,
+sin romper nada.
+
+**Próximo paso: Fase 5 (fuente de tiempos intercambiable), sin empezar.**
 
 ⚠️ **Lección del port a family**: copiar un bloque entre repos por rango de texto arrastró de
 vuelta `agregarMarcas`, que en family se había borrado a propósito (no usa ElevenLabs). Quedó
@@ -75,7 +95,7 @@ en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre
 | 1 | Reskin neutro + ergonomía | **hecha (2026-08-08, `55ae1bc`)** | Sonnet |
 | 2 | Fragmentación por cambio de sujeto | **hecha (2026-08-08, `e995e37`)** | Opus |
 | 3 | Router de modelos dentro de Gemini | **hecha (2026-08-08, `042db6d`)** | Sonnet |
-| 4 | Multifuente + solo audio | no empezada | Sonnet |
+| 4 | Multifuente + solo audio | **hecha (2026-08-08, `8a4bc19`)** | Sonnet |
 | 5 | Fuente de tiempos intercambiable | no empezada | Sonnet |
 | 6 | Subtítulos ASS | no empezada | Sonnet |
 | 7 | Transiciones xfade + rampas | no empezada | Opus |
