@@ -9,9 +9,14 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1 y 2 TERMINADAS hoy.** `test-persistencia` en `e995e37`, `farandula-video-family`
-`main` en `8dd764b` (los dos push verificados). `main` del principal sigue en `f801076` — sin
+**Fases 1, 2 y 3 TERMINADAS hoy.** `test-persistencia` en `042db6d`, `farandula-video-family`
+`main` en `cd25a48` (los dos push verificados). `main` del principal sigue en `f801076` — sin
 mergear a propósito, ver regla de la rama de prueba al pie de este archivo.
+
+⚠️ **Lección del port a family**: copiar un bloque entre repos por rango de texto arrastró de
+vuelta `agregarMarcas`, que en family se había borrado a propósito (no usa ElevenLabs). Quedó
+rota y nadie la llamaba, así que no falló nada — pero al portar hay que revisar qué quedó
+adentro del rango, no solo que compile. Corregido en `cd25a48`.
 
 **Fase 1 (reskin), commit `55ae1bc`**: `style.css` reescrito completo (variables CSS,
 `prefers-color-scheme: dark`, acento único `#2563eb`/`#5b9bff` oscuro, superficie fija
@@ -35,9 +40,21 @@ respuesta obvia): cuando una oración no nombra a nadie ("La coincidencia fue de
 Gemini le arrastra el famoso del fragmento anterior. Es continuidad visual razonable y el
 usuario puede corregirlo en el Paso 4.
 
-**Próximo paso: Fase 3 (router de modelos dentro de Gemini), sin empezar.** Dato útil que salió
-de las pruebas de hoy: la fragmentación funcionó bien incluso cuando la cadena de fallback cayó
-hasta `gemini-3.1-flash-lite-preview` — evidencia a favor de mandarla al tier barato.
+**Fase 3 (router de modelos), commit `042db6d`** + portada a family en `cd25a48`: dos cadenas
+(`creativo` arranca en tier alto, `mecanico` en lite y escala) y un router `TAREAS` que decide
+cuál usa cada llamada. `callGemini` loguea `🤖 tarea → modelo`. La robustez no cambió: las dos
+cadenas llevan los 4 modelos.
+
+**Decisión de la Fase 3 que conviene poder revertir**: la fragmentación quedó en `mecanico`. En
+la comparación cabeza a cabeza, lite hizo 3 cortes menos que el tier alto; dos eran cortes de
+más del tier alto (misma persona en las dos mitades), y el tercero —"Piqué ... publicaba una
+historia con Clara Chía"— lite lo deja entero como Piqué. Según la regla 6 del propio prompt
+(elegir el SUJETO de la acción, no al mencionado de pasada) lite tiene razón, pero si se
+prefiere el otro criterio **el cambio es una línea**: mover `fragmentacion` a `CADENAS.creativo`
+en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre.
+
+**Próximo paso: Fase 4 (multifuente + solo audio), sin empezar.** Es la de mayor ahorro real
+(~8x, dejar de mandar video a Gemini) y no bloquea nada del pipeline de render.
 
 ## Fases del plan maestro (11 total)
 
@@ -45,7 +62,7 @@ hasta `gemini-3.1-flash-lite-preview` — evidencia a favor de mandarla al tier 
 |---|---|---|---|
 | 1 | Reskin neutro + ergonomía | **hecha (2026-08-08, `55ae1bc`)** | Sonnet |
 | 2 | Fragmentación por cambio de sujeto | **hecha (2026-08-08, `e995e37`)** | Opus |
-| 3 | Router de modelos dentro de Gemini | no empezada | Sonnet |
+| 3 | Router de modelos dentro de Gemini | **hecha (2026-08-08, `042db6d`)** | Sonnet |
 | 4 | Multifuente + solo audio | no empezada | Sonnet |
 | 5 | Fuente de tiempos intercambiable | no empezada | Sonnet |
 | 6 | Subtítulos ASS | no empezada | Sonnet |

@@ -216,7 +216,7 @@ por servicio — actualizar una NO propaga a las demás. Si se regenera el refre
 
 ## Sesiones recientes
 
-### 2026-08-08 (Windows) — Fases 1 y 2 del plan maestro + protocolo de traspaso a Codex
+### 2026-08-08 (Windows) — Fases 1, 2 y 3 del plan maestro + protocolo de traspaso a Codex
 
 Estado detallado en **[estado-vivo.md](estado-vivo.md)** (archivo nuevo). Resumen:
 
@@ -247,15 +247,33 @@ por corrida): el caso del diagnóstico (83 chars, dos sujetos) ahora sí se part
 193 palabras da 19 fragmentos → 31 clips, media 2.10s, 0 parpadeos, ambas invariantes OK.
 **No sobre-fragmenta**, que era el riesgo real.
 
-**Dato para la Fase 3**: durante las pruebas la cadena de fallback llegó hasta
-`gemini-3.1-flash-lite-preview` y la fragmentación salió igual de bien. Evidencia directa a
-favor de mandarla al tier barato.
+**Fase 3 — router de modelos** (`042db6d`, portada a family en `cd25a48`). Dos cadenas en vez de
+una: `creativo` arranca en el tier alto (guion, lectura), `mecanico` arranca en lite y **escala**
+al tier alto si lite falla (fragmentar, marcas, nombre de archivo). La robustez es la misma: las
+dos cadenas llevan los 4 modelos. `callGemini` ahora loguea `🤖 tarea → modelo`, que es lo único
+que permite saber en producción si el router funciona o si todo se resuelve por fallback caro.
+Mejora de paso: `llamarJSON` ya no reintenta con el MISMO modelo cuando el JSON viene
+irreparable — sube un escalón, que es lo que de verdad arregla un problema de formato.
+
+Lo que la comparación cabeza a cabeza mostró (vale la pena saberlo antes de tocar esto): con el
+mismo guion, lite hace **3 cortes menos** que el tier alto. Dos son cortes que el tier alto hace
+**de más** (la misma persona en las dos mitades). El tercero es *"Piqué … publicaba una historia
+con Clara Chía"*: el alto lo parte y le da la mitad a Clara, lite lo deja entero como Piqué.
+**Según la regla 6 del propio prompt, lite tiene razón** (Clara es complemento, no sujeto). Lite
+además fue idéntico 3/3 corridas. Si algún día se prefiere el criterio del tier alto, el cambio
+es mover `fragmentacion` a `CADENAS.creativo` — una línea.
+
+⚠️ **Trampa al portar código entre repos**: copiar un bloque por rango de texto arrastró de
+vuelta `agregarMarcas` a family, que estaba borrada a propósito (esa versión no usa ElevenLabs).
+Quedó rota (`PROMPTS.marcas` no existe ahí) y nadie la llamaba, así que no falló nada visible.
+Al portar, revisar **qué más quedó dentro del rango**, no solo que compile.
 
 **Observación anotada sin arreglar**: si una oración no nombra a nadie, Gemini le arrastra el
 famoso del fragmento anterior. No es el bug que se arregló, la alternativa no tiene respuesta
 obvia, y el usuario lo corrige en el Paso 4.
 
-**Pendiente**: nada a medio hacer. Sigue la Fase 3 (router de modelos).
+**Pendiente**: nada a medio hacer. Sigue la Fase 4 (multifuente + solo audio), que es el ahorro
+grande de verdad: dejar de mandar video a Gemini (~263 tokens/s contra ~32 del audio).
 
 
 ### 2026-07-19 (Windows) — Fragmentación por oración, efectos, robustez Gemini, reconciliación con la Mac
