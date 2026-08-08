@@ -215,89 +215,164 @@ app.get('/api/canales', async (req, res) => {
   }
 });
 
-// ETAPA 1: Lectura
+// Decide CÓMO leer una fuente y devuelve su acta ya extraída (Fase 4 del plan maestro:
+// multifuente + solo audio). El orden de intentos SIEMPRE prioriza lo más barato — de los
+// videos no importa nada visual (pedido explícito del usuario), así que "ver" el video queda
+// como último recurso si todo lo demás falla, nunca como default. Cada escalón que falla cae
+// al siguiente en vez de abortar (regla de robustez del plan: degradar, no romper).
+async function extraerActaDeFuente(type, content) {
+  if (type !== 'link' && type !== 'video') {
+    // Texto manual u otro tipo simple: directo, sin branching.
+    const acta = await gemini.extraerActa(type, content);
+    return { acta, tipoReal: type };
+  }
+
+  if (fuentes.esYoutube(content)) {
+    // 1) Transcripción (subtítulos manuales o autogenerados): texto puro, CERO tokens de
+    //    audio/video en Gemini — la fuente más barata que existe. Se intenta siempre primero.
+    try {
+      const transcripcion = await fuentes.obtenerTranscripcionYoutube(content);
+      if (transcripcion) {
+        console.log('  📄 Transcripción de YouTube obtenida (sin tocar audio ni video)');
+        const acta = await gemini.extraerActa('transcripcion', transcripcion);
+        return { acta, tipoReal: 'youtube-transcripcion' };
+      }
+      console.log('  ℹ️ YouTube sin subtítulos disponibles; probando audio...');
+    } catch (e) {
+      console.warn(`  ⚠️ Transcripción de YouTube falló (${e.message}); probando audio...`);
+    }
+
+    // 2) Audio solo: ~1/8 del costo de mandar el video completo (263 vs 32 tokens/s).
+    try {
+      const audioPath = await fuentes.descargarAudio(content);
+      try {
+        console.log('  🔊 Audio de YouTube descargado (sin video)');
+        const acta = await gemini.extraerActa('audio', audioPath);
+        return { acta, tipoReal: 'youtube-audio' };
+      } finally {
+        try { fs.unlinkSync(audioPath); } catch {}
+      }
+    } catch (e) {
+      console.warn(`  ⚠️ Audio de YouTube falló (${e.message}); probando lectura directa...`);
+    }
+
+    // 3) Gemini lee la URL de YouTube directo, sin pasar por yt-dlp (más caro — video completo
+    //    — pero robusto: no depende de que yt-dlp pueda acceder a YouTube en este momento).
+    try {
+      console.log('  📖 Lectura de YouTube directa (Gemini)...');
+      const acta = await gemini.extraerActa('youtube', content);
+      return { acta, tipoReal: 'youtube-directo' };
+    } catch (e) {
+      console.warn(`  ⚠️ Lectura directa de YouTube falló (${e.message}); último recurso: descargar el video...`);
+    }
+
+    // 4) Último recurso: descargar el video completo (yt-dlp) y subirlo a la File API.
+    const videoPath = await fuentes.descargarVideo(content);
+    try {
+      const acta = await gemini.extraerActa('video', videoPath);
+      return { acta, tipoReal: 'youtube-video' };
+    } finally {
+      try { fs.unlinkSync(videoPath); } catch {}
+    }
+  }
+
+  if (fuentes.esVideoSocial(content) || type === 'video') {
+    // TikTok/IG/etc: audio primero — nunca importa lo visual — video completo como fallback.
+    try {
+      const audioPath = await fuentes.descargarAudio(content);
+      try {
+        console.log('  🔊 Audio descargado (sin video)');
+        const acta = await gemini.extraerActa('audio', audioPath);
+        return { acta, tipoReal: 'social-audio' };
+      } finally {
+        try { fs.unlinkSync(audioPath); } catch {}
+      }
+    } catch (e) {
+      console.warn(`  ⚠️ Audio-only falló (${e.message}); descargando video completo...`);
+      const videoPath = await fuentes.descargarVideo(content);
+      try {
+        const acta = await gemini.extraerActa('video', videoPath);
+        return { acta, tipoReal: 'social-video' };
+      } finally {
+        try { fs.unlinkSync(videoPath); } catch {}
+      }
+    }
+  }
+
+  // Link normal de noticia: extraer el texto de la página.
+  console.log('  📄 Extrayendo texto de la página...');
+  const texto = await fuentes.extraerTextoWeb(content);
+  const acta = await gemini.extraerActa('web', texto);
+  return { acta, tipoReal: 'web' };
+}
+
+// ETAPA 1: Lectura — multifuente (hasta 3 por noticia). Con `jobId` agrega una fuente más al
+// job existente; sin `jobId` crea uno nuevo (requiere canalId). Cada fuente se procesa a su
+// ACTA (barata, sesgo-independiente) y luego se sintetiza UNA crónica con TODAS las actas
+// acumuladas — nunca se vuelve a tocar una fuente ya leída para agregar la siguiente.
 app.post('/api/read', async (req, res) => {
   try {
-    const { type, content, sesgo, canalId } = req.body;
-
-    if (!type || !content || !canalId) {
-      return res.status(400).json({ error: 'Faltan type, content o canalId' });
+    const { type, content, sesgo, canalId, jobId: jobIdExistente } = req.body;
+    if (!type || !content) {
+      return res.status(400).json({ error: 'Faltan type o content' });
     }
 
-    // Detectar el tipo real de la fuente cuando es un link
-    const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
-    console.log(`📖 Lectura con sesgo: ${sesgoElegido}`);
+    let job = null;
+    if (jobIdExistente) {
+      job = jobStore.obtenerJob(jobIdExistente);
+      if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    } else if (!canalId) {
+      return res.status(400).json({ error: 'Falta canalId' });
+    }
+
+    const fuentesActuales = job?.fuentes || [];
+    const MAX_FUENTES = 3;
+    if (fuentesActuales.length >= MAX_FUENTES) {
+      return res.status(400).json({ error: `Ya hay ${MAX_FUENTES} fuentes (máximo). Quita una para agregar otra.` });
+    }
+
+    const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : (job?.sesgo || 'neutral');
     const contenido = content.trim();
-    let result;
-    // Los selectores "Link de noticia" y "Video (URL)" ambos traen una URL: se autodetecta.
-    if (type === 'link' || type === 'video') {
-      if (fuentes.esYoutube(contenido)) {
-        // Gemini lee YouTube directo por URL (rápido, sin descargar). Pero algunos links
-        // (Shorts, videos privados/age-restricted, o páginas de canal) hacen que Gemini
-        // fetchee HTML y devuelva 400 "Unsupported MIME type: text/html". En ese caso,
-        // fallback: descargar con yt-dlp y subir el mp4 a la File API (como los sociales).
-        try {
-          console.log('📖 Lectura de video de YouTube (Gemini directo)...');
-          result = await gemini.procesarLectura('youtube', contenido, sesgoElegido);
-        } catch (e) {
-          console.warn(`⚠️ YouTube directo falló (${e.message}); reintentando con yt-dlp...`);
-          const videoPath = await fuentes.descargarVideo(contenido);
-          try {
-            result = await gemini.procesarLectura('video', videoPath, sesgoElegido);
-          } finally {
-            try { fs.unlinkSync(videoPath); } catch {}
-          }
-        }
-      } else if (fuentes.esVideoSocial(contenido) || type === 'video') {
-        // TikTok/IG/etc o "Video (URL)": descargar el VIDEO y que Gemini lo VEA (imagen + audio)
-        console.log('📖 Descargando video con yt-dlp para que Gemini lo vea...');
-        const videoPath = await fuentes.descargarVideo(contenido);
-        try {
-          result = await gemini.procesarLectura('video', videoPath, sesgoElegido);
-        } finally {
-          try { fs.unlinkSync(videoPath); } catch {}
-        }
-      } else {
-        // Link normal de noticia: extraer el texto de la página
-        console.log('📖 Extrayendo texto de la página...');
-        const texto = await fuentes.extraerTextoWeb(contenido);
-        result = await gemini.procesarLectura('web', texto, sesgoElegido);
-      }
+
+    console.log(`📖 ${job ? 'Agregando fuente' : 'Leyendo fuente'} ${fuentesActuales.length + 1}/${MAX_FUENTES} (${type})...`);
+    const { acta, tipoReal } = await extraerActaDeFuente(type, contenido);
+
+    const nuevaFuente = { type, content: contenido, tipoReal, acta };
+    const todasLasFuentes = [...fuentesActuales, nuevaFuente];
+
+    console.log(`📝 Sintetizando crónica (${todasLasFuentes.length} fuente${todasLasFuentes.length > 1 ? 's' : ''}, sesgo: ${sesgoElegido})...`);
+    const result = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido);
+
+    if (!job) {
+      // Primera fuente del video: crear la carpeta de insumos y el job.
+      const timestamp = new Date().toISOString().split('T')[0];
+      const nombreCarpeta = `${result.nombreCorto}-${timestamp}`;
+      console.log(`📁 Creando carpeta de insumos: ${nombreCarpeta}`);
+      const carpetaInsumoId = await driveHelper.crearCarpetaInsumo(canalId, nombreCarpeta);
+      job = jobStore.crearJob({
+        paso: 'lectura',
+        canalId,
+        carpetaInsumoId,
+        sesgo: sesgoElegido,
+        fuentes: todasLasFuentes,
+        ...result,
+      });
     } else {
-      console.log(`📖 Procesando lectura (${type})...`);
-      result = await gemini.procesarLectura(type, content, sesgoElegido);
+      job = jobStore.actualizarJob(job.jobId, { sesgo: sesgoElegido, fuentes: todasLasFuentes, ...result });
     }
 
-    // Generar nombre de carpeta a partir del titulo + timestamp
-    const timestamp = new Date().toISOString().split('T')[0];
-    const nombreCarpeta = `${result.nombreCorto}-${timestamp}`;
-
-    // Crear carpeta de insumos dentro del canal elegido
-    console.log(`📁 Creando carpeta de insumos: ${nombreCarpeta}`);
-    const carpetaInsumoId = await driveHelper.crearCarpetaInsumo(canalId, nombreCarpeta);
-
-    // Crear job con referencias a canal y carpeta
-    const job = jobStore.crearJob({
-      paso: 'lectura',
-      canalId,
-      carpetaInsumoId,
-      fuente: { type, content, sesgo: sesgoElegido },
-      cronica: result.cronica,
-      titulo: result.titulo,
-      descripcion: result.descripcion,
-      protagonista: result.protagonista,
-      secundario: result.secundario,
-      accion: result.accion,
-      nombreCorto: result.nombreCorto,
-    });
-
-    // Guardar la lectura en Drive (carpeta de insumos)
-    await driveHelper.guardarEnInsumo(carpetaInsumoId, 'lectura.json', JSON.stringify(result, null, 2));
+    // Guardar la lectura en Drive (carpeta de insumos) — incluye TODAS las actas acumuladas.
+    driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: todasLasFuentes, ...result }, null, 2))
+      .catch(e => console.warn(`⚠️ No se pudo respaldar lectura.json en Drive: ${e.message}`));
 
     res.json({
       status: 'success',
       jobId: job.jobId,
-      carpetaInsumoId,
+      carpetaInsumoId: job.carpetaInsumoId,
+      numFuentes: todasLasFuentes.length,
+      maxFuentes: MAX_FUENTES,
+      fuenteResumen: acta.fuenteResumen,   // resumen de la fuente RECIÉN agregada (para la UI)
+      tipoReal,                             // cómo se leyó de verdad (audio/transcripción/video/web)
       cronica: result.cronica,
       titulo: result.titulo,
       descripcion: result.descripcion,
@@ -308,6 +383,44 @@ app.post('/api/read', async (req, res) => {
     });
   } catch (error) {
     console.error('Error lectura:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Re-sintetizar la crónica con OTRO sesgo, SIN re-descargar ni re-procesar ninguna fuente: las
+// actas ya cacheadas en el job son sesgo-independientes (Fase 4 del plan maestro — antes
+// "otro sesgo" volvía a descargar y resubir el video entero para esto).
+app.post('/api/resintetizar', async (req, res) => {
+  try {
+    const { jobId, sesgo } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    if (!job.fuentes || job.fuentes.length === 0) {
+      return res.status(400).json({ error: 'Este job no tiene fuentes cacheadas (versión anterior a la Fase 4) — hay que releer la fuente' });
+    }
+
+    const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
+    console.log(`📝 Re-sintetizando con sesgo ${sesgoElegido} (${job.fuentes.length} fuente(s) cacheadas, sin re-descargar)...`);
+    const result = await gemini.sintetizarCronica(job.fuentes.map(f => f.acta), sesgoElegido);
+
+    const jobActualizado = jobStore.actualizarJob(jobId, { sesgo: sesgoElegido, ...result });
+    driveHelper.guardarEnInsumo(jobActualizado.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: job.fuentes, ...result }, null, 2))
+      .catch(e => console.warn(`⚠️ No se pudo respaldar lectura.json en Drive: ${e.message}`));
+
+    res.json({
+      status: 'success',
+      jobId,
+      cronica: result.cronica,
+      titulo: result.titulo,
+      descripcion: result.descripcion,
+      protagonista: result.protagonista,
+      secundario: result.secundario,
+      accion: result.accion,
+      nombreCorto: result.nombreCorto,
+    });
+  } catch (error) {
+    console.error('Error re-síntesis:', error);
     res.status(500).json({ error: error.message });
   }
 });

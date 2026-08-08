@@ -783,6 +783,36 @@ footer {
 
 .pre-wrap { white-space: pre-wrap; }
 .link-btn { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+
+/* Lista de fuentes acumuladas (Paso 1, multifuente) */
+#fuentes-lista {
+    list-style: none;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#fuentes-lista li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    color: var(--text);
+}
+#fuentes-lista .fuente-num {
+    flex: 0 0 auto;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+#fuentes-lista .fuente-tipo {
+    flex: 0 0 auto;
+    color: var(--accent);
+    font-weight: 600;
+}
 .mb-sm { margin-bottom: 10px; }
 .mb-0 { margin-bottom: 0; }
 .mt-sm { margin-top: 12px; }
