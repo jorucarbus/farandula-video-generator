@@ -9,14 +9,26 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1, 2 y 3 TERMINADAS hoy.** `test-persistencia` en `042db6d`, `farandula-video-family`
-`main` en `cd25a48` (los dos push verificados). `main` del principal sigue en `f801076` — sin
-mergear a propósito, ver regla de la rama de prueba al pie de este archivo.
+**Fases 1, 2 y 3 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
+`test-persistencia` en `1dbb633`, `farandula-video-family` `main` en `80fa63d` (los dos push
+verificados). `main` del principal sigue en `f801076` — sin mergear a propósito.
 
 ⚠️ **Lección del port a family**: copiar un bloque entre repos por rango de texto arrastró de
 vuelta `agregarMarcas`, que en family se había borrado a propósito (no usa ElevenLabs). Quedó
 rota y nadie la llamaba, así que no falló nada — pero al portar hay que revisar qué quedó
 adentro del rango, no solo que compile. Corregido en `cd25a48`.
+
+**Corrección post-Fase 2 (commit `1dbb633`, portada en `80fa63d`)**: el usuario vio el resultado
+real y notó que Clara Chía, nombrada en el guion, nunca aparecía en pantalla. Causa: la regla 6
+que yo mismo escribí en la Fase 2 ("elige al sujeto, no al mencionado de pasada") era el MISMO
+bug de otra forma. Reescrito con dos cambios de fondo: (1) el corte ahora es por sintaxis
+(coma/conector/sujeto-predicado, ~40-60 chars) en vez de "una oración = un fragmento"; (2) la
+carpeta la decide LA MENCIÓN, y si el fragmento no nombra a nadie sigue al referente implícito
+(pronombres/posesivos) de la idea. Verificado 4/4 corridas (lite×2, alto×2): reconstrucción
+exacta, ambas invariantes, Clara Chía aparece siempre, y el referente implícito ("su elección"
+vuelve a Shakira aunque el fragmento anterior fuera de Piqué) se sostiene siempre. Granularidad
+subió de ~16-19 a ~31-37 fragmentos, clip medio 1.91s — cae en el rango 1.5-3s pedido.
+**Confirma la Fase 3**: lite salió más consistente que el tier alto entre corridas.
 
 **Fase 1 (reskin), commit `55ae1bc`**: `style.css` reescrito completo (variables CSS,
 `prefers-color-scheme: dark`, acento único `#2563eb`/`#5b9bff` oscuro, superficie fija
