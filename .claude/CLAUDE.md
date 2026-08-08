@@ -33,21 +33,25 @@ haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
 
 ## ⏭️ Trabajo aprobado y sin empezar
 
-- **[plan-multifuente-reskin.md](plan-multifuente-reskin.md)** — dos features acordadas con el
-  usuario el 2026-08-05: (A) varias fuentes por noticia con acumulación en "actas" y **solo
-  audio**, nunca video, a Gemini; (B) reskin neutro tomando como referencia
-  `monitoreo-medios-cancilleria`. Todas las decisiones de diseño ya están consultadas y
-  confirmadas ahí — leerlo antes de empezar y no re-preguntar.
-- **Fragmentación por cambio de sujeto** (~50 min) — diagnóstico y plan en la entrada del
-  2026-08-05 más abajo, sección B. Es lo más barato de lo pendiente y arregla algo que molesta
-  en cada video.
-- **[borrador-automatizacion-video.md](borrador-automatizacion-video.md)** — ⚠️ **BORRADOR, no
-  ejecutar**: automatización completa (música, subtítulos con timing real, transiciones `xfade`
-  con rampas, director de edición) y evaluación de TTS propio en RunPod. Tiene decisiones
-  abiertas a propósito. Lo importante que ya está resuelto ahí: ffmpeg 6.1.1 tiene todos los
-  filtros necesarios (verificado), el límite de 3s por clip **ya existe** (`CLIP_MAX`) y hay que
-  cuidar que las capas nuevas no lo rompan, y los timestamps conviene sacarlos por alineación
-  forzada y no del proveedor de TTS.
+- **[plan-maestro-automatizacion.md](plan-maestro-automatizacion.md)** — **el único plan vigente**
+  (2026-08-08). Absorbe y reemplaza a `plan-multifuente-reskin.md` y
+  `borrador-automatizacion-video.md`, que se borraron para no tener tres documentos solapados
+  (siguen en el historial de git si hace falta).
+
+  Son **11 fases ordenadas para no repetir trabajo**: el orden es el aporte principal del
+  documento, no un detalle. Todas las decisiones de diseño ya están consultadas con el usuario —
+  leerlo antes de empezar y **no re-preguntar** lo que ya está resuelto ahí.
+
+  Lo que conviene saber sin abrirlo:
+  - **Dos invariantes** que arruinan el video en silencio si se rompen: la duración del video
+    debe seguir igualando la del audio, y **ningún clip puede pasar de 3 segundos** (uso
+    legítimo; `CLIP_MAX` ya lo cumple, el riesgo es que las capas nuevas lo rompan).
+  - **El ahorro grande no está en cambiar de modelo**, está en dejar de mandar video a Gemini
+    (~263 tokens/s contra ~32 del audio). El cambio de tier es secundario.
+  - ffmpeg 6.1.1 ya trae todo lo necesario (`xfade` con 58 transiciones, `ass`,
+    `sidechaincompress`, `perspective`, `setpts`): **sin dependencias nuevas**.
+  - **Cuatro puertas abiertas** que se dejan preparadas sin construir: fuente de tiempos
+    (RunPod), fragmentación por ritmo de música, guion desde el grafo, y director de edición.
 
 ## Limpieza de código muerto (2026-08-05)
 
