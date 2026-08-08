@@ -9,18 +9,32 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-Nada en vuelo. Los 3 repos limpios y sincronizados:
-- `farandula-video-generator` — `main` en `f801076`, `test-persistencia` en `40fd257`
-- `farandula-video-family` — `main` en `247003b`
+**Fase 1 (reskin neutro) TERMINADA hoy** en `test-persistencia`, commit `55ae1bc` (push
+verificado). `main` sigue en `f801076` — sin mergear a propósito, ver regla de la rama de
+prueba al pie de este archivo.
 
-**Próximo paso: Fase 1 (reskin neutro), aún sin empezar.** No arrancar sin confirmación del
-usuario — su posición explícita fue "por lo pronto no quiero topar nada".
+Qué se hizo: `style.css` reescrito completo (variables CSS, `prefers-color-scheme: dark`,
+acento único `#2563eb`/`#5b9bff` oscuro, superficie fija `#121212` para audio/video, badge del
+paso activo = mayor contraste de la pantalla). Los 18 estilos inline (12 en `index.html`, 6+ en
+`app.js`) reemplazados por clases utilitarias. Mismas clases/selectores estructurales — HTML/JS
+no cambiaron de forma.
+
+Verificado por computed style en browser real (light + dark): fondo, header, badges, botones,
+estado locked (opacity 0.5 + pointer-events none), superficie oscura de audio/video. **Sin
+verificar visualmente** (el panel de preview no estaba desplegado del lado del usuario en esta
+sesión, así que no hubo compositing de frames para tomar screenshot) — pendiente que el usuario
+lo abra una vez y confirme que se ve bien, sobre todo el estado `.selected` de las tarjetas de
+ángulo y el toggle del historial (usan clases JS dinámicas, mecanismo probado sano con un
+elemento de control pero no visto renderizado).
+
+**Próximo paso: Fase 2 (fragmentación por cambio de sujeto), sin empezar.** No arrancar sin luz
+del usuario.
 
 ## Fases del plan maestro (11 total)
 
 | # | Fase | Estado | Modelo sugerido |
 |---|---|---|---|
-| 1 | Reskin neutro + ergonomía | no empezada | Sonnet |
+| 1 | Reskin neutro + ergonomía | **hecha (2026-08-08, `55ae1bc`)** | Sonnet |
 | 2 | Fragmentación por cambio de sujeto | no empezada | Opus |
 | 3 | Router de modelos dentro de Gemini | no empezada | Sonnet |
 | 4 | Multifuente + solo audio | no empezada | Sonnet |
