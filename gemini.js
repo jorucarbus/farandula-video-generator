@@ -3,12 +3,41 @@ const fs = require('fs');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-// Cadena de modelos: SIEMPRE intenta primero el más reciente (alias -latest).
-// Si se satura (503/500/429) o el alias rota y 404ea, cae al siguiente modelo.
 // IMPORTANTE: solo modelos que la cuenta REALMENTE tiene (probados 2026-07-13). Los 2.5/2.0-flash
 // dan 404 "no longer available" para cuentas nuevas → NO usarlos. La cuenta es tier gemini-3.x.
-// Orden: mejor/último primero, degradando a lite (más liviano pero estable) como último recurso.
-const MODELOS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest'];
+// `gemini-flash-latest` resuelve HOY a gemini-3.6-flash (verificado leyendo `modelVersion` de una
+// respuesta real, 2026-08-05). No "actualizar" la cadena creyendo que está vieja.
+const TIER_ALTO = ['gemini-flash-latest', 'gemini-3.5-flash'];
+const TIER_LITE = ['gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest'];
+
+// Cadenas de modelos por TIPO de tarea. En las dos, si un modelo se satura (503/500/429) o el
+// alias rota y da 400/404, se cae al siguiente — la robustez es igual que antes.
+//
+// La diferencia es por dónde EMPIEZAN:
+// - `creativo` arranca en el tier alto. Es para lo que decide si el video funciona (el guion) y
+//   para la comprensión multimodal (la lectura). Ahorrar acá es arriesgar mucho por nada: el
+//   guion cuesta ~$0.0045 contra ~$0.0007 en lite, o sea poco más de un dólar al mes a 10
+//   videos diarios, y `PROMPTS.guion` está afinado para este modelo.
+// - `mecanico` arranca en lite (~6x más barato) y ESCALA al tier alto si lite falla. Es para
+//   tareas pautadas donde el modelo no inventa nada: fragmentar, etiquetar, nombrar archivos.
+//   Evidencia de que alcanza: durante las pruebas de la Fase 2 la cadena cayó sola hasta
+//   `gemini-3.1-flash-lite-preview` y la fragmentación salió igual de bien.
+const CADENAS = {
+  creativo: [...TIER_ALTO, ...TIER_LITE],
+  mecanico: [...TIER_LITE, ...TIER_ALTO],
+};
+
+// Router: qué cadena usa cada llamada. El `nombre` solo sirve para el log, que es lo que
+// permite confirmar en producción qué modelo atendió qué.
+// Al agregar una llamada nueva (p. ej. el director de la Fase 9), agregar acá su entrada en vez
+// de elegir modelo en el sitio de la llamada.
+const TAREAS = {
+  lectura:       { nombre: 'lectura',       cadena: CADENAS.creativo },
+  guion:         { nombre: 'guion',         cadena: CADENAS.creativo },
+  fragmentacion: { nombre: 'fragmentación', cadena: CADENAS.mecanico },
+  marcas:        { nombre: 'marcas',        cadena: CADENAS.mecanico },
+  nombreArchivo: { nombre: 'nombre',        cadena: CADENAS.mecanico },
+};
 
 // Prompts maestros
 const PROMPTS = {
@@ -130,18 +159,23 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
   }
 }
 
-// Función principal para llamar a Gemini. Recorre la cadena de MODELOS:
-// intenta el más reciente y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
+// Función principal para llamar a Gemini. Recorre la cadena de modelos de la tarea: intenta el
+// primero y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
 // Solo 401/403 (auth/permiso) abortan de una: no los arregla otro modelo.
-// El 3er parámetro (intento) se mantiene por compatibilidad con llamarJSON; ya no se usa.
-async function callGemini(prompt, userMessage, _intento = 1, configExtra = {}) {
+// `tarea` sale de TAREAS y decide con qué modelo se empieza (ver CADENAS arriba).
+async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra = {}) {
   const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
+  const cadena = tarea.cadena || CADENAS.creativo;
   let ultimoError;
-  for (let i = 0; i < MODELOS.length; i++) {
-    const modelo = MODELOS[i];
+  for (let i = 0; i < cadena.length; i++) {
+    const modelo = cadena[i];
     try {
       if (i > 0) console.log(`↪️  Fallback: reintentando con ${modelo}...`);
-      return await intentarModelo(modelo, prompt, userParts, configExtra);
+      const texto = await intentarModelo(modelo, prompt, userParts, configExtra);
+      // Deja rastro de qué modelo atendió cada llamada: sin esto no hay forma de saber si el
+      // router está funcionando o si todo se está resolviendo por fallback en el tier caro.
+      console.log(`  🤖 ${tarea.nombre || 'gemini'} → ${modelo}`);
+      return texto;
     } catch (error) {
       ultimoError = error;
       if (!error._geminiSiguienteModelo) {
@@ -211,10 +245,16 @@ function parsearJsonRobusto(texto) {
 }
 
 // Llamada a Gemini que espera JSON: parsea con reparación y reintenta si viene malformado
-async function llamarJSON(prompt, userMessage, config = {}, reintentos = 2) {
+async function llamarJSON(prompt, userMessage, tarea = TAREAS.guion, config = {}, reintentos = 2) {
+  const cadena = tarea.cadena || CADENAS.creativo;
   let ultimoError;
   for (let i = 1; i <= reintentos; i++) {
-    const respuesta = await callGemini(prompt, userMessage, 1, {
+    // Si el intento anterior devolvió JSON irreparable, no insistir con el MISMO modelo:
+    // empezar la cadena un escalón más arriba. Importa sobre todo en las tareas mecánicas,
+    // donde el primero es un lite: si ese modelo no logra el formato, subir es lo que resuelve,
+    // repetirlo no.
+    const desde = Math.min(i - 1, cadena.length - 1);
+    const respuesta = await callGemini(prompt, userMessage, { ...tarea, cadena: cadena.slice(desde) }, {
       responseMimeType: 'application/json',
       ...config,
     });
@@ -328,7 +368,7 @@ async function procesarLectura(sourceType, content, sesgo = 'neutral') {
       userParts = [{ text: `Procesa este contenido (${sourceType}):\n\n${content}\n\n${instruccionSesgo}` }];
     }
 
-    const datos = await llamarJSON(PROMPTS.lectura, userParts);
+    const datos = await llamarJSON(PROMPTS.lectura, userParts, TAREAS.lectura);
     const limpiar = (s) => (s || '').toString().replace(/[/\\:*?"<>|]/g, '').trim();
 
     const protagonista = limpiar(datos.protagonista);
@@ -376,7 +416,7 @@ ${descripcionEnfoque}
 
 TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.`;
 
-    const response = await callGemini(PROMPTS.guion, userMessage);
+    const response = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
     return response.trim();
   } catch (error) {
     throw new Error(`Error generando guion: ${error.message}`);
@@ -458,7 +498,7 @@ REGLAS:
 
 Carpetas disponibles: ${carpetas.join(', ')}`;
 
-  const lista = await llamarJSON(prompt, `Guion:\n\n${script}`);
+  const lista = await llamarJSON(prompt, `Guion:\n\n${script}`, TAREAS.fragmentacion);
   if (!Array.isArray(lista) || lista.length === 0) {
     throw new Error('Gemini no devolvió párrafos');
   }
@@ -526,7 +566,7 @@ async function agregarMarcas(guionFragmentado) {
       .join('\n');
 
     const userMessage = `Procesa este guion fragmentado y agrega las etiquetas de actuación:\n\n${guionText}`;
-    const response = await callGemini(PROMPTS.marcas, userMessage);
+    const response = await callGemini(PROMPTS.marcas, userMessage, TAREAS.marcas);
 
     return response.trim();
   } catch (error) {
@@ -545,7 +585,7 @@ Formato EXACTO: Protagonista - Secundario - Hecho
 Responde SOLO el nombre, sin comillas, sin extensión, sin explicaciones.
 No uses caracteres prohibidos en nombres de archivo (/ \\ : * ? " < > |).`;
 
-    const response = await callGemini(prompt, guion);
+    const response = await callGemini(prompt, guion, TAREAS.nombreArchivo);
     // Sanear por si acaso
     return response.trim().split('\n')[0].replace(/[/\\:*?"<>|]/g, '').slice(0, 80);
   } catch (error) {
@@ -571,6 +611,8 @@ module.exports = {
   generarGuion,
   fragmentarGuionParrafos,
   verificarReconstruccion,
+  TAREAS,   // router de modelos: agregar acá la entrada de cada llamada nueva (ver Fase 9)
+  CADENAS,
   agregarMarcas,
   generarNombreArchivo,
 };
