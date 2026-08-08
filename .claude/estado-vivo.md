@@ -9,9 +9,28 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1, 2, 3 y 4 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
-`test-persistencia` en `8a4bc19`, `farandula-video-family` `main` en `fce9aa1` (los dos push
-verificados). `main` del principal sigue en `f801076` — sin mergear a propósito.
+**Fases 1, 2, 3, 4 y 5 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
+`test-persistencia` en `13f38a5`. `farandula-video-family` `main` en `fce9aa1` (Fase 5 no aplica
+a family: no usa ElevenLabs). `main` del principal sigue en `f801076` — sin mergear a propósito.
+
+**Fase 5 (tiempos reales), commit `13f38a5`**: `seleccion.planificarClips()` repartía tiempo por
+% de caracteres — estimado, el techo de calidad del `subtitulos.js` viejo. Ahora usa el tiempo
+REAL que ElevenLabs mide (endpoint `/with-timestamps`, alineación carácter-por-carácter), detrás
+de una interfaz intercambiable (`tiempos.js`) con un stub `runpod` para alineación forzada
+después (sirve también para family, que no tiene timestamps de ningún proveedor). Si algo no
+calza (Gemini reescribe puntuación en la etapa de marcas, o ElevenLabs no devuelve alineación),
+cae solo al % de caracteres — nunca rompe el render.
+
+Bug de paso, no de esta fase pero la bloqueaba: `agregarMarcas()` dejaba colar
+`"Nombre_Famoso: "` en el texto que se manda a hablar — ElevenLabs lo habría narrado en voz alta
+en producción, siempre, sin que nadie lo hubiera notado. Arreglado con regla nueva en el prompt +
+sanitizador en el código (no confiar solo en que Gemini obedezca).
+
+Verificado con 3 corridas reales (Gemini + ElevenLabs, sin mocks): caso corto (4 fragmentos) y
+caso largo (42 fragmentos, 161 palabras) — suma de duraciones por fragmento EXACTA contra la
+duración real medida por ffprobe en los dos, todas las duraciones >0s.
+
+**Próximo paso: Fase 6 (subtítulos ASS), sin empezar.**
 
 **Fase 4 (multifuente + solo audio), commit `8a4bc19`** + portada en `fce9aa1`. Dos cosas:
 
@@ -96,7 +115,7 @@ en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre
 | 2 | Fragmentación por cambio de sujeto | **hecha (2026-08-08, `e995e37`)** | Opus |
 | 3 | Router de modelos dentro de Gemini | **hecha (2026-08-08, `042db6d`)** | Sonnet |
 | 4 | Multifuente + solo audio | **hecha (2026-08-08, `8a4bc19`)** | Sonnet |
-| 5 | Fuente de tiempos intercambiable | no empezada | Sonnet |
+| 5 | Fuente de tiempos intercambiable | **hecha (2026-08-08, `13f38a5`)** | Sonnet |
 | 6 | Subtítulos ASS | no empezada | Sonnet |
 | 7 | Transiciones xfade + rampas | no empezada | Opus |
 | 8 | Música por sentido | no empezada | Sonnet |
