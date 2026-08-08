@@ -9,33 +9,42 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fase 1 (reskin neutro) TERMINADA hoy** en `test-persistencia`, commit `55ae1bc` (push
-verificado). `main` sigue en `f801076` — sin mergear a propósito, ver regla de la rama de
-prueba al pie de este archivo.
+**Fases 1 y 2 TERMINADAS hoy.** `test-persistencia` en `e995e37`, `farandula-video-family`
+`main` en `8dd764b` (los dos push verificados). `main` del principal sigue en `f801076` — sin
+mergear a propósito, ver regla de la rama de prueba al pie de este archivo.
 
-Qué se hizo: `style.css` reescrito completo (variables CSS, `prefers-color-scheme: dark`,
-acento único `#2563eb`/`#5b9bff` oscuro, superficie fija `#121212` para audio/video, badge del
-paso activo = mayor contraste de la pantalla). Los 18 estilos inline (12 en `index.html`, 6+ en
-`app.js`) reemplazados por clases utilitarias. Mismas clases/selectores estructurales — HTML/JS
-no cambiaron de forma.
+**Fase 1 (reskin), commit `55ae1bc`**: `style.css` reescrito completo (variables CSS,
+`prefers-color-scheme: dark`, acento único `#2563eb`/`#5b9bff` oscuro, superficie fija
+`#121212` para audio/video, badge del paso activo = mayor contraste de la pantalla). Los 18
+estilos inline reemplazados por clases utilitarias. Mismas clases/selectores estructurales.
+Verificado por computed style (light + dark). **Sin verificar visualmente**: el panel de
+preview no estaba desplegado, así que no hubo compositing para tomar screenshot — pendiente que
+el usuario lo abra y confirme, sobre todo `.selected` de las tarjetas de ángulo y el toggle del
+historial (usan clases JS dinámicas; el mecanismo se probó sano con un elemento de control pero
+no se vio renderizado).
 
-Verificado por computed style en browser real (light + dark): fondo, header, badges, botones,
-estado locked (opacity 0.5 + pointer-events none), superficie oscura de audio/video. **Sin
-verificar visualmente** (el panel de preview no estaba desplegado del lado del usuario en esta
-sesión, así que no hubo compositing de frames para tomar screenshot) — pendiente que el usuario
-lo abra una vez y confirme que se ve bien, sobre todo el estado `.selected` de las tarjetas de
-ángulo y el toggle del historial (usan clases JS dinámicas, mecanismo probado sano con un
-elemento de control pero no visto renderizado).
+**Fase 2 (fragmentación), commit `e995e37`** + portada a family en `8dd764b`: reglas 2 y 6 del
+prompt (partir por cambio de sujeto es obligatorio, sin importar la longitud),
+`verificarReconstruccion()`, `CLIP_MIN = 0.7` con `agruparParaClips()`, aviso al Paso 4, y la
+interfaz `FRAGMENTADORES` como puerta abierta para `ritmo`. Verificado con Gemini real: el caso
+del diagnóstico (83 chars, dos sujetos) ahora sí se parte, y un guion de 193 palabras da 19
+fragmentos → 31 clips, media 2.10s, 0 parpadeos, ambas invariantes OK.
 
-**Próximo paso: Fase 2 (fragmentación por cambio de sujeto), sin empezar.** No arrancar sin luz
-del usuario.
+**Observación anotada, sin arreglar** (no es el bug que se arregló, y la alternativa no tiene
+respuesta obvia): cuando una oración no nombra a nadie ("La coincidencia fue demasiado exacta"),
+Gemini le arrastra el famoso del fragmento anterior. Es continuidad visual razonable y el
+usuario puede corregirlo en el Paso 4.
+
+**Próximo paso: Fase 3 (router de modelos dentro de Gemini), sin empezar.** Dato útil que salió
+de las pruebas de hoy: la fragmentación funcionó bien incluso cuando la cadena de fallback cayó
+hasta `gemini-3.1-flash-lite-preview` — evidencia a favor de mandarla al tier barato.
 
 ## Fases del plan maestro (11 total)
 
 | # | Fase | Estado | Modelo sugerido |
 |---|---|---|---|
 | 1 | Reskin neutro + ergonomía | **hecha (2026-08-08, `55ae1bc`)** | Sonnet |
-| 2 | Fragmentación por cambio de sujeto | no empezada | Opus |
+| 2 | Fragmentación por cambio de sujeto | **hecha (2026-08-08, `e995e37`)** | Opus |
 | 3 | Router de modelos dentro de Gemini | no empezada | Sonnet |
 | 4 | Multifuente + solo audio | no empezada | Sonnet |
 | 5 | Fuente de tiempos intercambiable | no empezada | Sonnet |

@@ -31,6 +31,12 @@ haber hecho. Se reconciliaron sin perder nada, pero pudo evitarse.
 3. Agregar una entrada en "Sesiones recientes" con: fecha, qué se hizo, qué archivos, qué quedó
    pendiente o sin verificar. Esto reemplaza la comunicación directa entre máquinas.
 
+## 📍 Dónde va el trabajo AHORA
+
+**[estado-vivo.md](estado-vivo.md)** — qué está hecho, qué falta y qué quedó a medio hacer.
+Leerlo primero: es la única fuente que una sesión sin memoria (otra máquina, o Codex cuando se
+agota la cuota) puede consultar. Ahí está también el **protocolo de traspaso a Codex**.
+
 ## ⏭️ Trabajo aprobado y sin empezar
 
 - **[plan-maestro-automatizacion.md](plan-maestro-automatizacion.md)** — **el único plan vigente**
@@ -209,6 +215,48 @@ por servicio — actualizar una NO propaga a las demás. Si se regenera el refre
 - [ ] Test video real TikTok/IG (Instagram a veces pide cookies)
 
 ## Sesiones recientes
+
+### 2026-08-08 (Windows) — Fases 1 y 2 del plan maestro + protocolo de traspaso a Codex
+
+Estado detallado en **[estado-vivo.md](estado-vivo.md)** (archivo nuevo). Resumen:
+
+**Fase 1 — reskin neutro** (`55ae1bc`). Se fue el neobrutalism. Sistema claro con variables CSS
+y `prefers-color-scheme`, un solo acento, superficie oscura fija (`#121212`) solo para los
+reproductores. El fundamento no es de gusto: las guías de UI oscura la desaconsejan
+explícitamente para apps con mucho texto y formularios, y esto es un flujo de texto que produce
+video, no un editor de video. Los 18 estilos inline pasaron a clases utilitarias.
+**Sin verificación visual** — el panel de preview no estaba desplegado, así que no hubo
+compositing para screenshot. Trampa del entorno que conviene conocer: con el panel oculto,
+`getComputedStyle` no refleja mutaciones de clase hechas por JS después del pintado, y eso
+simula "bugs" que no existen. Se descartó con un elemento de control creado al vuelo.
+
+**Fase 2 — fragmentación por cambio de sujeto** (`e995e37`, portada a family en `8dd764b`).
+El diagnóstico del 2026-08-05 era correcto: **el prompt ordenaba el bug**. Reglas 2 y 6
+reescritas, más tres cosas que no existían:
+- `verificarReconstruccion()` — los fragmentos deben reconstruir el guion palabra por palabra.
+  Nadie lo comprobaba y es la falla más silenciosa del pipeline: el tiempo de cada clip sale de
+  su proporción de caracteres, así que si Gemini recorta una palabra **todos** los clips se
+  corren respecto de la locución sin que falle nada visible. Ahora avisa en el Paso 4.
+- `CLIP_MIN = 0.7` + `agruparParaClips()` — al partir más aparecen clips de ~0.3s (parpadeo).
+  Se fusionan **solo con vecinos del mismo famoso**: un clip corto del famoso correcto es mejor
+  que uno largo del equivocado, que es justo el bug que se estaba arreglando.
+- Interfaz `FRAGMENTADORES` — puerta abierta para `ritmo` (cortes en el pulso de la música).
+
+Verificado contra Gemini real con el truco de llamar `fragmentarGuionParrafos()` directo (~30s
+por corrida): el caso del diagnóstico (83 chars, dos sujetos) ahora sí se parte, y un guion de
+193 palabras da 19 fragmentos → 31 clips, media 2.10s, 0 parpadeos, ambas invariantes OK.
+**No sobre-fragmenta**, que era el riesgo real.
+
+**Dato para la Fase 3**: durante las pruebas la cadena de fallback llegó hasta
+`gemini-3.1-flash-lite-preview` y la fragmentación salió igual de bien. Evidencia directa a
+favor de mandarla al tier barato.
+
+**Observación anotada sin arreglar**: si una oración no nombra a nadie, Gemini le arrastra el
+famoso del fragmento anterior. No es el bug que se arregló, la alternativa no tiene respuesta
+obvia, y el usuario lo corrige en el Paso 4.
+
+**Pendiente**: nada a medio hacer. Sigue la Fase 3 (router de modelos).
+
 
 ### 2026-07-19 (Windows) — Fragmentación por oración, efectos, robustez Gemini, reconciliación con la Mac
 
