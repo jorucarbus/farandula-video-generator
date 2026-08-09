@@ -68,6 +68,14 @@ tanda con sus transiciones internas, corte seco entre tandas. Verificado real: l
 clips que antes siempre fallaban ahora terminan en 53.7s con ~1.9GB estables, sin fallback,
 sincronía exacta. Videos de ≤10 clips (la mayoría) van por el mismo camino de antes, sin cambio.
 
+**5. Tres pedidos puntuales del usuario (commit `8a18283`)**:
+- Selector de tipo de transición: `<select>` → grid de checkboxes. `video.js` `elegirTransicion()`
+  acepta array (marcar 1 = fija, varias = al azar solo entre esas, ninguna = las 16). Bug propio
+  encontrado y arreglado en el camino: array vacío caía a `'fade'` en vez de a las 16.
+- Tamaño de subtítulo: input numérico al lado del slider, sincronizados (`fijarTamano()` en app.js).
+- Ganancia de audio: `elevenlabs.js` baja **-3.4dB** automático en todo audio generado (mismo
+  ajuste que el usuario hacía a mano en su editor) — provisional, se afina de verdad en Fase 8.
+
 **Próximo paso: Fase 8 (música por sentido), sin empezar.**
 
 ---
