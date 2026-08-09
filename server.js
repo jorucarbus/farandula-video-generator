@@ -314,7 +314,7 @@ async function extraerActaDeFuente(type, content) {
 // acumuladas — nunca se vuelve a tocar una fuente ya leída para agregar la siguiente.
 app.post('/api/read', async (req, res) => {
   try {
-    const { type, content, sesgo, canalId, jobId: jobIdExistente } = req.body;
+    const { type, content, sesgo, canalId, jobId: jobIdExistente, sintetizar } = req.body;
     if (!type || !content) {
       return res.status(400).json({ error: 'Faltan type o content' });
     }
@@ -328,7 +328,7 @@ app.post('/api/read', async (req, res) => {
     }
 
     const fuentesActuales = job?.fuentes || [];
-    const MAX_FUENTES = 3;
+    const MAX_FUENTES = 6;
     if (fuentesActuales.length >= MAX_FUENTES) {
       return res.status(400).json({ error: `Ya hay ${MAX_FUENTES} fuentes (máximo). Quita una para agregar otra.` });
     }
@@ -341,6 +341,26 @@ app.post('/api/read', async (req, res) => {
 
     const nuevaFuente = { type, content: contenido, tipoReal, acta };
     const todasLasFuentes = [...fuentesActuales, nuevaFuente];
+
+    // La PRIMERA fuente siempre sintetiza: hace falta la crónica (nombreCorto) para nombrar la
+    // carpeta de insumos y crear el job. De la 2da en adelante, sintetizar=false solo GUARDA el
+    // acta nueva y no toca la crónica — deja que el usuario siga agregando fuentes sin gastar
+    // una síntesis por cada una; "Procesar fuentes" (POST /api/resintetizar) hace la síntesis
+    // final con todas juntas cuando el usuario decide que ya terminó de agregar.
+    const debeSintetizar = !job || sintetizar !== false;
+
+    if (!debeSintetizar) {
+      job = jobStore.actualizarJob(job.jobId, { fuentes: todasLasFuentes });
+      return res.json({
+        status: 'success',
+        jobId: job.jobId,
+        numFuentes: todasLasFuentes.length,
+        maxFuentes: MAX_FUENTES,
+        fuenteResumen: acta.fuenteResumen,
+        tipoReal,
+        sintetizado: false,
+      });
+    }
 
     console.log(`📝 Sintetizando crónica (${todasLasFuentes.length} fuente${todasLasFuentes.length > 1 ? 's' : ''}, sesgo: ${sesgoElegido})...`);
     const result = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido);
@@ -375,6 +395,7 @@ app.post('/api/read', async (req, res) => {
       maxFuentes: MAX_FUENTES,
       fuenteResumen: acta.fuenteResumen,   // resumen de la fuente RECIÉN agregada (para la UI)
       tipoReal,                             // cómo se leyó de verdad (audio/transcripción/video/web)
+      sintetizado: true,
       cronica: result.cronica,
       titulo: result.titulo,
       descripcion: result.descripcion,

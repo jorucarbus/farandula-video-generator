@@ -109,7 +109,7 @@ let state = {
     sesgo: 'neutral',
     avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
 };
-const MAX_FUENTES = 3;
+const MAX_FUENTES = 6;
 
 // Funciones auxiliares (Bloque B: todos los pasos visibles a la vez, sin wizard)
 
@@ -301,12 +301,21 @@ async function handleRead() {
     }
 }
 
+// Muestra/oculta el aviso de "hay fuentes sin procesar" y resalta el botón de procesar.
+function marcarFuentesPendientes(pendiente) {
+    document.getElementById('fuentes-pendiente-hint').classList.toggle('hidden', !pendiente);
+}
+
 // Pinta la lista de fuentes ya agregadas (Paso 1) y ajusta el botón/label según cuántas hay.
+// Dos botones separados a propósito (antes era uno solo que agregaba Y procesaba, y al pasar
+// de paso no quedaba claro que se podían seguir agregando fuentes): "Leer"/"Agregar fuente"
+// solo guarda la fuente nueva; "Ya, procesar fuentes" sintetiza la crónica con TODAS juntas.
 function renderFuentesLista() {
     const wrap = document.getElementById('fuentes-lista-wrap');
     const lista = document.getElementById('fuentes-lista');
     const contador = document.getElementById('fuentes-contador');
     const btn = document.getElementById('btn-read');
+    const btnProcesar = document.getElementById('btn-procesar-fuentes');
     const label = document.getElementById('source-input-label');
 
     contador.textContent = `${state.fuentes.length}/${MAX_FUENTES}`;
@@ -318,15 +327,17 @@ function renderFuentesLista() {
         </li>
     `).join('');
     wrap.classList.toggle('hidden', state.fuentes.length === 0);
+    btnProcesar.classList.toggle('hidden', state.fuentes.length === 0);
 
     if (state.fuentes.length === 0) {
         btn.innerHTML = `${icon('bookOpen')} Leer y procesar`;
         label.textContent = 'Ingresa aquí:';
         document.getElementById('source-input').disabled = false;
     } else if (state.fuentes.length < MAX_FUENTES) {
-        btn.innerHTML = `${icon('bookOpen')} Agregar otra fuente sobre la misma noticia`;
+        btn.innerHTML = `${icon('bookOpen')} Agregar fuente ${state.fuentes.length + 1} de ${MAX_FUENTES}`;
         label.textContent = `Fuente ${state.fuentes.length + 1} de ${MAX_FUENTES} (opcional):`;
         document.getElementById('source-input').disabled = false;
+        setButtonDisabled('btn-read', false);
     } else {
         btn.innerHTML = `${icon('check')} Máximo de ${MAX_FUENTES} fuentes alcanzado`;
         setButtonDisabled('btn-read', true);
@@ -335,9 +346,9 @@ function renderFuentesLista() {
     }
 }
 
-// Lectura reutilizable: sin jobId crea el video (requiere canal); con jobId acumula una fuente
-// más sobre la MISMA noticia (multifuente, Fase 4) — cada llamada solo procesa la fuente nueva,
-// nunca vuelve a tocar las anteriores.
+// Lectura reutilizable: sin jobId crea el video (requiere canal) y SIEMPRE sintetiza (el server
+// lo obliga: hace falta la crónica para nombrar la carpeta de insumos). Con jobId, solo AGREGA
+// la fuente nueva al job — no sintetiza ni avanza de paso; para eso está procesarFuentes().
 async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
     const esPrimera = !state.jobId;
     try {
@@ -361,36 +372,80 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
             sesgo: sesgo,
             canalId: canalId,
             jobId: state.jobId || undefined,
+            sintetizar: false, // ignorado en la primera fuente: el server la sintetiza igual
         });
 
-        log(esPrimera ? '✅ Lectura completada' : `✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada (${result.tipoReal})`);
-        log('📝 Crónica actualizada');
-
         state.fuentes.push({ type: sourceType, content: sourceInput, tipoReal: result.tipoReal, fuenteResumen: result.fuenteResumen });
-        state.sourceData = result;
-        // Guardar el primer link de tipo 'link' de la noticia (para la hoja de Google Sheets)
-        if (sourceType === 'link' && !state.sourceData.linkFuente) state.sourceData.linkFuente = sourceInput.trim();
+        if (sourceType === 'link' && !state.sourceData?.linkFuente) {
+            state.sourceData = { ...(state.sourceData || {}), linkFuente: sourceInput.trim() };
+        }
         if (result.jobId) {
             state.jobId = result.jobId;
             sessionStorage.setItem('farandula_job_id', result.jobId);
         }
         updateProgress(30);
+        renderFuentesLista();
+        document.getElementById('source-input').value = '';
 
-        // Mostrar resultado de la lectura (título, descripción, crónica — ya sintetizada de TODAS las fuentes)
+        if (result.sintetizado) {
+            log(esPrimera ? '✅ Lectura completada' : `✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada y procesada`);
+            state.sourceData = { ...state.sourceData, ...result };
+            document.getElementById('res-titulo').textContent = result.titulo;
+            document.getElementById('res-descripcion').textContent = result.descripcion;
+            document.getElementById('res-cronica').textContent = result.cronica;
+            revealLectura();
+            marcarFuentesPendientes(false);
+            hideProgress();
+            setStepStatus('fuente-section', 'done');
+            setStepStatus('script-section', 'active');
+            log('➡️ Agregá otra fuente si querés, o selecciona un ángulo para continuar');
+        } else {
+            log(`✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada (${result.tipoReal}) — sin procesar todavía`);
+            marcarFuentesPendientes(true);
+            hideProgress();
+            log('➡️ Agregá otra fuente, o pulsá "Ya, procesar fuentes" para actualizar la crónica');
+        }
+    } catch (error) {
+        mostrarError(`Error en lectura: ${error.message}`,
+            () => leerFuente(sourceType, sourceInput, sesgo, canalId), 'fuente-section');
+    }
+}
+
+// Sintetiza la crónica con TODAS las fuentes acumuladas hasta ahora (botón "Ya, procesar
+// fuentes"). Reusa /api/resintetizar — no vuelve a descargar ni re-procesar ninguna fuente.
+async function procesarFuentes() {
+    if (!state.jobId || state.fuentes.length === 0) {
+        alert('Todavía no hay fuentes agregadas');
+        return;
+    }
+    setButtonDisabled('btn-procesar-fuentes', true);
+    try {
+        state.selectedAngle = null;
+        state.guion = null;
+        state.fragments = null;
+        state.audioToken = null;
+        state.selectedDestFolder = null;
+        lockFrom('script-section');
+
+        showProgress(`${icon('checkCircle')} Procesando ${state.fuentes.length} fuente(s)...`);
+        log(`📝 Sintetizando crónica con ${state.fuentes.length} fuente(s) (sesgo: ${state.sesgo})...`);
+        updateProgress(30);
+
+        const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo: state.sesgo });
+        state.sourceData = { ...state.sourceData, ...result };
         document.getElementById('res-titulo').textContent = result.titulo;
         document.getElementById('res-descripcion').textContent = result.descripcion;
         document.getElementById('res-cronica').textContent = result.cronica;
         revealLectura();
-        renderFuentesLista();
-        document.getElementById('source-input').value = '';
-
+        marcarFuentesPendientes(false);
         hideProgress();
         setStepStatus('fuente-section', 'done');
         setStepStatus('script-section', 'active');
-        log('➡️ Agrega otra fuente si querés, o selecciona un ángulo para continuar');
+        log('✅ Crónica actualizada con todas las fuentes. Selecciona un ángulo para continuar');
     } catch (error) {
-        mostrarError(`Error en lectura: ${error.message}`,
-            () => leerFuente(sourceType, sourceInput, sesgo, canalId), 'fuente-section');
+        mostrarError(`Error procesando fuentes: ${error.message}`, () => procesarFuentes(), 'fuente-section');
+    } finally {
+        setButtonDisabled('btn-procesar-fuentes', false);
     }
 }
 

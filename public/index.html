@@ -99,8 +99,12 @@
                 </button>
 
                 <div class="hidden" id="fuentes-lista-wrap">
-                    <p class="hint mt-sm"><strong>Fuentes de esta noticia (<span id="fuentes-contador">0/3</span>):</strong></p>
+                    <p class="hint mt-sm"><strong>Fuentes de esta noticia (<span id="fuentes-contador">0/6</span>):</strong></p>
                     <ul id="fuentes-lista"></ul>
+                    <p class="hint hidden" id="fuentes-pendiente-hint">⚠️ Hay fuente(s) agregada(s) sin procesar — la crónica de abajo todavía no las incluye.</p>
+                    <button class="btn btn-success hidden" id="btn-procesar-fuentes" onclick="procesarFuentes()">
+                        <span class="icon-slot" data-icon="checkCircle"></span> Ya, procesar fuentes
+                    </button>
                 </div>
             </div>
 
