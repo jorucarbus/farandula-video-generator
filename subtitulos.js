@@ -89,6 +89,17 @@ function limpiarPuntuacion(texto) {
   return texto.replace(/^[.,;:!?¡¿"'"«»…]+|[.,;:!?¡¿"'"«»…]+$/g, '');
 }
 
+// Idea del usuario: la puntuación no se MUESTRA, pero marca una pausa — el signo se convierte
+// en el silencio antes de la siguiente palabra, no en un carácter en pantalla. Punto/exclamación
+// /interrogación/puntos suspensivos pausan más que coma/punto y coma/dos puntos (igual que al
+// hablar). Se mide sobre la palabra CRUDA (antes de limpiarPuntuacion, que ya le sacó el signo).
+function pausaPorPuntuacion(textoCrudo) {
+  const ultimo = textoCrudo.trim().slice(-1);
+  if ('.!?…'.includes(ultimo)) return 0.22;
+  if (',;:'.includes(ultimo)) return 0.10;
+  return 0;
+}
+
 // Si la palabra (ya en MAYÚSCULAS) no entra en el ancho útil al tamaño pedido, la achica lo
 // justo para que quepa — nunca por debajo del tamaño anterior (88pt), como piso razonable.
 // factorAncho depende de la tipografía elegida (ver catálogo FUENTES).
@@ -178,6 +189,8 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
   // estimado dentro de la ventana de su fragmento); MAYÚSCULAS (toUpperCase respeta tildes/eñes:
   // CAFÉ, AÑO) y sin puntuación en los bordes. Si a una palabra no le queda nada tras limpiarla
   // (rarísimo: un token que era solo puntuación), se descarta en vez de mostrar un evento vacío.
+  // La pausa se mide ANTES de limpiar (necesita el signo crudo) y se aplica DESPUÉS de aplanar
+  // (necesita el .fin ya telescopado contra la palabra siguiente) — por eso son dos pasadas.
   const todas = [];
   fragments.forEach((f, idx) => {
     const ventana = ventanas[idx];
@@ -185,9 +198,16 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     const real = palabrasPorFragmento && palabrasPorFragmento[idx];
     const palabras = (real && real.length) ? real : palabrasEstimadas(f.texto, ventana);
     todas.push(...palabras
-      .map(p => ({ ...p, texto: limpiarPuntuacion(p.texto.toUpperCase()) }))
+      .map(p => ({ ...p, pausa: pausaPorPuntuacion(p.texto), texto: limpiarPuntuacion(p.texto.toUpperCase()) }))
       .filter(p => p.texto));
   });
+
+  // El signo se convierte en silencio, no en texto: recorta el FIN de la palabra que lo traía
+  // (nunca más de la mitad de su propia duración, para que la palabra siga siendo legible) —
+  // el hueco entre ese nuevo fin y el inicio de la siguiente es la pausa.
+  for (const p of todas) {
+    if (p.pausa > 0) p.fin -= Math.min(p.pausa, (p.fin - p.inicio) * 0.5);
+  }
 
   // 2. Agrupar de a `porGrupo` palabras consecutivas — en pantalla nunca hay más que eso.
   const grupos = [];
