@@ -206,7 +206,11 @@ async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra
       // Deja rastro de qué modelo atendió cada llamada: sin esto no hay forma de saber si el
       // router está funcionando o si todo se está resolviendo por fallback en el tier caro.
       console.log(`  🤖 ${tarea.nombre || 'gemini'} → ${modelo}`);
-      return texto;
+      // Devuelve también QUÉ modelo respondió (no solo el texto): llamarJSON lo necesita para
+      // escalar de verdad en el reintento — callGemini puede saltar varios escalones en
+      // silencio por saturación antes de conseguir texto, así que "el intento anterior" no es
+      // lo mismo que "el primer modelo de la cadena".
+      return { texto, modelo };
     } catch (error) {
       ultimoError = error;
       if (!error._geminiSiguienteModelo) {
@@ -279,13 +283,9 @@ function parsearJsonRobusto(texto) {
 async function llamarJSON(prompt, userMessage, tarea = TAREAS.guion, config = {}, reintentos = 2) {
   const cadena = tarea.cadena || CADENAS.creativo;
   let ultimoError;
+  let desde = 0;
   for (let i = 1; i <= reintentos; i++) {
-    // Si el intento anterior devolvió JSON irreparable, no insistir con el MISMO modelo:
-    // empezar la cadena un escalón más arriba. Importa sobre todo en las tareas mecánicas,
-    // donde el primero es un lite: si ese modelo no logra el formato, subir es lo que resuelve,
-    // repetirlo no.
-    const desde = Math.min(i - 1, cadena.length - 1);
-    const respuesta = await callGemini(prompt, userMessage, { ...tarea, cadena: cadena.slice(desde) }, {
+    const { texto: respuesta, modelo } = await callGemini(prompt, userMessage, { ...tarea, cadena: cadena.slice(desde) }, {
       responseMimeType: 'application/json',
       ...config,
     });
@@ -293,7 +293,15 @@ async function llamarJSON(prompt, userMessage, tarea = TAREAS.guion, config = {}
       return parsearJsonRobusto(respuesta);
     } catch (e) {
       ultimoError = e;
-      console.warn(`  ⚠️ JSON malformado de Gemini (intento ${i}/${reintentos}), reintentando...`);
+      // Subir DESDE el modelo que acaba de dar JSON malo, no desde donde arrancó este intento:
+      // callGemini pudo haber saltado varios escalones en silencio por saturación antes de
+      // conseguir texto, así que "el intento anterior" no es lo mismo que "el primer modelo de
+      // la cadena". Bug real encontrado en producción (2026-08-08): dos intentos seguidos
+      // pegándole al mismo modelo (gemini-3.5-flash) porque el cálculo viejo (i-1) asumía que
+      // el intento 1 siempre arranca en el escalón 0.
+      const idxUsado = cadena.indexOf(modelo);
+      desde = Math.min(idxUsado + 1, cadena.length - 1);
+      console.warn(`  ⚠️ JSON malformado de Gemini (intento ${i}/${reintentos}, modelo ${modelo}), subiendo a ${cadena[desde]}...`);
     }
   }
   throw new Error(`Gemini devolvió JSON inválido tras ${reintentos} intentos: ${ultimoError.message}`);
@@ -492,7 +500,7 @@ ${descripcionEnfoque}
 
 TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.`;
 
-    const response = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
+    const { texto: response } = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
     return response.trim();
   } catch (error) {
     throw new Error(`Error generando guion: ${error.message}`);
@@ -672,7 +680,7 @@ async function agregarMarcas(guionFragmentado) {
       .join('\n');
 
     const userMessage = `Procesa este guion fragmentado y agrega las etiquetas de actuación:\n\n${guionText}`;
-    const response = await callGemini(PROMPTS.marcas, userMessage, TAREAS.marcas);
+    const { texto: response } = await callGemini(PROMPTS.marcas, userMessage, TAREAS.marcas);
 
     const nombres = [...new Set(guionFragmentado.map(f => f.famoso))];
     return limpiarEtiquetasFamoso(response.trim(), nombres);
@@ -692,7 +700,7 @@ Formato EXACTO: Protagonista - Secundario - Hecho
 Responde SOLO el nombre, sin comillas, sin extensión, sin explicaciones.
 No uses caracteres prohibidos en nombres de archivo (/ \\ : * ? " < > |).`;
 
-    const response = await callGemini(prompt, guion, TAREAS.nombreArchivo);
+    const { texto: response } = await callGemini(prompt, guion, TAREAS.nombreArchivo);
     // Sanear por si acaso
     return response.trim().split('\n')[0].replace(/[/\\:*?"<>|]/g, '').slice(0, 80);
   } catch (error) {
