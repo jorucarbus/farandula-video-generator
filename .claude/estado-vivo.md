@@ -9,10 +9,45 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1 a 6 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
-`test-persistencia` en `8a66c59`. `farandula-video-family` `main` en `fce9aa1` (Fases 5 y 6 no
-aplican a family: no usa ElevenLabs, sin alineación real). `main` del principal sigue en
-`f801076` — sin mergear a propósito.
+**Fases 1 a 7 TERMINADAS hoy** + una corrección importante sobre la Fase 2 y dos ajustes de UX
+sobre multifuente, el mismo día. `test-persistencia` en `6682624`. `farandula-video-family`
+`main` en `fce9aa1` (Fases 5, 6 y 7 no aplican a family: no usa ElevenLabs, sin alineación
+real). `main` del principal sigue en `f801076` — sin mergear a propósito.
+
+**Fase 7 (transiciones xfade + rampa de zoom), commit `6682624`** — la más delicada del plan,
+toca las dos invariantes directo. `filtroZoom()` pasó de progreso lineal a ease-out cúbico
+(cambio de una línea, el de mejor relación esfuerzo/resultado del plan). `renderizarConTransiciones()`
+nueva en `video.js`: cadena xfade (16 tipos curados + "aleatorio") intercalada con concat según
+preset ninguno/todos/alternado, en un solo filter_complex. Corrección de solapamiento: el clip
+que empalma con el siguiente se corta `duración + D` de la fuente, pero el offset de cada xfade
+usa la duración VISIBLE acumulada — la suma que ve el espectador no se toca. `seleccion.planificarClips()`
+acepta `clipMax` opcional; `server.js` lo baja a `CLIP_MAX - D` cuando hay transiciones activas
+para que duración+cola nunca pase del límite legal de 3s (modo Insumos no lo toca, no lleva
+transiciones).
+
+**Bug real encontrado probando "alternado"** (mezcla xfade+concat en la misma cadena, no solo
+"todos" con puro xfade): NVENC deja timebases distintas entre segmentos que `concat` no
+reconcilia antes del siguiente `xfade` — el fallback lo tapaba en silencio, así que "alternado"
+habría quedado permanentemente roto (siempre cortes secos) sin que nadie lo notara. Fix:
+re-normalizar `fps=30,format=yuv420p` en cada entrada Y después de cada etapa xfade/concat, no
+solo al principio de la cadena.
+
+Verificado con fuentes sintéticas (lavfi, sin Drive): sincronía exacta en 4 escenarios, límite
+legal de 3s confirmado en el peor caso (transición al máximo 0.6s + clips al tope del CLIP_MAX
+efectivo), y frame extraído a mitad de una transición real confirma la mezcla visual.
+
+**Pendiente, fuera de alcance de esta pasada**: rampas de velocidad (`setpts`) y transiciones
+"deformadas" (perspective/lenscorrection/gblur) que menciona el plan — se evaluó el tamaño ya
+grande de la fase y se dejaron para una pasada aparte.
+
+**Dos ajustes de UX sobre multifuente (Fase 4), mismo día, fuera del orden del plan** — el
+usuario los pidió al usar la app en producción:
+- `c29c88c`: el botón de agregar fuente hacía DOS cosas a la vez (guardar Y sintetizar), y al
+  cambiar de paso no quedaba claro que se podían seguir agregando fuentes. Ahora son dos
+  acciones separadas — "Agregar fuente" solo guarda; "Ya, procesar fuentes" (nuevo botón)
+  sintetiza con todas juntas (reusa `/api/resintetizar` tal cual). Límite de fuentes 3→6 (no
+  había techo técnico real, decisión de diseño). Verificado con HTTP real: 1→6 fuentes sin
+  re-sintetizar de más, 7ma rechazada, resíntesis final incorpora todas correctamente.
 
 **Fase 6 (subtítulos ASS), commit `8a66c59`**: estilo único de la Fase 0 (Poppins ExtraBold
 66pt, blanco+contorno negro, resalte amarillo `#f7c204` con rebote `\t` accel<1, tercio
@@ -46,7 +81,7 @@ Verificado con 3 corridas reales (Gemini + ElevenLabs, sin mocks): caso corto (4
 caso largo (42 fragmentos, 161 palabras) — suma de duraciones por fragmento EXACTA contra la
 duración real medida por ffprobe en los dos, todas las duraciones >0s.
 
-**Próximo paso: Fase 7 (transiciones xfade + rampas), sin empezar. La más delicada del plan.**
+**Próximo paso: Fase 8 (música por sentido), sin empezar.**
 
 **Fase 4 (multifuente + solo audio), commit `8a4bc19`** + portada en `fce9aa1`. Dos cosas:
 
@@ -133,7 +168,7 @@ en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre
 | 4 | Multifuente + solo audio | **hecha (2026-08-08, `8a4bc19`)** | Sonnet |
 | 5 | Fuente de tiempos intercambiable | **hecha (2026-08-08, `13f38a5`)** | Sonnet |
 | 6 | Subtítulos ASS | **hecha (2026-08-08, `8a66c59`)** | Sonnet |
-| 7 | Transiciones xfade + rampas | no empezada | Opus |
+| 7 | Transiciones xfade + rampas | **hecha parcial (2026-08-08, `6682624`) — falta setpts/deformado** | Opus |
 | 8 | Música por sentido | no empezada | Sonnet |
 | 9 | Director (reglas → Gemini con fallback) | no empezada | Opus |
 | 10 | Insumos ampliados | no empezada | Sonnet |
