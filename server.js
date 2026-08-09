@@ -217,6 +217,13 @@ app.get('/api/canales', async (req, res) => {
   }
 });
 
+// Catálogo de tipografías de subtítulos (Fase 6) — la UI lo pide en vez de mantener una lista
+// duplicada; si se agrega/saca una fuente en subtitulos.js, el selector se actualiza solo.
+app.get('/api/fuentes-subtitulos', (req, res) => {
+  const fuentes = Object.entries(subtitulos.FUENTES).map(([clave, f]) => ({ clave, familia: f.familia }));
+  res.json({ fuentes, default: subtitulos.FUENTE_DEFAULT });
+});
+
 // Decide CÓMO leer una fuente y devuelve su acta ya extraída (Fase 4 del plan maestro:
 // multifuente + solo audio). El orden de intentos SIEMPRE prioriza lo más barato — de los
 // videos no importa nada visual (pedido explícito del usuario), así que "ver" el video queda
@@ -775,13 +782,15 @@ app.post('/api/generate-video', async (req, res) => {
     if (efectos?.subtitulos !== false) {
       try {
         const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, audioAprobado?.duracionesReales);
+        const fuenteElegida = efectos?.subtitulosFuente || subtitulos.FUENTE_DEFAULT;
         subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, audioAprobado?.palabrasAlineadas, {
           jobId: renderId,
           tempDir: video.TEMP_DIR,
+          fuente: fuenteElegida,
           tamano: Number.isFinite(efectos?.subtitulosTamano) ? efectos.subtitulosTamano : undefined,
           marginV: Number.isFinite(efectos?.subtitulosMarginV) ? efectos.subtitulosMarginV : undefined,
         });
-        fuentesDir = await subtitulos.obtenerCarpetaFuentes();
+        fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteElegida);
       } catch (e) {
         console.warn(`  ⚠️ [${renderId}] Subtítulos no se pudieron generar (${e.message}), el video sale sin ellos`);
         subsPath = null;

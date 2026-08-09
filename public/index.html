@@ -280,7 +280,12 @@
                 </div>
 
                 <div class="form-group" id="subs-ajustes-group">
-                    <label for="subs-tamano">Tamaño de letra: <span id="subs-tamano-valor">264</span>pt</label>
+                    <label for="subs-fuente">Tipografía:</label>
+                    <select id="subs-fuente">
+                        <option value="anton">Cargando...</option>
+                    </select>
+
+                    <label for="subs-tamano" class="mt-sm">Tamaño de letra: <span id="subs-tamano-valor">264</span>pt</label>
                     <input type="range" id="subs-tamano" min="80" max="360" step="4" value="264">
 
                     <label class="mt-sm">Posición (arrastrá la palabra de ejemplo hacia arriba/abajo):</label>
@@ -288,7 +293,7 @@
                         <div id="subs-preview-tiktok-zone">interfaz de TikTok</div>
                         <div id="subs-preview-word">PALABRA</div>
                     </div>
-                    <p class="hint">Ejemplo a escala, no es un render real — solo para ubicar tamaño y posición antes de generar el video.</p>
+                    <p class="hint">Ejemplo a escala, no es un render real — sirve para ubicar tamaño y posición antes de generar el video (la tipografía exacta solo se ve en el resultado final).</p>
                 </div>
 
                 <button class="btn btn-success" id="btn-generate-video" onclick="handleGenerateVideo()">

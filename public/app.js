@@ -865,6 +865,7 @@ async function handleGenerateVideo() {
                     zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                     subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
+                    subtitulosFuente: subsFuente,
                     subtitulosTamano: subsTamano,
                     subtitulosMarginV: subsMarginV,
                     transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
@@ -1412,12 +1413,30 @@ async function cargarCanales() {
 const SUBS_PLAYRES_Y = 1920;
 let subsTamano = 264;
 let subsMarginV = 300;
+let subsFuente = 'anton';
+
+// Trae el catálogo real de subtitulos.js (server.js expone /api/fuentes-subtitulos) — si falla
+// (sin conexión, key inválida), el selector se queda con la única opción por defecto y el
+// render igual funciona con Anton, que es lo que ya manda el server si no llega `fuente`.
+async function cargarFuentesSubtitulos() {
+    const select = document.getElementById('subs-fuente');
+    if (!select) return;
+    try {
+        const { fuentes, default: porDefecto } = await apiCall('/fuentes-subtitulos', 'GET');
+        select.innerHTML = fuentes.map(f => `<option value="${f.clave}">${f.familia}</option>`).join('');
+        subsFuente = porDefecto || fuentes[0]?.clave || 'anton';
+        select.value = subsFuente;
+    } catch (e) {
+        console.warn('No se pudo cargar el catálogo de tipografías, se usa Anton por defecto:', e.message);
+    }
+}
 
 function initSubsPreview() {
     const slider = document.getElementById('subs-tamano');
     const valor = document.getElementById('subs-tamano-valor');
     const preview = document.getElementById('subs-preview');
     const palabra = document.getElementById('subs-preview-word');
+    const selectFuente = document.getElementById('subs-fuente');
     if (!slider || !preview || !palabra) return;
 
     const escala = () => preview.clientHeight / SUBS_PLAYRES_Y;
@@ -1440,6 +1459,8 @@ function initSubsPreview() {
         valor.textContent = subsTamano;
         pintarTamano();
     });
+
+    selectFuente?.addEventListener('change', () => { subsFuente = selectFuente.value; });
 
     let arrastrando = false;
     const moverA = (clientY) => {
@@ -1476,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', () => {
         iniciarSesion();
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
-    initSubsPreview();
+    cargarFuentesSubtitulos().then(initSubsPreview);
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

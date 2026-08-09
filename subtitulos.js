@@ -15,9 +15,23 @@ const axios = require('axios');
 
 const TEMP_DIR = path.join(__dirname, 'temp-videos');
 const FUENTES_DIR = path.join(TEMP_DIR, 'fuentes');
-const FUENTE_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf';
-const FUENTE_ARCHIVO = 'Anton-Regular.ttf';
-const FUENTE_FAMILIA = 'Anton';
+
+// Catálogo de tipografías — todas Google Fonts (OFL/Apache, uso libre), todas verificadas reales
+// (descarga + quemado con ffmpeg, no solo la URL). `factorAncho` es el ancho aproximado de un
+// carácter en MAYÚSCULAS como fracción del tamaño de fuente — cada familia lo tiene distinto,
+// lo usa tamanoSeguro() para que una palabra larga no desborde el video.
+const FUENTES = {
+  anton:     { familia: 'Anton',             archivo: 'Anton-Regular.ttf',        url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf', factorAncho: 0.62 },
+  poppins:   { familia: 'Poppins ExtraBold', archivo: 'Poppins-ExtraBold.ttf',     url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-ExtraBold.ttf', factorAncho: 0.62 },
+  bebas:     { familia: 'Bebas Neue',        archivo: 'BebasNeue-Regular.ttf',     url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf', factorAncho: 0.56 },
+  archivo:   { familia: 'Archivo Black',     archivo: 'ArchivoBlack-Regular.ttf',  url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf', factorAncho: 0.68 },
+  bangers:   { familia: 'Bangers',           archivo: 'Bangers-Regular.ttf',       url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf', factorAncho: 0.62 },
+  righteous: { familia: 'Righteous',         archivo: 'Righteous-Regular.ttf',     url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/righteous/Righteous-Regular.ttf', factorAncho: 0.62 },
+  passion:   { familia: 'Passion One',       archivo: 'PassionOne-Black.ttf',      url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/passionone/PassionOne-Black.ttf', factorAncho: 0.66 },
+  kanit:     { familia: 'Kanit ExtraBold',   archivo: 'Kanit-ExtraBold.ttf',       url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/kanit/Kanit-ExtraBold.ttf', factorAncho: 0.58 },
+  luckiest:  { familia: 'Luckiest Guy',      archivo: 'LuckiestGuy-Regular.ttf',   url: 'https://raw.githubusercontent.com/google/fonts/main/apache/luckiestguy/LuckiestGuy-Regular.ttf', factorAncho: 0.60 },
+};
+const FUENTE_DEFAULT = 'anton';
 
 // 3x el tamaño anterior (88pt) — pedido explícito del usuario. Con una sola palabra en pantalla
 // a la vez hay espacio; el resguardo real está en tamanoSeguro() más abajo, para palabras largas.
@@ -33,26 +47,23 @@ const MARGIN_V = 300;
 // Ancho útil del canvas para el resguardo de palabras largas (ver tamanoSeguro): PlayResX menos
 // los márgenes laterales del Style.
 const ANCHO_UTIL = 1080 - 60 - 60;
-// Ancho aproximado de un carácter en Anton, como fracción del tamaño de fuente — es una
-// tipográfica condensada (por eso se eligió: entran más letras por punto de tamaño que en una
-// sans-serif normal), pero a 264pt una palabra larga en MAYÚSCULAS igual puede desbordar.
-const FACTOR_ANCHO_ANTON = 0.62;
 
-// Descarga la tipografía UNA sola vez (cache en disco, sobrevive entre renders del mismo
+// Descarga UNA tipografía del catálogo (cache en disco, sobrevive entre renders del mismo
 // proceso). Si falla (sin internet, URL cambiada), no aborta: libass sustituye por una fuente
 // del sistema — el subtítulo sale igual, solo sin la tipografía exacta.
-async function obtenerCarpetaFuentes() {
+async function obtenerCarpetaFuentes(clave = FUENTE_DEFAULT) {
+  const fuente = FUENTES[clave] || FUENTES[FUENTE_DEFAULT];
   try {
     fs.mkdirSync(FUENTES_DIR, { recursive: true });
-    const destino = path.join(FUENTES_DIR, FUENTE_ARCHIVO);
+    const destino = path.join(FUENTES_DIR, fuente.archivo);
     if (!fs.existsSync(destino) || fs.statSync(destino).size < 10000) {
-      console.log('  🔤 Descargando tipografía de subtítulos (una sola vez)...');
-      const res = await axios.get(FUENTE_URL, { responseType: 'arraybuffer', timeout: 15000 });
+      console.log(`  🔤 Descargando tipografía "${fuente.familia}" (una sola vez)...`);
+      const res = await axios.get(fuente.url, { responseType: 'arraybuffer', timeout: 15000 });
       fs.writeFileSync(destino, res.data);
     }
     return FUENTES_DIR;
   } catch (e) {
-    console.warn(`  ⚠️ No se pudo descargar la tipografía de subtítulos (${e.message}), sigue con la del sistema`);
+    console.warn(`  ⚠️ No se pudo descargar la tipografía "${fuente.familia}" (${e.message}), sigue con la del sistema`);
     return null;
   }
 }
@@ -80,10 +91,11 @@ function limpiarPuntuacion(texto) {
 
 // Si la palabra (ya en MAYÚSCULAS) no entra en el ancho útil al tamaño pedido, la achica lo
 // justo para que quepa — nunca por debajo del tamaño anterior (88pt), como piso razonable.
-function tamanoSeguro(texto, tamanoBase) {
-  const anchoEstimado = texto.length * tamanoBase * FACTOR_ANCHO_ANTON;
+// factorAncho depende de la tipografía elegida (ver catálogo FUENTES).
+function tamanoSeguro(texto, tamanoBase, factorAncho) {
+  const anchoEstimado = texto.length * tamanoBase * factorAncho;
   if (anchoEstimado <= ANCHO_UTIL) return tamanoBase;
-  return Math.max(88, Math.floor(ANCHO_UTIL / (texto.length * FACTOR_ANCHO_ANTON)));
+  return Math.max(88, Math.floor(ANCHO_UTIL / (texto.length * factorAncho)));
 }
 
 // Palabra en pantalla: pop con rebote CHICO (accel<1 = arranca rápido, frena), sin fundidos de
@@ -115,13 +127,14 @@ function construirLineas(palabras, maxChars) {
 
 // Texto completo del bloque con la palabra de índice idxActivo resaltada (con su propio tamaño
 // seguro), el resto en el estilo base. `tamano` es el pedido por el usuario (opciones.tamano en
-// generarASS, o TAMANO_DEFAULT) — tamanoSeguro() lo respeta salvo que la palabra no entre.
-function renderBloque(lineas, idxActivo, tamano) {
+// generarASS, o TAMANO_DEFAULT) — tamanoSeguro() lo respeta salvo que la palabra no entre, según
+// el ancho por carácter de la tipografía elegida (`factorAncho`).
+function renderBloque(lineas, idxActivo, tamano, factorAncho) {
   let i = -1;
   return lineas
     .map(linea => linea.map(p => {
       i++;
-      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, tamano)) : escaparASS(p.texto);
+      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, tamano, factorAncho)) : escaparASS(p.texto);
     }).join(' '))
     .join('\\N');
 }
@@ -148,6 +161,7 @@ function palabrasEstimadas(texto, ventana) {
 // Devuelve la ruta del .ass generado. No lanza por datos raros: un fragmento sin palabras se
 // omite y sigue con el resto — nunca tumba el render completo por un subtítulo.
 function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones = {}) {
+  const fuente = FUENTES[opciones.fuente] || FUENTES[FUENTE_DEFAULT];
   const tamano = opciones.tamano || TAMANO_DEFAULT;
   const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : MARGIN_V;
   const maxCharsLinea = opciones.maxCharsLinea || MAX_CHARS_LINEA;
@@ -189,7 +203,7 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     const lineas = construirLineas(grupo, maxCharsLinea);
     grupo.forEach((p, i) => {
       if (p.fin <= p.inicio) return; // evento de duración ≤0, se salta (no rompe el .ass)
-      const texto = renderBloque(lineas, i, tamano);
+      const texto = renderBloque(lineas, i, tamano, fuente.factorAncho);
       eventos.push(`Dialogue: 0,${tiempoASS(p.inicio)},${tiempoASS(p.fin)},Base,,0,0,0,,${texto}`);
     });
   }
@@ -203,7 +217,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Base,${FUENTE_FAMILIA},${tamano},${COLOR_BASE},${COLOR_BASE},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,60,60,${marginV},1
+Style: Base,${fuente.familia},${tamano},${COLOR_BASE},${COLOR_BASE},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,60,60,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -219,5 +233,6 @@ ${eventos.join('\n')}
 module.exports = {
   generarASS,
   obtenerCarpetaFuentes,
-  FUENTE_FAMILIA,
+  FUENTES,
+  FUENTE_DEFAULT,
 };
