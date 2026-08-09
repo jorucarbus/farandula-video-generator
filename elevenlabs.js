@@ -1,10 +1,30 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const video = require('./video');
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID;
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1';
+
+// El audio de ElevenLabs suele saturar un poco — el usuario SIEMPRE le baja esto a mano en su
+// editor antes de usarlo, en cada video. Se aplica acá una sola vez para no repetir ese paso
+// manual. Provisional: la Fase 8 (música + mezcla, loudnorm) va a afinar niveles de verdad —
+// esto es solo la corrección de ganancia que ya se sabe que hace falta.
+const GANANCIA_DB = -3.4;
+
+// Reencodea el mp3 con la ganancia bajada, pisando el archivo original. No aborta el flujo si
+// falla (ffmpeg raro, disco lleno): el audio se queda sin corregir en vez de perderse.
+async function aplicarGanancia(audioPath) {
+  try {
+    const ajustado = audioPath.replace(/\.mp3$/, '_g.mp3');
+    await video.ffmpeg(['-i', audioPath, '-af', `volume=${GANANCIA_DB}dB`, '-c:a', 'libmp3lame', '-q:a', '2', ajustado]);
+    fs.unlinkSync(audioPath);
+    fs.renameSync(ajustado, audioPath);
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo bajar la ganancia del audio (${e.message}), se usa el original de ElevenLabs`);
+  }
+}
 
 // Quitar todas las marcas [tag] del texto (para modelos que las leerían en voz alta)
 function quitarMarcas(texto) {
@@ -160,7 +180,7 @@ async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_
 // Guarda el MP3 (viene en base64 dentro del JSON) y devuelve la alineación cruda
 // junto al texto exacto que se le mandó a hablar — hace falta para casar cada
 // fragmento del guion contra su tramo de la alineación.
-function guardarAudioConTiempos(response, textoEnviado, modeloUsado) {
+async function guardarAudioConTiempos(response, textoEnviado, modeloUsado) {
   const tempDir = path.join(__dirname, 'temp-videos');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -170,6 +190,7 @@ function guardarAudioConTiempos(response, textoEnviado, modeloUsado) {
   const audioPath = path.join(tempDir, audioFile);
   const buffer = Buffer.from(response.data.audio_base64, 'base64');
   fs.writeFileSync(audioPath, buffer);
+  await aplicarGanancia(audioPath);
 
   const align = response.data.alignment || {};
   const caracteres = align.characters || [];
@@ -189,7 +210,7 @@ function guardarAudioConTiempos(response, textoEnviado, modeloUsado) {
 }
 
 // Guardar el MP3 en la carpeta temporal
-function guardarAudio(response, guionConMarcas, modeloUsado) {
+async function guardarAudio(response, guionConMarcas, modeloUsado) {
   const tempDir = path.join(__dirname, 'temp-videos');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
@@ -198,6 +219,7 @@ function guardarAudio(response, guionConMarcas, modeloUsado) {
   const audioFile = `audio_${Date.now()}.mp3`;
   const audioPath = path.join(tempDir, audioFile);
   fs.writeFileSync(audioPath, response.data);
+  await aplicarGanancia(audioPath);
 
   console.log(`✅ Audio generado con ${modeloUsado}: ${audioPath}`);
   return {

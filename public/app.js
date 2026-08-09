@@ -21,6 +21,13 @@ function setButtonDisabled(buttonId, disabled) {
     if (btn) btn.disabled = disabled; // .btn:disabled ya baja la opacidad por CSS
 }
 
+// Tipos de transición tildados en el Paso 6 (Fase 7) — el server elige al azar SOLO entre
+// estos en cada corte; 1 solo tildado = siempre esa; ninguno tildado = las 16 (video.js cae
+// solo a 'aleatorio' con el catálogo completo si el array llega vacío).
+function tiposTransicionElegidos() {
+    return [...document.querySelectorAll('#transicion-tipos-checks input[type="checkbox"]:checked')].map(c => c.value);
+}
+
 // Bloque C: rehacer un paso ya completado (editar y reenviar) invalida todo lo posterior.
 // Se llama al INICIO de cada función que muta el pipeline, antes de la llamada a la API.
 const STEP_ORDER = ['fuente-section', 'script-section', 'guion-section', 'revision-section', 'audio-section', 'destination-section'];
@@ -869,7 +876,7 @@ async function handleGenerateVideo() {
                     subtitulosTamano: subsTamano,
                     subtitulosMarginV: subsMarginV,
                     transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
-                    transicionTipo: document.getElementById('transicion-tipo')?.value || 'fade',
+                    transicionTipo: tiposTransicionElegidos(),
                     transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
                 },
             });
@@ -1449,7 +1456,7 @@ async function cargarFuentesSubtitulos() {
 
 function initSubsPreview() {
     const slider = document.getElementById('subs-tamano');
-    const valor = document.getElementById('subs-tamano-valor');
+    const numInput = document.getElementById('subs-tamano-num');
     const preview = document.getElementById('subs-preview');
     const palabra = document.getElementById('subs-preview-word');
     const selectFuente = document.getElementById('subs-fuente');
@@ -1475,11 +1482,23 @@ function initSubsPreview() {
     };
     const pintarPosicion = () => { palabra.style.bottom = `${subsMarginV * escala()}px`; };
 
-    slider.addEventListener('input', () => {
-        subsTamano = Number(slider.value);
-        valor.textContent = subsTamano;
+    // Slider y número escriben el MISMO valor — pedido del usuario: poder tipear el tamaño
+    // directo en vez de solo arrastrar. Los dos controles se mantienen sincronizados entre sí.
+    const fijarTamano = (nuevo) => {
+        if (!Number.isFinite(nuevo)) return;
+        subsTamano = Math.min(360, Math.max(80, Math.round(nuevo)));
+        slider.value = subsTamano;
+        if (numInput) numInput.value = subsTamano;
         pintarTamano();
+    };
+
+    slider.addEventListener('input', () => fijarTamano(Number(slider.value)));
+    numInput?.addEventListener('input', () => {
+        if (numInput.value === '') return; // dejar escribir sin recortar a mitad de tecleo
+        fijarTamano(Number(numInput.value));
     });
+    // Al salir del campo, normaliza (recorta al rango 80-360 si quedó vacío o fuera de rango).
+    numInput?.addEventListener('blur', () => fijarTamano(subsTamano));
 
     selectFuente?.addEventListener('change', () => {
         subsFuente = selectFuente.value;
@@ -1503,6 +1522,7 @@ function initSubsPreview() {
     palabra.addEventListener('pointercancel', () => { arrastrando = false; });
 
     pintarFuente();
+    if (numInput) numInput.value = subsTamano;
     pintarTamano();
     pintarPosicion();
 }

@@ -121,8 +121,21 @@ const TRANSICIONES_DISPONIBLES = [
   'circleopen', 'circleclose', 'dissolve', 'pixelize', 'radial', 'zoomin',
 ];
 
+// tipo puede ser: un string fijo ('fade'), 'aleatorio' (cualquiera de las 16), o un ARRAY de
+// tipos elegidos por el usuario (pedido explícito: "quiero seleccionar las transiciones que
+// quiero que sean aleatorias... tal vez solo 3 o 5") — random SOLO entre esos. Un array de 1
+// se comporta como fijo (random entre una opción siempre da esa opción).
 function elegirTransicion(tipo) {
-  if (tipo === 'aleatorio') return TRANSICIONES_DISPONIBLES[Math.floor(Math.random() * TRANSICIONES_DISPONIBLES.length)];
+  if (tipo === 'aleatorio' || (Array.isArray(tipo) && tipo.length === 0)) {
+    return TRANSICIONES_DISPONIBLES[Math.floor(Math.random() * TRANSICIONES_DISPONIBLES.length)];
+  }
+  if (Array.isArray(tipo)) {
+    const validos = tipo.filter(t => TRANSICIONES_DISPONIBLES.includes(t));
+    // Ninguno de los tipos del array es válido (dato corrupto): cae a la lista completa en vez
+    // de romper el render.
+    const pool = validos.length > 0 ? validos : TRANSICIONES_DISPONIBLES;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
   return TRANSICIONES_DISPONIBLES.includes(tipo) ? tipo : 'fade';
 }
 
@@ -241,7 +254,11 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // Duración de cada transición: acotada 0.1-0.6s — fuera de ese rango deja de leerse como
   // "corte con transición" (muy corta no se ve, muy larga se siente lenta para el ritmo).
   const transDur = Math.min(0.6, Math.max(0.1, Number.isFinite(efectos.transicionDur) ? efectos.transicionDur : 0.35));
-  const transTipo = efectos.transicionTipo || 'fade';
+  // efectos.transicionTipo puede venir como string ('fade'/'aleatorio') o como ARRAY de tipos
+  // elegidos por el usuario para el "aleatorio entre estas" (ver elegirTransicion). Array vacío
+  // (nada tildado en la UI) cae a 'aleatorio' — el catálogo completo, comportamiento de siempre.
+  const transTipoRaw = efectos.transicionTipo;
+  const transTipo = (Array.isArray(transTipoRaw) && transTipoRaw.length === 0) ? 'aleatorio' : (transTipoRaw || 'fade');
 
   const clipsValidos = plan
     .map((clip, i) => ({ clip, i }))

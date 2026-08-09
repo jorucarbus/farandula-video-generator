@@ -255,26 +255,25 @@
                 </div>
 
                 <div class="form-group" id="transicion-tipo-group">
-                    <label for="transicion-tipo">Tipo de transición:</label>
-                    <select id="transicion-tipo">
-                        <option value="fade" selected>Fundido (fade)</option>
-                        <option value="fadeblack">Fundido a negro</option>
-                        <option value="wipeleft">Barrido izquierda</option>
-                        <option value="wiperight">Barrido derecha</option>
-                        <option value="wipeup">Barrido arriba</option>
-                        <option value="wipedown">Barrido abajo</option>
-                        <option value="slideleft">Deslizar izquierda</option>
-                        <option value="slideright">Deslizar derecha</option>
-                        <option value="slideup">Deslizar arriba</option>
-                        <option value="slidedown">Deslizar abajo</option>
-                        <option value="circleopen">Círculo (abre)</option>
-                        <option value="circleclose">Círculo (cierra)</option>
-                        <option value="dissolve">Disolución</option>
-                        <option value="pixelize">Pixelado</option>
-                        <option value="radial">Radial</option>
-                        <option value="zoomin">Zoom in</option>
-                        <option value="aleatorio">Aleatoria (una distinta por corte)</option>
-                    </select>
+                    <label>Tipos de transición (se elige al azar ENTRE las marcadas en cada corte; marca 1 sola para que sea siempre esa; ninguna marcada = las 16):</label>
+                    <div class="checks-grid" id="transicion-tipos-checks">
+                        <label><input type="checkbox" value="fade" checked> Fundido</label>
+                        <label><input type="checkbox" value="fadeblack"> Fundido a negro</label>
+                        <label><input type="checkbox" value="wipeleft" checked> Barrido izq.</label>
+                        <label><input type="checkbox" value="wiperight" checked> Barrido der.</label>
+                        <label><input type="checkbox" value="wipeup"> Barrido arriba</label>
+                        <label><input type="checkbox" value="wipedown"> Barrido abajo</label>
+                        <label><input type="checkbox" value="slideleft"> Deslizar izq.</label>
+                        <label><input type="checkbox" value="slideright"> Deslizar der.</label>
+                        <label><input type="checkbox" value="slideup" checked> Deslizar arriba</label>
+                        <label><input type="checkbox" value="slidedown"> Deslizar abajo</label>
+                        <label><input type="checkbox" value="circleopen" checked> Círculo (abre)</label>
+                        <label><input type="checkbox" value="circleclose"> Círculo (cierra)</label>
+                        <label><input type="checkbox" value="dissolve"> Disolución</label>
+                        <label><input type="checkbox" value="pixelize"> Pixelado</label>
+                        <label><input type="checkbox" value="radial"> Radial</label>
+                        <label><input type="checkbox" value="zoomin"> Zoom in</label>
+                    </div>
                 </div>
 
                 <div class="form-group" id="transicion-dur-group">
@@ -292,8 +291,12 @@
                         <option value="anton">Cargando...</option>
                     </select>
 
-                    <label for="subs-tamano" class="mt-sm">Tamaño de letra: <span id="subs-tamano-valor">264</span>pt</label>
-                    <input type="range" id="subs-tamano" min="80" max="360" step="4" value="264">
+                    <label for="subs-tamano" class="mt-sm">Tamaño de letra:</label>
+                    <div class="tamano-row">
+                        <input type="range" id="subs-tamano" min="80" max="360" step="1" value="264">
+                        <input type="number" id="subs-tamano-num" min="80" max="360" step="1" value="264">
+                        <span class="hint">pt</span>
+                    </div>
 
                     <label class="mt-sm">Posición (arrastrá la palabra de ejemplo hacia arriba/abajo):</label>
                     <div id="subs-preview">

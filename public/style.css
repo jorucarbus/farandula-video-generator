@@ -202,6 +202,34 @@ main {
 .btn-row:first-child { margin-top: 0; }
 .btn-row .btn { width: auto; flex: 1 1 auto; min-width: 160px; }
 
+/* Selección múltiple de tipos de transición (Fase 7): grid compacto de checkboxes */
+.checks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 4px 10px;
+    margin-top: 6px;
+}
+.checks-grid label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--text);
+    cursor: pointer;
+}
+.checks-grid input[type="checkbox"] { margin: 0; }
+
+/* Tamaño de subtítulo: slider + número editable lado a lado */
+.tamano-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+.tamano-row input[type="range"] { flex: 1; }
+.tamano-row input[type="number"] { width: 68px; flex: none; }
+
 .section-header-row {
     display: flex;
     align-items: center;
