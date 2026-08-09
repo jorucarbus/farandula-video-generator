@@ -9,9 +9,25 @@ clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
 ## Estado al 2026-08-08
 
-**Fases 1, 2, 3, 4 y 5 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
-`test-persistencia` en `13f38a5`. `farandula-video-family` `main` en `fce9aa1` (Fase 5 no aplica
-a family: no usa ElevenLabs). `main` del principal sigue en `f801076` — sin mergear a propósito.
+**Fases 1 a 6 TERMINADAS hoy** + una corrección importante sobre la Fase 2 el mismo día.
+`test-persistencia` en `8a66c59`. `farandula-video-family` `main` en `fce9aa1` (Fases 5 y 6 no
+aplican a family: no usa ElevenLabs, sin alineación real). `main` del principal sigue en
+`f801076` — sin mergear a propósito.
+
+**Fase 6 (subtítulos ASS), commit `8a66c59`**: estilo único de la Fase 0 (Poppins ExtraBold
+66pt, blanco+contorno negro, resalte amarillo `#f7c204` con rebote `\t` accel<1, tercio
+medio-bajo). `subtitulos.js` nuevo: un evento ASS por PALABRA (texto completo del fragmento,
+palabra activa resaltada) — reusa `fragments` de la Fase 2 directo como bloque de 2 líneas, sin
+re-agrupar. Timing por palabra sale de `tiempos.alinearFragmentos()` (antes
+`duracionesPorFragmento`, ahora también da tiempo real por palabra, no solo por fragmento — un
+solo matching, un solo reloj). `seleccion.tiemposPorFragmento()` extraída y exportada para que
+video y subtítulos usen la MISMA línea de tiempo. Quemado en `video.js` con el filtro `ass` en
+el mux final; si falla, reintenta sin subtítulos (nunca aborta el render). Checkbox en Paso 6,
+marcado por defecto.
+
+Verificado con Gemini+ElevenLabs reales: 39 eventos de palabra, tiempos ordenados sin exceder el
+audio real, quemado real con ffmpeg sin error, frame extraído y revisado visualmente (tipografía,
+contorno, color, rebote, posición — todo dentro de spec).
 
 **Fase 5 (tiempos reales), commit `13f38a5`**: `seleccion.planificarClips()` repartía tiempo por
 % de caracteres — estimado, el techo de calidad del `subtitulos.js` viejo. Ahora usa el tiempo
@@ -30,7 +46,7 @@ Verificado con 3 corridas reales (Gemini + ElevenLabs, sin mocks): caso corto (4
 caso largo (42 fragmentos, 161 palabras) — suma de duraciones por fragmento EXACTA contra la
 duración real medida por ffprobe en los dos, todas las duraciones >0s.
 
-**Próximo paso: Fase 6 (subtítulos ASS), sin empezar.**
+**Próximo paso: Fase 7 (transiciones xfade + rampas), sin empezar. La más delicada del plan.**
 
 **Fase 4 (multifuente + solo audio), commit `8a4bc19`** + portada en `fce9aa1`. Dos cosas:
 
@@ -116,7 +132,7 @@ en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre
 | 3 | Router de modelos dentro de Gemini | **hecha (2026-08-08, `042db6d`)** | Sonnet |
 | 4 | Multifuente + solo audio | **hecha (2026-08-08, `8a4bc19`)** | Sonnet |
 | 5 | Fuente de tiempos intercambiable | **hecha (2026-08-08, `13f38a5`)** | Sonnet |
-| 6 | Subtítulos ASS | no empezada | Sonnet |
+| 6 | Subtítulos ASS | **hecha (2026-08-08, `8a66c59`)** | Sonnet |
 | 7 | Transiciones xfade + rampas | no empezada | Opus |
 | 8 | Música por sentido | no empezada | Sonnet |
 | 9 | Director (reglas → Gemini con fallback) | no empezada | Opus |
