@@ -7,7 +7,62 @@ primero si no conoces el proyecto. Este archivo solo trackea progreso.
 Las dos invariantes que ninguna fase puede romper: video == duración del audio (±0.1s), ningún
 clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
-## Estado al 2026-08-08
+## Estado al 2026-08-08 (continuación — noche)
+
+`test-persistencia` en `2cc1db0` (verificado, push llegó). Después de cerrar la Fase 7 hubo dos
+frentes más, ambos pedidos del usuario usando la app ya en producción — no estaban en el plan
+maestro, se hicieron fuera de orden porque eran pulido de algo recién construido (subtítulos,
+Fase 6) o un bug real que rompía el flujo (síntesis de fuentes).
+
+**1. Iteración de subtítulos, varias vueltas sobre el resultado real (commits `8729022` →
+`8b52364`)**. Orden real de los cambios, cada uno pedido después de VER el anterior:
+- 3 palabras en pantalla → 1 sola palabra a la vez.
+- Tipografía Poppins ExtraBold → Anton → catálogo de **9 tipografías** seleccionables
+  (`subtitulos.js` `FUENTES`, endpoint `GET /api/fuentes-subtitulos`), cada una con su propio
+  `factorAncho` para el resguardo de palabras largas.
+- MAYÚSCULAS, sin fundidos ("no quiero parpadeos, solo un pequeño rebote").
+- Tamaño 66pt → 88pt → 264pt (3x, pedido explícito); posición MarginV 720 → 300 (más abajo,
+  siempre por encima del 15% que tapa TikTok).
+- **Preview arrastrable en el Paso 6** (`#subs-preview`, mockup NO real de 1080x1920 a escala):
+  la palabra de ejemplo se arrastra con pointer events para fijar posición, slider para tamaño,
+  franja roja marcando la zona de TikTok. Carga las 9 tipografías reales vía Google Fonts CSS2
+  **solo para este preview** (el render final sigue self-hosted con ffmpeg/fontsdir, sin CDN).
+- Puntuación: primero se sacó de la pantalla (`limpiarPuntuacion`), después el usuario propuso
+  convertirla en PAUSA en vez de descartarla — `pausaPorPuntuacion()` recorta el `fin` de la
+  palabra que traía el signo (100ms coma/punto y coma/dos puntos, 220ms punto/exclamación/
+  interrogación/puntos suspensivos), dejando un hueco silencioso sin evento ASS antes de la
+  siguiente palabra. No toca video/audio, solo el `.ass` — cero riesgo para las invariantes.
+
+Todo verificado con Gemini+ElevenLabs reales en cada vuelta (nunca solo el `.ass` en crudo:
+frames quemados con ffmpeg e inspeccionados, incluida una corrida confirmando que Bebas Neue/
+Archivo Black/Bangers se aplican de verdad y no caen todas al mismo sustituto).
+
+**2. Multifuente (Fase 4) — dos ajustes de UX, mismo día**:
+- `c29c88c`: el botón hacía DOS cosas (guardar Y sintetizar), y al pasar de paso no quedaba
+  claro que se podían seguir agregando fuentes. Separado en "Agregar fuente" (solo guarda) +
+  "Ya, procesar fuentes" (nuevo botón, sintetiza con todas — reusa `/api/resintetizar`). Límite
+  3→6 fuentes (no había techo técnico real).
+
+**3. Bug real en producción, encontrado por el usuario (commit `2cc1db0`, el más importante de
+esta tanda)**: `llamarJSON()` en `gemini.js` reintentaba con el MISMO modelo que acababa de
+devolver JSON malformado, en vez de subir de verdad un escalón — rompía la lectura de fuentes
+con "JSON inválido tras 2 intentos: JSON irreparable" en producción (screenshot real: leyendo
+una noticia de Arianna Mejía). Causa: el cálculo de qué modelo probar en el reintento se basaba
+en el NÚMERO de intento (`i-1`), no en qué modelo respondió de verdad — y `callGemini()` puede
+saltar varios escalones en silencio por saturación dentro de un solo intento, así que "intento 1"
+no es lo mismo que "escalón 0". Fix: `callGemini()` ahora devuelve `{texto, modelo}`; `llamarJSON()`
+calcula el siguiente escalón con `cadena.indexOf(modelo) + 1`, así que por construcción nunca
+puede repetir el modelo que acaba de fallar. Los 3 llamadores directos de `callGemini`
+(`generarGuion`, `agregarMarcas`, `generarNombreArchivo`) actualizados a desestructurar `.texto`.
+Verificado con Gemini real (los 3 caminos, sin regresión) — la escalación en sí no se pudo forzar
+a reproducir el malformado exacto, verificada por inspección del cálculo, no por repro.
+**Pendiente**: portar este fix a `farandula-video-family` (comparte `gemini.js` tal cual).
+
+**Próximo paso: Fase 8 (música por sentido), sin empezar.**
+
+---
+
+## Estado al 2026-08-08 (Fases 1-7)
 
 **Fases 1 a 7 TERMINADAS hoy** + una corrección importante sobre la Fase 2 y dos ajustes de UX
 sobre multifuente, el mismo día. `test-persistencia` en `6682624`. `farandula-video-family`

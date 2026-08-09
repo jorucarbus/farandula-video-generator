@@ -216,6 +216,29 @@ por servicio — actualizar una NO propaga a las demás. Si se regenera el refre
 
 ## Sesiones recientes
 
+### 2026-08-08 (Windows, noche) — Fase 7, iteración de subtítulos, multifuente UX, fix real de producción
+
+Estado detallado en **[estado-vivo.md](estado-vivo.md)**, sección "continuación — noche".
+`test-persistencia` en `2cc1db0`. Resumen:
+
+- **Fase 7 completa parcial** (`6682624`): transiciones `xfade` (16 tipos + aleatorio) con
+  corrección de solapamiento y ajuste de `CLIP_MAX`, ease-out cúbico en el zoom. Bug real
+  encontrado probando "alternado" (NVENC deja timebases que `concat` no reconcilia antes del
+  siguiente `xfade`) — arreglado re-normalizando `fps=30` en cada etapa. Faltó `setpts`
+  (rampas de velocidad) y transiciones deformadas — fuera de alcance, fase ya grande.
+- **Subtítulos, varias vueltas sobre resultado real** (`8729022`→`8b52364`): terminó en UNA
+  palabra a la vez, catálogo de 9 tipografías (Anton por defecto), mayúsculas, 264pt, más
+  abajo en pantalla, preview arrastrable en el Paso 6 (mockup a escala, tipografía real vía
+  Google Fonts solo para esa vista previa), y la puntuación convertida en PAUSA silenciosa en
+  vez de mostrarse (idea del usuario).
+- **Multifuente** (`c29c88c`): botón partido en "Agregar fuente" / "Ya, procesar fuentes"
+  (antes uno solo hacía las dos cosas), límite 3→6.
+- **Fix real de producción** (`2cc1db0`, encontrado por el usuario con un screenshot):
+  `llamarJSON()` reintentaba con el MISMO modelo que acababa de fallar en vez de escalar de
+  verdad — rompía la lectura de fuentes con "JSON inválido tras 2 intentos". `callGemini()`
+  ahora devuelve `{texto, modelo}` para que el reintento sepa REALMENTE qué modelo probar
+  después. **Pendiente portar a `farandula-video-family`** (mismo `gemini.js`).
+
 ### 2026-08-08 (Windows) — Fases 1, 2, 3 y 4 del plan maestro + protocolo de traspaso a Codex
 
 Estado detallado en **[estado-vivo.md](estado-vivo.md)** (archivo nuevo). Resumen:
