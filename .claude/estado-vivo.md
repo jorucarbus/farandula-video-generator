@@ -58,6 +58,16 @@ Verificado con Gemini real (los 3 caminos, sin regresión) — la escalación en
 a reproducir el malformado exacto, verificada por inspección del cálculo, no por repro.
 **Pendiente**: portar este fix a `farandula-video-family` (comparte `gemini.js` tal cual).
 
+**4. Bug real de producción #2 (commit `f714e47`)**: el usuario reportó "no veo las
+transiciones en el video final". Causa: `xfade` no escala — un solo `filter_complex` con las
+58 entradas de un video real usó **más de 8GB de RAM** (probado local con el mismo tamaño real,
+1080x1920) y no terminaba en tiempo razonable (0.34x tiempo real); Railway se quedaba sin
+memoria y el catch de robustez (correcto, no perdía el video) lo tapaba en silencio cayendo a
+cortes secos. Fix: el plan se corta en **tandas de 10 clips** (`TANDA_MAX`, `video.js`) — cada
+tanda con sus transiciones internas, corte seco entre tandas. Verificado real: los mismos 58
+clips que antes siempre fallaban ahora terminan en 53.7s con ~1.9GB estables, sin fallback,
+sincronía exacta. Videos de ≤10 clips (la mayoría) van por el mismo camino de antes, sin cambio.
+
 **Próximo paso: Fase 8 (música por sentido), sin empezar.**
 
 ---
