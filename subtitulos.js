@@ -1,11 +1,11 @@
 // Fase 6 del plan maestro — subtítulos ASS, estilo palabra por palabra resaltada.
 //
-// Valores por defecto NO son gusto: vienen de la investigación de captions de TikTok 2026 que
-// deja el plan maestro (Fase 0). Un solo estilo, sin muestrario — se afina cambiando un número
-// acá si hace falta, no reescribiendo el generador.
+// Valores por defecto de la investigación de captions TikTok 2026 (plan maestro, Fase 0):
+// sans-serif bold 700+, contorno negro, resalte amarillo, tercio medio-bajo, máx 2 renglones.
+// Sobre esa base, el usuario pidió (2026-08-08, tras ver el resultado real) tres ajustes
+// concretos: letra más grande, que se sienta más fluido, y que en pantalla solo se vean 3
+// palabras a la vez en vez del fragmento entero (que a veces era una frase larga).
 //
-// El texto y el timing salen de fragments (la misma fragmentación de la Fase 2, ~40-60 chars,
-// que ya calza casi exacto con un bloque de subtítulo de 2 líneas — no hace falta re-agrupar).
 // El timing POR PALABRA sale de la alineación real de ElevenLabs (Fase 5) cuando está
 // disponible; si no, se estima repartiendo por caracteres dentro de la ventana del fragmento
 // (mismo principio que el subtitulos.js viejo, pero anclado a un tiempo de fragmento que ya es
@@ -20,10 +20,11 @@ const FUENTE_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/popp
 const FUENTE_ARCHIVO = 'Poppins-ExtraBold.ttf';
 const FUENTE_FAMILIA = 'Poppins ExtraBold';
 
-// Investigación Fase 0: sans-serif bold 700+ (decorativas pierden legibilidad), 55-75pt sobre
-// 1080x1920, blanco con contorno negro, resalte amarillo, tercio medio-bajo, máx 2 renglones.
-const TAMANO_DEFAULT = 66;
-const MAX_CHARS_LINEA = 22;
+// Más grande que el 55-75pt de la investigación original — pedido explícito del usuario, y con
+// solo 3 palabras en pantalla a la vez hay espacio de sobra para que se vea bien.
+const TAMANO_DEFAULT = 88;
+const MAX_CHARS_LINEA = 18; // ajustado hacia abajo junto con el tamaño, para que 3 palabras largas no se corten
+const PALABRAS_POR_GRUPO = 3; // cuántas palabras conviven en pantalla — pedido explícito del usuario
 const COLOR_RESALTE = '&H0004C2F7&'; // amarillo #f7c204 en BGR (formato ASS)
 const COLOR_BASE = '&H00FFFFFF&';
 // MarginV=720 con Alignment=2 (ancla abajo, PlayResY 1920) deja el texto a ~62% de altura —
@@ -65,8 +66,11 @@ function escaparASS(texto) {
 
 // Palabra activa: pop más grande que 100%, rebote con aceleración no lineal (accel<1 = arranca
 // rápido y frena) en dos tramos encadenados, vuelve a color/escala base con \r al terminar.
+// Rebote más corto/contenido que el original (124% en vez de 132%, se asienta en 100ms) —
+// pedido del usuario de que se sienta "más fluido": con solo 3 palabras cambiando rápido en
+// pantalla, un rebote largo se empezaba a sentir espasmódico en vez de rítmico.
 function resaltar(texto) {
-  return `{\\c${COLOR_RESALTE}\\fscx132\\fscy132\\t(0,70,0.6,\\fscx102\\fscy102)\\t(70,150,1.4,\\fscx100\\fscy100)}${escaparASS(texto)}{\\r}`;
+  return `{\\c${COLOR_RESALTE}\\fscx124\\fscy124\\t(0,50,0.5,\\fscx102\\fscy102)\\t(50,100,1.2,\\fscx100\\fscy100)}${escaparASS(texto)}{\\r}`;
 }
 
 // Reparte un fragmento en líneas de hasta maxChars, en límites de palabra — mismo resultado
@@ -88,16 +92,20 @@ function construirLineas(palabras, maxChars) {
   return lineas;
 }
 
-// Texto completo del bloque con la palabra de índice idxActivo resaltada, el resto en el
-// estilo base de la línea (blanco, definido en el Style).
+// Texto completo del bloque (hasta PALABRAS_POR_GRUPO palabras) con la palabra de índice
+// idxActivo resaltada, el resto en el estilo base. \fad(40,40) al frente: un cruce corto de
+// opacidad en cada cambio de palabra/grupo, para que no se sienta como un corte seco — pedido
+// del usuario ("más fluidos"). 40ms es una fracción chica de la duración típica de una palabra
+// (150-600ms), no deja aire muerto entre eventos.
 function renderBloque(lineas, idxActivo) {
   let i = -1;
-  return lineas
+  const texto = lineas
     .map(linea => linea.map(p => {
       i++;
       return i === idxActivo ? resaltar(p.texto) : escaparASS(p.texto);
     }).join(' '))
     .join('\\N');
+  return `{\\fad(40,40)}${texto}`;
 }
 
 // Sin alineación real: reparte el fragmento por caracteres dentro de su ventana de tiempo
@@ -124,6 +132,7 @@ function palabrasEstimadas(texto, ventana) {
 function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones = {}) {
   const tamano = opciones.tamano || TAMANO_DEFAULT;
   const maxCharsLinea = opciones.maxCharsLinea || MAX_CHARS_LINEA;
+  const porGrupo = opciones.palabrasPorGrupo || PALABRAS_POR_GRUPO;
 
   let t = 0;
   const ventanas = tiemposFragmentos.map(d => {
@@ -132,21 +141,38 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     return v;
   });
 
-  const eventos = [];
+  // 1. Aplanar TODAS las palabras de TODOS los fragmentos, en orden, con su tiempo real (o
+  // estimado dentro de la ventana de su fragmento). Los grupos de a `porGrupo` se arman sobre
+  // este flujo continuo — un grupo puede cruzar el límite de dos fragmentos si eso cae mejor de
+  // a tres; el subtítulo no tiene por qué respetar el mismo corte que usa el video.
+  const todas = [];
   fragments.forEach((f, idx) => {
     const ventana = ventanas[idx];
     if (!ventana || !f.texto) return;
     const real = palabrasPorFragmento && palabrasPorFragmento[idx];
     const palabras = (real && real.length) ? real : palabrasEstimadas(f.texto, ventana);
-    if (!palabras.length) return;
+    todas.push(...palabras);
+  });
 
-    const lineas = construirLineas(palabras, maxCharsLinea);
-    palabras.forEach((p, i) => {
+  // 2. Agrupar de a `porGrupo` palabras consecutivas — en pantalla nunca hay más que eso.
+  const grupos = [];
+  for (let i = 0; i < todas.length; i += porGrupo) {
+    grupos.push(todas.slice(i, i + porGrupo));
+  }
+
+  // 3. Un evento por PALABRA dentro de cada grupo: el grupo entero queda a la vista mientras
+  // dura, la palabra activa se resalta y avanza; al pasar al siguiente grupo cambia el texto
+  // completo (eso es lo que se ve como "de tres en tres").
+  const eventos = [];
+  for (const grupo of grupos) {
+    if (!grupo.length) continue;
+    const lineas = construirLineas(grupo, maxCharsLinea);
+    grupo.forEach((p, i) => {
       if (p.fin <= p.inicio) return; // evento de duración ≤0, se salta (no rompe el .ass)
       const texto = renderBloque(lineas, i);
       eventos.push(`Dialogue: 0,${tiempoASS(p.inicio)},${tiempoASS(p.fin)},Base,,0,0,0,,${texto}`);
     });
-  });
+  }
 
   const ass = `[Script Info]
 ScriptType: v4.00+
