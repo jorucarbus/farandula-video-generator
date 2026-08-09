@@ -126,6 +126,20 @@ function elegirTransicion(tipo) {
   return TRANSICIONES_DISPONIBLES.includes(tipo) ? tipo : 'fade';
 }
 
+// `xfade` no escala a videos con muchos clips: un filter_complex con 58 entradas encadenadas
+// (probado real, 2026-08-09, a 1080x1920) llegó a más de 8GB de RAM y no terminaba en tiempo
+// razonable (0.34x tiempo real) — eso es justo lo que tumbaba el render en Railway y caía en
+// silencio a cortes secos, sin que el usuario supiera por qué. 10 clips en una sola cadena
+// verificado real: 9.2s, sin problema. Por eso el plan se corta en TANDAS (ver renderizarPorTandas).
+const TANDA_MAX = 10;
+
+// true si el corte k (entre clip k y k+1) cae justo en el borde de una tanda — ahí NUNCA hay
+// transición (cada tanda se renderiza por separado), así que ese clip no necesita la cola de
+// mezcla extra.
+function esLimiteDeTanda(k, tam = TANDA_MAX) {
+  return (k + 1) % tam === 0;
+}
+
 // Encadena segmentos YA CORTADOS (algunos con cola extra de `duracion` segundos, ver
 // montarVideoPlan) con `xfade` en los cortes activos y `concat` (sin mezcla) en los demás —
 // mismo filtro_complex, una sola pasada de ffmpeg. `duracionesVisibles[i]` es la duración QUE
@@ -177,6 +191,42 @@ async function renderizarConTransiciones(segmentos, duracionesVisibles, outPath,
   ]);
 }
 
+// Encadena TODO el plan con transiciones, pero en TANDAS de TANDA_MAX clips en vez de un solo
+// filter_complex gigante (ver TANDA_MAX arriba para el porqué). Cada tanda se renderiza aparte
+// con sus transiciones internas; las tandas se pegan entre sí con concat plano — el clip en el
+// borde de cada tanda ya se cortó SIN cola de mezcla (esLimiteDeTanda en montarVideoPlan), así
+// que no hay nada que perder en esa unión.
+async function renderizarPorTandas(segmentos, duracionesVisibles, outPath, opts, jobId) {
+  const tandas = [];
+  for (let i = 0; i < segmentos.length; i += TANDA_MAX) {
+    tandas.push({ segs: segmentos.slice(i, i + TANDA_MAX), durs: duracionesVisibles.slice(i, i + TANDA_MAX) });
+  }
+
+  if (tandas.length === 1) {
+    return renderizarConTransiciones(tandas[0].segs, tandas[0].durs, outPath, opts);
+  }
+
+  console.log(`  🎞️ ${segmentos.length} clips: transiciones en ${tandas.length} tandas de hasta ${TANDA_MAX}`);
+  const tandaPaths = [];
+  for (let t = 0; t < tandas.length; t++) {
+    const tp = path.join(TEMP_DIR, `${jobId}_tanda${t}.mp4`);
+    if (tandas[t].segs.length === 1) {
+      // Una tanda de 1 no tiene fronteras internas que mezclar (renderizarConTransiciones
+      // necesita ≥2 segmentos, su loop no arma la etiqueta [vout] con uno solo).
+      fs.copyFileSync(tandas[t].segs[0], tp);
+    } else {
+      await renderizarConTransiciones(tandas[t].segs, tandas[t].durs, tp, opts);
+    }
+    tandaPaths.push(tp);
+  }
+
+  const listaPath = path.join(TEMP_DIR, `${jobId}_lista_tandas.txt`);
+  fs.writeFileSync(listaPath, tandaPaths.map(s => `file '${s.replace(/'/g, "'\\''")}'`).join('\n'));
+  await ffmpeg(['-f', 'concat', '-safe', '0', '-i', listaPath, '-c', 'copy', outPath]);
+
+  [...tandaPaths, listaPath].forEach(f => { try { fs.unlinkSync(f); } catch {} });
+}
+
 // ---- Montaje v2: por plan de clips + zoom/espejo/subtítulos + transiciones (Fase 7) ----
 // plan: [{videoId, offset, duracion}], archivos: {videoId: ruta local}
 // efectos: { zoom, zoomPct, espejo, transicion, transicionDur, transicionTipo, subsPath, fuentesDir }
@@ -207,7 +257,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     // de metraje fuente para la cola de mezcla (Fase 7, corrección de solapamiento). Por eso
     // server.js ya bajó CLIP_MAX a CLIP_MAX-transDur al planificar: duracion+padding nunca pasa
     // del límite legal de 3s. Ver comentario largo en renderizarConTransiciones() para el resto.
-    const activaTransicion = !esUltimo && transPreset !== 'ninguno' && decidirEfecto(transPreset, k).activo;
+    const activaTransicion = !esUltimo && transPreset !== 'ninguno' && decidirEfecto(transPreset, k).activo && !esLimiteDeTanda(k);
     const padding = activaTransicion ? transDur : 0;
 
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
@@ -260,7 +310,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     await concatPlano();
   } else {
     try {
-      await renderizarConTransiciones(segmentos, duracionesVisibles, basePath, { preset: transPreset, duracion: transDur, tipo: transTipo, enc });
+      await renderizarPorTandas(segmentos, duracionesVisibles, basePath, { preset: transPreset, duracion: transDur, tipo: transTipo, enc }, jobId);
     } catch (e) {
       // Regla de robustez: si la cadena de xfade falla (tipo de transición no soportado por
       // esta build de ffmpeg, filtergraph rechazado), cae a cortes secos en vez de perder el
