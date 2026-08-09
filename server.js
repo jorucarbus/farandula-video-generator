@@ -775,7 +775,12 @@ app.post('/api/generate-video', async (req, res) => {
     if (efectos?.subtitulos !== false) {
       try {
         const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, audioAprobado?.duracionesReales);
-        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, audioAprobado?.palabrasAlineadas, { jobId: renderId, tempDir: video.TEMP_DIR });
+        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, audioAprobado?.palabrasAlineadas, {
+          jobId: renderId,
+          tempDir: video.TEMP_DIR,
+          tamano: Number.isFinite(efectos?.subtitulosTamano) ? efectos.subtitulosTamano : undefined,
+          marginV: Number.isFinite(efectos?.subtitulosMarginV) ? efectos.subtitulosMarginV : undefined,
+        });
         fuentesDir = await subtitulos.obtenerCarpetaFuentes();
       } catch (e) {
         console.warn(`  ⚠️ [${renderId}] Subtítulos no se pudieron generar (${e.message}), el video sale sin ellos`);

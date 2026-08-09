@@ -865,6 +865,8 @@ async function handleGenerateVideo() {
                     zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                     subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
+                    subtitulosTamano: subsTamano,
+                    subtitulosMarginV: subsMarginV,
                     transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
                     transicionTipo: document.getElementById('transicion-tipo')?.value || 'fade',
                     transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
@@ -1402,6 +1404,62 @@ async function cargarCanales() {
 
 // Inicialización
 // Inserta los iconos declarados en HTML como <span data-icon="nombreIcono">
+// --- Vista previa de tamaño/posición de subtítulos ---
+// No es un render real: un mockup a escala del canvas 1080x1920 que usa subtitulos.js (Fase 6),
+// con la palabra de ejemplo arrastrable verticalmente y un slider de tamaño. Los valores por
+// defecto tienen que calzar con TAMANO_DEFAULT/MARGIN_V de subtitulos.js — si se cambian ahí,
+// cambiar acá también.
+const SUBS_PLAYRES_Y = 1920;
+let subsTamano = 264;
+let subsMarginV = 300;
+
+function initSubsPreview() {
+    const slider = document.getElementById('subs-tamano');
+    const valor = document.getElementById('subs-tamano-valor');
+    const preview = document.getElementById('subs-preview');
+    const palabra = document.getElementById('subs-preview-word');
+    if (!slider || !preview || !palabra) return;
+
+    const escala = () => preview.clientHeight / SUBS_PLAYRES_Y;
+    // Mismo resguardo que tamanoSeguro() en subtitulos.js, pero visual: si "PALABRA" no entra a
+    // ese tamaño en el ancho del mockup, la achica hasta que quepa — es justo lo que pasaría con
+    // una palabra larga en el render real, así el ejemplo no queda cortado contra el borde.
+    const pintarTamano = () => {
+        let px = Math.max(8, subsTamano * escala());
+        palabra.style.fontSize = `${px}px`;
+        const anchoMax = preview.clientWidth * 0.92;
+        if (palabra.scrollWidth > anchoMax) {
+            px = px * (anchoMax / palabra.scrollWidth);
+            palabra.style.fontSize = `${Math.max(6, px)}px`;
+        }
+    };
+    const pintarPosicion = () => { palabra.style.bottom = `${subsMarginV * escala()}px`; };
+
+    slider.addEventListener('input', () => {
+        subsTamano = Number(slider.value);
+        valor.textContent = subsTamano;
+        pintarTamano();
+    });
+
+    let arrastrando = false;
+    const moverA = (clientY) => {
+        const rect = preview.getBoundingClientRect();
+        const desdeAbajoPx = Math.max(0, Math.min(rect.height, rect.bottom - clientY));
+        subsMarginV = Math.round((desdeAbajoPx / rect.height) * SUBS_PLAYRES_Y);
+        pintarPosicion();
+    };
+    palabra.addEventListener('pointerdown', e => {
+        arrastrando = true;
+        palabra.setPointerCapture(e.pointerId);
+    });
+    palabra.addEventListener('pointermove', e => { if (arrastrando) moverA(e.clientY); });
+    palabra.addEventListener('pointerup', () => { arrastrando = false; });
+    palabra.addEventListener('pointercancel', () => { arrastrando = false; });
+
+    pintarTamano();
+    pintarPosicion();
+}
+
 function aplicarIconos() {
     document.querySelectorAll('[data-icon]').forEach(el => {
         el.innerHTML = (typeof ICONS !== 'undefined' && ICONS[el.dataset.icon]) || '';
@@ -1418,6 +1476,7 @@ document.addEventListener('DOMContentLoaded', () => {
         iniciarSesion();
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
+    initSubsPreview();
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

@@ -70,6 +70,14 @@ function escaparASS(texto) {
   return texto.replace(/[{}]/g, '').replace(/\\(?!N)/g, '');
 }
 
+// Quita puntuación de los BORDES de la palabra ("CUMPLEAÑOS." → "CUMPLEAÑOS", "¿QUÉ" → "QUÉ") —
+// pedido del usuario, en subtítulo grande de una sola palabra un punto o coma suelto se ve como
+// ruido, no como puntuación real. No toca guiones/apóstrofes INTERNOS (co-conductora se queda
+// igual) ni letras/tildes/eñes.
+function limpiarPuntuacion(texto) {
+  return texto.replace(/^[.,;:!?¡¿"'"«»…]+|[.,;:!?¡¿"'"«»…]+$/g, '');
+}
+
 // Si la palabra (ya en MAYÚSCULAS) no entra en el ancho útil al tamaño pedido, la achica lo
 // justo para que quepa — nunca por debajo del tamaño anterior (88pt), como piso razonable.
 function tamanoSeguro(texto, tamanoBase) {
@@ -106,13 +114,14 @@ function construirLineas(palabras, maxChars) {
 }
 
 // Texto completo del bloque con la palabra de índice idxActivo resaltada (con su propio tamaño
-// seguro), el resto en el estilo base.
-function renderBloque(lineas, idxActivo) {
+// seguro), el resto en el estilo base. `tamano` es el pedido por el usuario (opciones.tamano en
+// generarASS, o TAMANO_DEFAULT) — tamanoSeguro() lo respeta salvo que la palabra no entre.
+function renderBloque(lineas, idxActivo, tamano) {
   let i = -1;
   return lineas
     .map(linea => linea.map(p => {
       i++;
-      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, TAMANO_DEFAULT)) : escaparASS(p.texto);
+      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, tamano)) : escaparASS(p.texto);
     }).join(' '))
     .join('\\N');
 }
@@ -140,6 +149,7 @@ function palabrasEstimadas(texto, ventana) {
 // omite y sigue con el resto — nunca tumba el render completo por un subtítulo.
 function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones = {}) {
   const tamano = opciones.tamano || TAMANO_DEFAULT;
+  const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : MARGIN_V;
   const maxCharsLinea = opciones.maxCharsLinea || MAX_CHARS_LINEA;
   const porGrupo = opciones.palabrasPorGrupo || PALABRAS_POR_GRUPO;
 
@@ -151,15 +161,18 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
   });
 
   // 1. Aplanar TODAS las palabras de TODOS los fragmentos, en orden, con su tiempo real (o
-  // estimado dentro de la ventana de su fragmento), y pasarlas a MAYÚSCULAS — pedido explícito.
-  // toUpperCase() de JS respeta tildes/eñes en español (CAFÉ, AÑO), no hace falta normalizar.
+  // estimado dentro de la ventana de su fragmento); MAYÚSCULAS (toUpperCase respeta tildes/eñes:
+  // CAFÉ, AÑO) y sin puntuación en los bordes. Si a una palabra no le queda nada tras limpiarla
+  // (rarísimo: un token que era solo puntuación), se descarta en vez de mostrar un evento vacío.
   const todas = [];
   fragments.forEach((f, idx) => {
     const ventana = ventanas[idx];
     if (!ventana || !f.texto) return;
     const real = palabrasPorFragmento && palabrasPorFragmento[idx];
     const palabras = (real && real.length) ? real : palabrasEstimadas(f.texto, ventana);
-    todas.push(...palabras.map(p => ({ ...p, texto: p.texto.toUpperCase() })));
+    todas.push(...palabras
+      .map(p => ({ ...p, texto: limpiarPuntuacion(p.texto.toUpperCase()) }))
+      .filter(p => p.texto));
   });
 
   // 2. Agrupar de a `porGrupo` palabras consecutivas — en pantalla nunca hay más que eso.
@@ -176,7 +189,7 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     const lineas = construirLineas(grupo, maxCharsLinea);
     grupo.forEach((p, i) => {
       if (p.fin <= p.inicio) return; // evento de duración ≤0, se salta (no rompe el .ass)
-      const texto = renderBloque(lineas, i);
+      const texto = renderBloque(lineas, i, tamano);
       eventos.push(`Dialogue: 0,${tiempoASS(p.inicio)},${tiempoASS(p.fin)},Base,,0,0,0,,${texto}`);
     });
   }
@@ -190,7 +203,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Base,${FUENTE_FAMILIA},${tamano},${COLOR_BASE},${COLOR_BASE},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,60,60,${MARGIN_V},1
+Style: Base,${FUENTE_FAMILIA},${tamano},${COLOR_BASE},${COLOR_BASE},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,60,60,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
