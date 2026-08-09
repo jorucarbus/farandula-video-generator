@@ -42,6 +42,12 @@ function setModo(modo) {
     MODO = modo;
     document.getElementById('modo-selector').dataset.modo = modo;
     document.getElementById('producto-final-label').textContent = modo === 'video' ? 'Video' : 'Insumos';
+    // Transiciones son un efecto ENTRE clips — no aplica a Insumos (clips sueltos para editar
+    // a mano, cada uno con sus propios efectos quemados pero sin mezcla con el vecino).
+    const esInsumos = modo === 'insumos';
+    ['transicion-group', 'transicion-tipo-group', 'transicion-dur-group'].forEach(id => {
+        document.getElementById(id)?.classList.toggle('hidden', esInsumos);
+    });
     // Volver al inicio (paso 1) con estado limpio
     state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null };
     renderFuentesLista();
@@ -859,6 +865,9 @@ async function handleGenerateVideo() {
                     zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                     subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
+                    transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
+                    transicionTipo: document.getElementById('transicion-tipo')?.value || 'fade',
+                    transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
                 },
             });
             log('✅ Video generado');

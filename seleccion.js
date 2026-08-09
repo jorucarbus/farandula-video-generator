@@ -44,10 +44,14 @@ function shuffle(arr) {
   return a;
 }
 
-// Reparte la duración de un párrafo en tomas de ≤ CLIP_MAX segundos, todas iguales.
+// Reparte la duración de un párrafo en tomas de ≤ clipMax segundos, todas iguales.
 // Ej: 7s → 3 tomas de 2.33s (mejor 2 cortas que una toma alargada).
-function repartirTomas(duracion) {
-  const n = Math.max(1, Math.ceil(duracion / CLIP_MAX));
+// clipMax (Fase 7, opcional): con transiciones xfade activas, cada clip que empalma con la
+// siguiente necesita `duración + D` de metraje FUENTE para la cola de mezcla — así que el
+// llamador pasa `CLIP_MAX - D` para que esa cola nunca empuje la extracción real por encima
+// del límite legal de 3s. Sin transiciones, se usa el CLIP_MAX normal (comportamiento de siempre).
+function repartirTomas(duracion, clipMax = CLIP_MAX) {
+  const n = Math.max(1, Math.ceil(duracion / clipMax));
   return Array(n).fill(duracion / n);
 }
 
@@ -97,8 +101,10 @@ function tiemposPorFragmento(parrafos, duracionAudio, duracionesReales = null) {
 // duracionesReales (Fase 5, opcional): tiempo real por párrafo medido con la alineación de
 // ElevenLabs (ver tiempos.js). Si no llega, o no calza en longitud con parrafos, se cae al
 // reparto por % de caracteres — mismo comportamiento de siempre, sin romper nada.
+// clipMax (Fase 7, opcional): ver repartirTomas() — pasar CLIP_MAX - D cuando el render va a
+// llevar transiciones xfade. Sin esto (default), comportamiento idéntico a antes de la Fase 7.
 // Devuelve: [{videoId, nombre, famoso, offset, duracion, parrafoIdx}] en orden de línea de tiempo
-function planificarClips(parrafos, duracionAudio, inventario, duracionesReales = null) {
+function planificarClips(parrafos, duracionAudio, inventario, duracionesReales = null, clipMax = CLIP_MAX) {
   const historial = cargarHistorial();
   const usaReales = Array.isArray(duracionesReales) && duracionesReales.length === parrafos.length;
   if (usaReales) console.log('  ⏱️ Usando tiempos reales de la locución (no % de caracteres)');
@@ -113,7 +119,7 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
 
   const requerimientos = [];
   for (const bloque of bloques) {
-    for (const dur of repartirTomas(bloque.tiempo)) {
+    for (const dur of repartirTomas(bloque.tiempo, clipMax)) {
       requerimientos.push({ famoso: bloque.famoso, dur, parrafoIdx: bloque.indices[0] });
     }
   }

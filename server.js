@@ -748,10 +748,17 @@ app.post('/api/generate-video', async (req, res) => {
     }
 
     // 3. Plan de clips: tiempo real por fragmento (Fase 5) si el audio aprobado lo trae, si no
-    // % por caracteres → tomas ≤3s con rotación sin repetir
-    const plan = seleccion.planificarClips(fragments, durAudio, inventario, audioAprobado?.duracionesReales);
+    // % por caracteres → tomas ≤clipMax con rotación sin repetir.
+    // Fase 7: con transiciones activas, cada clip que empalma con el siguiente necesita
+    // `transicionDur` segundos EXTRA de metraje fuente para la cola de mezcla — bajar el techo
+    // de planificación a CLIP_MAX-D asegura que esa cola nunca empuje la extracción real por
+    // encima del límite legal de 3s (ver seleccion.repartirTomas y video.montarVideoPlan).
+    const transicionActiva = (efectos?.transicion || 'ninguno') !== 'ninguno';
+    const transicionDur = Math.min(0.6, Math.max(0.1, Number.isFinite(efectos?.transicionDur) ? efectos.transicionDur : 0.35));
+    const clipMaxEfectivo = transicionActiva ? Math.max(0.8, seleccion.CLIP_MAX - transicionDur) : seleccion.CLIP_MAX;
+    const plan = seleccion.planificarClips(fragments, durAudio, inventario, audioAprobado?.duracionesReales, clipMaxEfectivo);
     const clipsValidos = plan.filter(Boolean);
-    console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)`);
+    console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)${transicionActiva ? `, CLIP_MAX efectivo ${clipMaxEfectivo.toFixed(2)}s (transiciones activas)` : ''}`);
 
     // 4. Descargar los videos únicos del plan
     console.log(`⬇️ [${renderId}] Descargando clips...`);
