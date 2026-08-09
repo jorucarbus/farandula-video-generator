@@ -1,10 +1,9 @@
-// Fase 6 del plan maestro — subtítulos ASS, estilo palabra por palabra resaltada.
+// Fase 6 del plan maestro — subtítulos ASS, estilo palabra por palabra.
 //
-// Valores por defecto de la investigación de captions TikTok 2026 (plan maestro, Fase 0):
-// sans-serif bold 700+, contorno negro, resalte amarillo, tercio medio-bajo, máx 2 renglones.
-// Sobre esa base, el usuario pidió (2026-08-08, tras ver el resultado real) tres ajustes
-// concretos: letra más grande, que se sienta más fluido, y que en pantalla solo se vean 3
-// palabras a la vez en vez del fragmento entero (que a veces era una frase larga).
+// Rediseñado dos veces sobre datos reales (2026-08-08): primero de "fragmento entero con una
+// palabra resaltada" a "grupos de 3 palabras", después a UNA palabra a la vez — pedido explícito
+// del usuario, con tipografía Anton, mayúsculas, sin fundidos (solo un rebote chico) y tamaño
+// 3x más grande, más abajo en pantalla (justo arriba de donde TikTok pone su propia interfaz).
 //
 // El timing POR PALABRA sale de la alineación real de ElevenLabs (Fase 5) cuando está
 // disponible; si no, se estima repartiendo por caracteres dentro de la ventana del fragmento
@@ -16,21 +15,28 @@ const axios = require('axios');
 
 const TEMP_DIR = path.join(__dirname, 'temp-videos');
 const FUENTES_DIR = path.join(TEMP_DIR, 'fuentes');
-const FUENTE_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-ExtraBold.ttf';
-const FUENTE_ARCHIVO = 'Poppins-ExtraBold.ttf';
-const FUENTE_FAMILIA = 'Poppins ExtraBold';
+const FUENTE_URL = 'https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf';
+const FUENTE_ARCHIVO = 'Anton-Regular.ttf';
+const FUENTE_FAMILIA = 'Anton';
 
-// Más grande que el 55-75pt de la investigación original — pedido explícito del usuario, y con
-// solo 3 palabras en pantalla a la vez hay espacio de sobra para que se vea bien.
-const TAMANO_DEFAULT = 88;
-const MAX_CHARS_LINEA = 18; // ajustado hacia abajo junto con el tamaño, para que 3 palabras largas no se corten
-const PALABRAS_POR_GRUPO = 3; // cuántas palabras conviven en pantalla — pedido explícito del usuario
+// 3x el tamaño anterior (88pt) — pedido explícito del usuario. Con una sola palabra en pantalla
+// a la vez hay espacio; el resguardo real está en tamanoSeguro() más abajo, para palabras largas.
+const TAMANO_DEFAULT = 264;
+const MAX_CHARS_LINEA = 18; // ya casi no se usa con 1 palabra por grupo, se deja por si se sube porGrupo
+const PALABRAS_POR_GRUPO = 1; // una palabra a la vez — pedido explícito del usuario
 const COLOR_RESALTE = '&H0004C2F7&'; // amarillo #f7c204 en BGR (formato ASS)
 const COLOR_BASE = '&H00FFFFFF&';
-// MarginV=720 con Alignment=2 (ancla abajo, PlayResY 1920) deja el texto a ~62% de altura —
-// dentro del "60-65%" que pide el plan para no chocar con la interfaz de TikTok (tapa el 15%
-// inferior, y=1632 en adelante).
-const MARGIN_V = 720;
+// Más abajo que antes (MarginV 720→300), pedido explícito: "más abajo, solo más arriba que
+// donde está lo de TikTok". TikTok tapa el 15% inferior (288px de 1920) con su propia interfaz;
+// 300 deja el borde del texto justo por encima de esa franja, sin invadirla.
+const MARGIN_V = 300;
+// Ancho útil del canvas para el resguardo de palabras largas (ver tamanoSeguro): PlayResX menos
+// los márgenes laterales del Style.
+const ANCHO_UTIL = 1080 - 60 - 60;
+// Ancho aproximado de un carácter en Anton, como fracción del tamaño de fuente — es una
+// tipográfica condensada (por eso se eligió: entran más letras por punto de tamaño que en una
+// sans-serif normal), pero a 264pt una palabra larga en MAYÚSCULAS igual puede desbordar.
+const FACTOR_ANCHO_ANTON = 0.62;
 
 // Descarga la tipografía UNA sola vez (cache en disco, sobrevive entre renders del mismo
 // proceso). Si falla (sin internet, URL cambiada), no aborta: libass sustituye por una fuente
@@ -64,17 +70,24 @@ function escaparASS(texto) {
   return texto.replace(/[{}]/g, '').replace(/\\(?!N)/g, '');
 }
 
-// Palabra activa: pop más grande que 100%, rebote con aceleración no lineal (accel<1 = arranca
-// rápido y frena) en dos tramos encadenados, vuelve a color/escala base con \r al terminar.
-// Rebote más corto/contenido que el original (124% en vez de 132%, se asienta en 100ms) —
-// pedido del usuario de que se sienta "más fluido": con solo 3 palabras cambiando rápido en
-// pantalla, un rebote largo se empezaba a sentir espasmódico en vez de rítmico.
-function resaltar(texto) {
-  return `{\\c${COLOR_RESALTE}\\fscx124\\fscy124\\t(0,50,0.5,\\fscx102\\fscy102)\\t(50,100,1.2,\\fscx100\\fscy100)}${escaparASS(texto)}{\\r}`;
+// Si la palabra (ya en MAYÚSCULAS) no entra en el ancho útil al tamaño pedido, la achica lo
+// justo para que quepa — nunca por debajo del tamaño anterior (88pt), como piso razonable.
+function tamanoSeguro(texto, tamanoBase) {
+  const anchoEstimado = texto.length * tamanoBase * FACTOR_ANCHO_ANTON;
+  if (anchoEstimado <= ANCHO_UTIL) return tamanoBase;
+  return Math.max(88, Math.floor(ANCHO_UTIL / (texto.length * FACTOR_ANCHO_ANTON)));
 }
 
-// Reparte un fragmento en líneas de hasta maxChars, en límites de palabra — mismo resultado
-// sin importar cuál palabra esté activa, así el bloque no "salta" de línea entre eventos.
+// Palabra en pantalla: pop con rebote CHICO (accel<1 = arranca rápido, frena), sin fundidos de
+// opacidad — pedido explícito ("no quiero parpadeos, solo un pequeño rebote"). \fs al frente
+// para el resguardo de tamaño de tamanoSeguro(); \r al final vuelve a color/escala/tamaño base.
+function resaltar(texto, tamano) {
+  return `{\\fs${tamano}\\c${COLOR_RESALTE}\\fscx112\\fscy112\\t(0,60,0.6,\\fscx100\\fscy100)}${escaparASS(texto)}{\\r}`;
+}
+
+// Reparte un grupo en líneas de hasta maxChars, en límites de palabra. Con PALABRAS_POR_GRUPO=1
+// nunca hay más de una palabra por grupo, así que esto en la práctica siempre da 1 línea — se
+// deja general por si se vuelve a subir porGrupo más adelante.
 function construirLineas(palabras, maxChars) {
   const lineas = [];
   let actual = [];
@@ -92,20 +105,16 @@ function construirLineas(palabras, maxChars) {
   return lineas;
 }
 
-// Texto completo del bloque (hasta PALABRAS_POR_GRUPO palabras) con la palabra de índice
-// idxActivo resaltada, el resto en el estilo base. \fad(40,40) al frente: un cruce corto de
-// opacidad en cada cambio de palabra/grupo, para que no se sienta como un corte seco — pedido
-// del usuario ("más fluidos"). 40ms es una fracción chica de la duración típica de una palabra
-// (150-600ms), no deja aire muerto entre eventos.
+// Texto completo del bloque con la palabra de índice idxActivo resaltada (con su propio tamaño
+// seguro), el resto en el estilo base.
 function renderBloque(lineas, idxActivo) {
   let i = -1;
-  const texto = lineas
+  return lineas
     .map(linea => linea.map(p => {
       i++;
-      return i === idxActivo ? resaltar(p.texto) : escaparASS(p.texto);
+      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, TAMANO_DEFAULT)) : escaparASS(p.texto);
     }).join(' '))
     .join('\\N');
-  return `{\\fad(40,40)}${texto}`;
 }
 
 // Sin alineación real: reparte el fragmento por caracteres dentro de su ventana de tiempo
@@ -142,16 +151,15 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
   });
 
   // 1. Aplanar TODAS las palabras de TODOS los fragmentos, en orden, con su tiempo real (o
-  // estimado dentro de la ventana de su fragmento). Los grupos de a `porGrupo` se arman sobre
-  // este flujo continuo — un grupo puede cruzar el límite de dos fragmentos si eso cae mejor de
-  // a tres; el subtítulo no tiene por qué respetar el mismo corte que usa el video.
+  // estimado dentro de la ventana de su fragmento), y pasarlas a MAYÚSCULAS — pedido explícito.
+  // toUpperCase() de JS respeta tildes/eñes en español (CAFÉ, AÑO), no hace falta normalizar.
   const todas = [];
   fragments.forEach((f, idx) => {
     const ventana = ventanas[idx];
     if (!ventana || !f.texto) return;
     const real = palabrasPorFragmento && palabrasPorFragmento[idx];
     const palabras = (real && real.length) ? real : palabrasEstimadas(f.texto, ventana);
-    todas.push(...palabras);
+    todas.push(...palabras.map(p => ({ ...p, texto: p.texto.toUpperCase() })));
   });
 
   // 2. Agrupar de a `porGrupo` palabras consecutivas — en pantalla nunca hay más que eso.
@@ -160,9 +168,8 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     grupos.push(todas.slice(i, i + porGrupo));
   }
 
-  // 3. Un evento por PALABRA dentro de cada grupo: el grupo entero queda a la vista mientras
-  // dura, la palabra activa se resalta y avanza; al pasar al siguiente grupo cambia el texto
-  // completo (eso es lo que se ve como "de tres en tres").
+  // 3. Un evento por PALABRA dentro de cada grupo (con porGrupo=1, un evento = una palabra =
+  // todo lo que se ve en pantalla en ese instante).
   const eventos = [];
   for (const grupo of grupos) {
     if (!grupo.length) continue;
