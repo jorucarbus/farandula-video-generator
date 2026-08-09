@@ -79,6 +79,18 @@ function agruparParaClips(parrafos, tiempos) {
   return bloques;
 }
 
+// Tiempo por párrafo: real (Fase 5, si calza en longitud con parrafos) o estimado por % de
+// caracteres (techo de calidad anterior a la Fase 5). Compartido entre planificarClips() y
+// subtitulos.js — misma línea de tiempo para el corte de video y para los subtítulos, nunca
+// dos relojes distintos.
+function tiemposPorFragmento(parrafos, duracionAudio, duracionesReales = null) {
+  const usaReales = Array.isArray(duracionesReales) && duracionesReales.length === parrafos.length;
+  if (usaReales) return duracionesReales;
+  const totalChars = parrafos.reduce((s, p) => s + p.caracteres, 0);
+  if (!totalChars) throw new Error('Párrafos sin caracteres');
+  return parrafos.map(p => duracionAudio * (p.caracteres / totalChars));
+}
+
 // parrafos: [{texto, famoso, caracteres}] en orden narrativo
 // duracionAudio: segundos reales de la locución (ffprobe)
 // inventario: {famoso: [{id, name, duracion|null}]}
@@ -88,16 +100,11 @@ function agruparParaClips(parrafos, tiempos) {
 // Devuelve: [{videoId, nombre, famoso, offset, duracion, parrafoIdx}] en orden de línea de tiempo
 function planificarClips(parrafos, duracionAudio, inventario, duracionesReales = null) {
   const historial = cargarHistorial();
-  const totalChars = parrafos.reduce((s, p) => s + p.caracteres, 0);
-  if (!totalChars) throw new Error('Párrafos sin caracteres');
-
-  // 1. Línea de tiempo: tiempo real por párrafo si está disponible; si no, estimado por %
-  // de caracteres (techo de calidad anterior a la Fase 5). Agrupar los muy cortos → sus tomas.
   const usaReales = Array.isArray(duracionesReales) && duracionesReales.length === parrafos.length;
   if (usaReales) console.log('  ⏱️ Usando tiempos reales de la locución (no % de caracteres)');
-  const tiempos = usaReales
-    ? duracionesReales
-    : parrafos.map(p => duracionAudio * (p.caracteres / totalChars));
+
+  // 1. Línea de tiempo por párrafo → agrupar los muy cortos → sus tomas
+  const tiempos = tiemposPorFragmento(parrafos, duracionAudio, duracionesReales);
   const bloques = agruparParaClips(parrafos, tiempos);
   const fusionados = parrafos.length - bloques.length;
   if (fusionados > 0) {
@@ -205,4 +212,4 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
   return plan;
 }
 
-module.exports = { planificarClips, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL };
+module.exports = { planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL };

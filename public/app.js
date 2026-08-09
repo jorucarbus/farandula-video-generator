@@ -803,6 +803,7 @@ async function handleGenerateVideo() {
                     zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
                     zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
+                    subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
                 },
             });
             log('✅ Video generado');

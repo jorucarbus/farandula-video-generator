@@ -13,6 +13,7 @@ const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const tiempos = require('./tiempos');
+const subtitulos = require('./subtitulos');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
@@ -561,16 +562,19 @@ app.post('/api/generar-audio', async (req, res) => {
     const marcado = await gemini.agregarMarcas(fragments);
     // Fase 5: audio + alineación carácter-por-carácter en la misma llamada (sin costo extra
     // sobre lo que ya se pagaba). Si algo falla, cae al TTS simple — el render no se detiene.
-    let audio, duracion, duracionesReales;
+    let audio, duracion, duracionesReales, palabrasAlineadas;
     try {
       audio = await tiempos.generarConTiempos(marcado, { modelo: modelo || 'eleven_v3' });
       duracion = await video.obtenerDuracion(audio.audioPath);
-      duracionesReales = tiempos.duracionesPorFragmento(fragments, audio, duracion);
+      const alineado = tiempos.alinearFragmentos(fragments, audio, duracion);
+      duracionesReales = alineado?.duraciones || null;
+      palabrasAlineadas = alineado?.palabras || null;
     } catch (errTiempos) {
       console.warn(`  ⚠️ Tiempos reales fallaron (${errTiempos.message}), cae a TTS simple + % de caracteres`);
       audio = await elevenlabs.generarAudio(marcado, modelo || 'eleven_v3');
       duracion = await video.obtenerDuracion(audio.audioPath);
       duracionesReales = null;
+      palabrasAlineadas = null;
     }
 
     const token = crypto.randomBytes(16).toString('hex');
@@ -580,7 +584,7 @@ app.post('/api/generar-audio', async (req, res) => {
       try { fs.unlinkSync(a.path); } catch {}
       audiosPendientes.delete(t);
     }
-    audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo, duracionesReales });
+    audiosPendientes.set(token, { path: audio.audioPath, duracion, modelo: audio.modelo, duracionesReales, palabrasAlineadas });
 
     console.log(`  ⏱️ ${duracion.toFixed(1)}s (${audio.modelo}) — esperando aprobación`);
 
@@ -735,11 +739,27 @@ app.post('/api/generate-video', async (req, res) => {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
     }
 
-    // 5. Montar (simple y estable: cortes secos, sin transiciones ni subtítulos)
+    // 5. Subtítulos (Fase 6): palabra por palabra resaltada, timing real si el audio aprobado
+    // lo trae (Fase 5). Opt-out con efectos.subtitulos===false. Nunca aborta el render: si algo
+    // falla generando el .ass, el video sale igual, sin subtítulos.
+    let subsPath = null;
+    let fuentesDir = null;
+    if (efectos?.subtitulos !== false) {
+      try {
+        const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, audioAprobado?.duracionesReales);
+        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, audioAprobado?.palabrasAlineadas, { jobId: renderId, tempDir: video.TEMP_DIR });
+        fuentesDir = await subtitulos.obtenerCarpetaFuentes();
+      } catch (e) {
+        console.warn(`  ⚠️ [${renderId}] Subtítulos no se pudieron generar (${e.message}), el video sale sin ellos`);
+        subsPath = null;
+      }
+    }
+
+    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados si se generaron)
     // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
     // (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, efectos || {});
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir });
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"

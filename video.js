@@ -41,6 +41,12 @@ async function detectarEncoder() {
   return ENCODER_DETECTADO;
 }
 
+// Escapar una ruta de Windows para usarla dentro de un filtro de FFmpeg (drive letter ':'
+// necesita escaparse o el parser de filtros lo confunde con un separador de opción).
+function rutaFiltro(p) {
+  return p.replace(/\\/g, '/').replace(/:/g, '\\:');
+}
+
 function argsEncoder(encoder) {
   return encoder === 'h264_nvenc'
     ? ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', '23', '-b:v', '0', '-pix_fmt', 'yuv420p']
@@ -157,16 +163,35 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // el último frame hasta 2s; el corte final es exactamente la duración del audio.
   const durAudio = await obtenerDuracion(audioPath);
   const finalPath = path.join(TEMP_DIR, `${jobId}_final.mp4`);
-  await ffmpeg([
+  const tpad = 'tpad=stop_mode=clone:stop_duration=2';
+  // Subtítulos (Fase 6): filtro `ass` quemado DESPUÉS del tpad, para que también se vea sobre
+  // el frame congelado si el video quedó corto. Si el filtro falla (fuente corrupta, .ass mal
+  // formado), no aborta el render: reintenta el mismo mux sin subtítulos — Regla de robustez.
+  const conSubs = efectos.subsPath
+    ? `${tpad},ass='${rutaFiltro(efectos.subsPath)}'${efectos.fuentesDir ? `:fontsdir='${rutaFiltro(efectos.fuentesDir)}'` : ''}`
+    : tpad;
+
+  const argsMux = (filtroV) => [
     '-i', basePath,
     '-i', audioPath,
-    '-filter:v', 'tpad=stop_mode=clone:stop_duration=2',
+    '-filter:v', filtroV,
     '-map', '0:v', '-map', '1:a',
     '-t', durAudio.toFixed(3),
     ...enc,
     '-c:a', 'aac', '-b:a', '192k',
     finalPath,
-  ]);
+  ];
+
+  try {
+    await ffmpeg(argsMux(conSubs));
+  } catch (e) {
+    if (efectos.subsPath) {
+      console.warn(`  ⚠️ Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
+      await ffmpeg(argsMux(tpad));
+    } else {
+      throw e;
+    }
+  }
 
   [...segmentos, listaPath, basePath].forEach(f => {
     try { fs.unlinkSync(f); } catch {}
