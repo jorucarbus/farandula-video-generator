@@ -1415,6 +1415,22 @@ let subsTamano = 264;
 let subsMarginV = 300;
 let subsFuente = 'anton';
 
+// Mapeo clave del catálogo (subtitulos.js) → familia/peso CSS que carga el <link> de Google
+// Fonts en index.html. Es SOLO para que el preview se vea con la tipografía real — el render
+// final sigue self-hosted con ffmpeg (fontsdir), esto no lo toca. Si se agrega una fuente al
+// catálogo del servidor, agregar acá su equivalente CSS y el <link> del <head>.
+const SUBS_FUENTES_CSS = {
+    anton:     { family: 'Anton',         weight: 400 },
+    poppins:   { family: 'Poppins',       weight: 800 },
+    bebas:     { family: 'Bebas Neue',    weight: 400 },
+    archivo:   { family: 'Archivo Black', weight: 400 },
+    bangers:   { family: 'Bangers',       weight: 400 },
+    righteous: { family: 'Righteous',     weight: 400 },
+    passion:   { family: 'Passion One',   weight: 900 },
+    kanit:     { family: 'Kanit',         weight: 800 },
+    luckiest:  { family: 'Luckiest Guy',  weight: 400 },
+};
+
 // Trae el catálogo real de subtitulos.js (server.js expone /api/fuentes-subtitulos) — si falla
 // (sin conexión, key inválida), el selector se queda con la única opción por defecto y el
 // render igual funciona con Anton, que es lo que ya manda el server si no llega `fuente`.
@@ -1440,6 +1456,11 @@ function initSubsPreview() {
     if (!slider || !preview || !palabra) return;
 
     const escala = () => preview.clientHeight / SUBS_PLAYRES_Y;
+    const pintarFuente = () => {
+        const f = SUBS_FUENTES_CSS[subsFuente] || SUBS_FUENTES_CSS.anton;
+        palabra.style.fontFamily = `'${f.family}', sans-serif`;
+        palabra.style.fontWeight = f.weight;
+    };
     // Mismo resguardo que tamanoSeguro() en subtitulos.js, pero visual: si "PALABRA" no entra a
     // ese tamaño en el ancho del mockup, la achica hasta que quepa — es justo lo que pasaría con
     // una palabra larga en el render real, así el ejemplo no queda cortado contra el borde.
@@ -1460,7 +1481,11 @@ function initSubsPreview() {
         pintarTamano();
     });
 
-    selectFuente?.addEventListener('change', () => { subsFuente = selectFuente.value; });
+    selectFuente?.addEventListener('change', () => {
+        subsFuente = selectFuente.value;
+        pintarFuente();
+        pintarTamano(); // la fuente nueva puede medir distinto, re-chequea que "PALABRA" entre
+    });
 
     let arrastrando = false;
     const moverA = (clientY) => {
@@ -1477,6 +1502,7 @@ function initSubsPreview() {
     palabra.addEventListener('pointerup', () => { arrastrando = false; });
     palabra.addEventListener('pointercancel', () => { arrastrando = false; });
 
+    pintarFuente();
     pintarTamano();
     pintarPosicion();
 }

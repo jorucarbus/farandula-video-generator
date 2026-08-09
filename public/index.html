@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Farándula Video Generator</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Solo para la vista previa de subtítulos (Paso 6): carga las 9 tipografías reales del
+         catálogo vía Google Fonts, así "PALABRA" se ve con la fuente elegida de verdad. El
+         video final NO depende de esto — se sigue quemando self-hosted con ffmpeg (ver
+         subtitulos.js obtenerCarpetaFuentes()), esto es solo para previsualizar en pantalla. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bangers&family=Bebas+Neue&family=Kanit:wght@800&family=Luckiest+Guy&family=Passion+One:wght@900&family=Poppins:wght@800&family=Righteous&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
