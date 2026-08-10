@@ -97,8 +97,23 @@ tolera hasta 2 caracteres de diferencia (Levenshtein), lo cubre sin bloquear. `d
 Verificado con Drive real: los 7 tonos emparejan bien (incluido el typo), rotación usa las 5
 pistas reales de TRAGEDIA completas antes de repetir.
 
-**Próximo paso: Fase 8c (última parte) — integrar en server.js/video.js**: descargar la pista
-elegida y mezclarla con loudnorm + sidechaincompress + fades en `montarVideoPlan`.
+**8c lista (commit `ac6d320`) — Fase 8 COMPLETA**. El usuario simplificó de sidechaincompress a
+corte fijo -18dB tras verificar real que la voz de ElevenLabs es casi continua (medido: 28
+huecos de 53-153ms en un audio de 14s, ninguno llega a 0.25s — un compresor habría bombeado).
+Pidió además "mapear y etiquetar" el silencio inicial de las pistas: `musica.js` nuevo
+(`detectarInicio()` con ffmpeg silencedetect, `etiquetarTodo()`) escribe el offset EN EL NOMBRE
+del archivo en Drive ("Gavel Lullaby.wav" → "Gavel Lullaby [inicio=0.00s].wav") — mapeo real ya
+corrido sobre las 26 pistas, 0 errores. `video.js` `prepararMusica()`: corta el silencio inicial
+una vez, loopea la pista limpia a la duración exacta, -18dB + fade 1s entrada/salida;
+`montarVideoPlan()` la mezcla con `amix normalize=0` (si no, ffmpeg bajaría también la voz).
+`server.js` resuelve tono→carpeta→pista→descarga y arma el mux; checkbox nuevo en Paso 6.
+
+Verificado con datos reales de punta a punta: mapeo de las 26 pistas reales, render real (voz +
+música de Drive + video) con sincronía exacta, volumen de la pista preparada medido en aislado
+(-17.6dB nativo → -36.8dB preparada, ~-18dB de diferencia, 17dB bajo la voz — dentro del rango
+profesional estándar).
+
+**Próximo paso: Fase 9 (Director de edición: reglas → Gemini con fallback), sin empezar.**
 
 ---
 
@@ -264,7 +279,7 @@ en `gemini.js`. Lite fue idéntico en 3/3 corridas y reconstruyó exacto siempre
 | 5 | Fuente de tiempos intercambiable | **hecha (2026-08-08, `13f38a5`)** | Sonnet |
 | 6 | Subtítulos ASS | **hecha (2026-08-08, `8a66c59`)** | Sonnet |
 | 7 | Transiciones xfade + rampas | **hecha parcial (2026-08-08, `6682624`) — falta setpts/deformado** | Opus |
-| 8 | Música por sentido | no empezada | Sonnet |
+| 8 | Música por sentido | **hecha (2026-08-09/10, `ac6d320`)** | Sonnet |
 | 9 | Director (reglas → Gemini con fallback) | no empezada | Opus |
 | 10 | Insumos ampliados | no empezada | Sonnet |
 | 11 | Desplegar `farandula-video-family` a Railway | no empezada | Sonnet |
