@@ -873,6 +873,7 @@ async function handleGenerateVideo() {
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                     subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
                     musica: document.getElementById('efecto-musica')?.checked ?? true,
+                    musicaTono: document.getElementById('musica-tono')?.value || 'auto',
                     subtitulosFuente: subsFuente,
                     subtitulosTamano: subsTamano,
                     subtitulosMarginV: subsMarginV,
@@ -1442,6 +1443,24 @@ const SUBS_FUENTES_CSS = {
 // Trae el catálogo real de subtitulos.js (server.js expone /api/fuentes-subtitulos) — si falla
 // (sin conexión, key inválida), el selector se queda con la única opción por defecto y el
 // render igual funciona con Anton, que es lo que ya manda el server si no llega `fuente`.
+// Catálogo de tonos de música (Fase 8) — agrega los 7 tonos DESPUÉS de "Automático" (que no es
+// parte de gemini.TONOS, es una opción propia de la UI). Si falla, se queda solo "Automático" —
+// el server igual funciona, usa el tono que detectó la síntesis.
+async function cargarTonosMusica() {
+    const select = document.getElementById('musica-tono');
+    if (!select) return;
+    try {
+        const { tonos } = await apiCall('/tonos-musica', 'GET');
+        const NOMBRES = {
+            tragedia: 'Tragedia', tension: 'Tensión', escandalo: 'Escándalo',
+            alegre: 'Alegre', romantico: 'Romántico', misterio: 'Misterio', neutral: 'Neutral',
+        };
+        select.innerHTML += tonos.map(t => `<option value="${t}">${NOMBRES[t] || t}</option>`).join('');
+    } catch (e) {
+        console.warn('No se pudo cargar el catálogo de tonos de música, se usa "Automático":', e.message);
+    }
+}
+
 async function cargarFuentesSubtitulos() {
     const select = document.getElementById('subs-fuente');
     if (!select) return;
@@ -1545,6 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
     cargarFuentesSubtitulos().then(initSubsPreview);
+    cargarTonosMusica();
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

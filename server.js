@@ -225,6 +225,13 @@ app.get('/api/fuentes-subtitulos', (req, res) => {
   res.json({ fuentes, default: subtitulos.FUENTE_DEFAULT });
 });
 
+// Catálogo de tonos de música (Fase 8) — para el selector manual del Paso 6. gemini.TONOS es
+// la única fuente de verdad (seleccion.emparejarCarpetaTono también la usa indirectamente vía
+// lo que llega en `tono`), así que este endpoint nunca queda desincronizado del código real.
+app.get('/api/tonos-musica', (req, res) => {
+  res.json({ tonos: gemini.TONOS });
+});
+
 // Decide CÓMO leer una fuente y devuelve su acta ya extraída (Fase 4 del plan maestro:
 // multifuente + solo audio). El orden de intentos SIEMPRE prioriza lo más barato — de los
 // videos no importa nada visual (pedido explícito del usuario), así que "ver" el video queda
@@ -800,16 +807,17 @@ app.post('/api/generate-video', async (req, res) => {
       }
     }
 
-    // 5b. Música por sentido (Fase 8c). Opt-out con efectos.musica===false. El tono viene del
-    // job (lo dejó la síntesis, Fase 8a) — sin jobId o sin tono reconocido, cae a "neutral"
-    // dentro de emparejarCarpetaTono(); si ni neutral existe, sale sin música. Nunca aborta el
-    // render por esto: cualquier fallo acá deja musicaPath en null y sigue.
+    // 5b. Música por sentido (Fase 8c). Opt-out con efectos.musica===false. El tono es
+    // efectos.musicaTono si el usuario eligió uno a mano (Paso 6); si no, el que dejó la
+    // síntesis (Fase 8a) en el job — sin ninguno de los dos, cae a "neutral" dentro de
+    // emparejarCarpetaTono(); si ni neutral existe, sale sin música. Nunca aborta el render por
+    // esto: cualquier fallo acá deja musicaPath en null y sigue.
     let musicaPath = null;
     let musicaOffset = 0;
     if (efectos?.musica !== false) {
       try {
         const jobActual = jobId ? jobStore.obtenerJob(jobId) : null;
-        const tono = jobActual?.tono || 'neutral';
+        const tono = (efectos?.musicaTono && efectos.musicaTono !== 'auto') ? efectos.musicaTono : (jobActual?.tono || 'neutral');
         const carpetasMusica = await driveHelper.obtenerCarpetasMusica();
         let folderId = seleccion.emparejarCarpetaTono(tono, carpetasMusica);
         let pistas = folderId ? await driveHelper.listarMusica(folderId) : [];
