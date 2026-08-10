@@ -76,7 +76,23 @@ sincronía exacta. Videos de ≤10 clips (la mayoría) van por el mismo camino d
 - Ganancia de audio: `elevenlabs.js` baja **-3.4dB** automático en todo audio generado (mismo
   ajuste que el usuario hacía a mano en su editor) — provisional, se afina de verdad en Fase 8.
 
-**Próximo paso: Fase 8 (música por sentido), sin empezar.**
+**6. Fase 8 dividida en 3 partes** (límite semanal ajustado, 85% al momento de dividir) —
+**8a lista (commit `0f0b74b`)**: clasificación de tono en `gemini.js` (`PROMPTS.lectura` pide
+el campo `tono` en el MISMO JSON de la crónica, sin llamada extra). **7 categorías, no 6** —
+se revisaron 30 títulos reales del historial (Sheet) antes de decidir: ~13% eran
+"misterio/intriga" (¿es la misma persona?, el misterio del tatuaje), tono no cubierto por las 6
+originales del plan. Se agregó `misterio` como 7ma. Aclarado también: ruptura → `tragedia`, NUNCA
+`romantico` (son opuestos musicalmente) — había una ruptura real en la muestra que lo confirmó.
+`TONOS` exportado desde `gemini.js` (lista única, 8b la reusa). `server.js` ya devuelve `tono` en
+`/api/read` y `/api/resintetizar`. Verificado con Gemini real: 6/7 en 7 casos (uno por tono,
+incluidos los 2 trampa); el único fallo cayó en `neutral` (seguro), nunca en tono dañino.
+
+**Próximo paso: Fase 8b (carpetas de música en Drive + selección con rotación)**. Antes de
+arrancar, preguntar al usuario si `Musica/` con las 7 subcarpetas (`tragedia/tension/escandalo/
+alegre/romantico/misterio/neutral`) ya existe en Drive o hay que crearla — el diseño ya
+contempla "sin música" como salida válida si algo falta, así que no bloquea, pero conviene
+saberlo antes de escribir el código de selección. Después sigue 8c (mezcla real: loudnorm,
+sidechaincompress, fades, integrado en `montarVideoPlan`).
 
 ---
 
