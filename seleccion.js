@@ -218,4 +218,73 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
   return plan;
 }
 
-module.exports = { planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL };
+// ---- Fase 8b del plan maestro: música por sentido — carpeta + selección ----
+
+function normalizarTono(s) {
+  return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+// Distancia de edición (Levenshtein) — chica a propósito, solo para tolerar errores de tipeo
+// en nombres de carpeta reales (encontrado real: "ESCÁDALO" sin la N en vez de "ESCÁNDALO").
+function distanciaEdicion(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Empareja un tono (gemini.js TONOS) contra los nombres REALES de las subcarpetas de Musica/ en
+// Drive — tolerante a mayúsculas, tildes y errores de tipeo chicos (hasta 2 caracteres). Si no
+// hay nada parecido, cae a "neutral": nunca deja un tono grave sin música por un nombre de
+// carpeta que no calza exacto, y nunca inventa una carpeta que no existe.
+function emparejarCarpetaTono(tono, carpetasMusica) {
+  const objetivo = normalizarTono(tono);
+  const nombres = Object.keys(carpetasMusica || {});
+  if (nombres.length === 0) return null;
+
+  let mejor = null;
+  let mejorDistancia = Infinity;
+  for (const nombre of nombres) {
+    const d = distanciaEdicion(objetivo, normalizarTono(nombre));
+    if (d < mejorDistancia) { mejorDistancia = d; mejor = nombre; }
+  }
+  if (mejor && mejorDistancia <= 2) return carpetasMusica[mejor];
+
+  if (objetivo !== 'neutral') {
+    for (const nombre of nombres) {
+      if (distanciaEdicion('neutral', normalizarTono(nombre)) <= 1) return carpetasMusica[nombre];
+    }
+  }
+  return null; // ni el tono ni "neutral" tienen carpeta reconocible: sin música, no se inventa nada
+}
+
+// Elige una pista con rotación — mismo principio que los clips de famosos (no repetir hasta
+// agotar el ciclo) pero más simple: la música no necesita "secuencia distinta al render
+// anterior", solo variedad. `clave` namespacea el ciclo dentro de historial.json (ej.
+// "musica_tragedia") para no chocar con los ciclos de video por famoso.
+function elegirPista(clave, pistas) {
+  if (!pistas || pistas.length === 0) return null;
+  const historial = cargarHistorial();
+  const h = (historial[clave] ??= { ciclo: [] });
+
+  let disponibles = pistas.filter(p => !h.ciclo.includes(p.id));
+  if (disponibles.length === 0) {
+    h.ciclo = [];
+    disponibles = pistas;
+  }
+  const elegida = disponibles[Math.floor(Math.random() * disponibles.length)];
+  h.ciclo.push(elegida.id);
+  guardarHistorial(historial);
+  return elegida;
+}
+
+module.exports = {
+  planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL,
+  emparejarCarpetaTono, elegirPista,
+};

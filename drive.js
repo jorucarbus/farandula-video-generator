@@ -59,6 +59,70 @@ async function obtenerCarpetasFamosos() {
   return mapa;
 }
 
+// Fase 8b (música por sentido): carpeta Musica/ con 7 subcarpetas, una por tono (ver
+// gemini.js TONOS). Mismo patrón que obtenerCarpetasFamosos(), pero con OAuth preferido
+// (mismo criterio que driveCache.js) — esta carpeta todavía no está compartida con el
+// Service Account, solo con la cuenta OAuth del usuario. Si algún día se comparte también con
+// el Service Account, esto sigue funcionando igual (OAuth gana si está configurado).
+const MUSICA_FOLDER_ID = process.env.GOOGLE_DRIVE_MUSICA_FOLDER_ID || '1TzmDHv-L-fwqpOuAK6CcdJUlJNkPz33Z';
+
+async function obtenerCarpetasMusica() {
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.list({
+    q: `'${MUSICA_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    fields: 'files(id, name)',
+    pageSize: 100,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  const mapa = {};
+  for (const f of res.data.files) mapa[f.name] = f.id;
+  return mapa;
+}
+
+// Listar pistas de audio dentro de una carpeta de música (mp3/wav/etc.)
+async function listarMusica(folderId) {
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.list({
+    q: `'${folderId}' in parents and trashed=false and mimeType contains 'audio/'`,
+    fields: 'files(id, name)',
+    pageSize: 200,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return res.data.files.map(f => ({ id: f.id, name: f.name }));
+}
+
+// Descarga una pista de música al disco local (caché por fileId, descarga atómica — mismo
+// patrón que descargarVideo(): si dos jobs concurrentes piden la misma pista, ninguno la ve a
+// medio escribir).
+async function descargarMusica(fileId, destDir, extension = '.mp3') {
+  const destPath = path.join(destDir, `musica_${fileId}${extension}`);
+  if (fs.existsSync(destPath)) return destPath;
+
+  const tmpPath = path.join(destDir, `.tmp-musica_${fileId}-${process.pid}-${crypto.randomBytes(4).toString('hex')}${extension}`);
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    { responseType: 'stream' }
+  );
+
+  try {
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmpPath);
+      res.data.pipe(out);
+      out.on('finish', resolve);
+      out.on('error', reject);
+    });
+    fs.renameSync(tmpPath, destPath);
+  } catch (e) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw e;
+  }
+
+  return destPath;
+}
+
 // Listar videos dentro de una carpeta (con duración en segundos si Drive ya la procesó)
 async function listarVideos(folderId) {
   const res = await getDrive().files.list({
@@ -302,4 +366,7 @@ module.exports = {
   leerDeInsumo,
   listarSubcarpetas,
   enviarAPapelera,
+  obtenerCarpetasMusica,
+  listarMusica,
+  descargarMusica,
 };
