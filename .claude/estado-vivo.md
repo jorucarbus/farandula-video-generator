@@ -87,12 +87,18 @@ originales del plan. Se agregó `misterio` como 7ma. Aclarado también: ruptura 
 `/api/read` y `/api/resintetizar`. Verificado con Gemini real: 6/7 en 7 casos (uno por tono,
 incluidos los 2 trampa); el único fallo cayó en `neutral` (seguro), nunca en tono dañino.
 
-**Próximo paso: Fase 8b (carpetas de música en Drive + selección con rotación)**. Antes de
-arrancar, preguntar al usuario si `Musica/` con las 7 subcarpetas (`tragedia/tension/escandalo/
-alegre/romantico/misterio/neutral`) ya existe en Drive o hay que crearla — el diseño ya
-contempla "sin música" como salida válida si algo falta, así que no bloquea, pero conviene
-saberlo antes de escribir el código de selección. Después sigue 8c (mezcla real: loudnorm,
-sidechaincompress, fades, integrado en `montarVideoPlan`).
+**8b lista (commit `33fa2fd`)**: el usuario confirmó que `Musica/` ya existía en Drive. Dos
+hallazgos reales al explorarla: (1) NO está compartida con el Service Account, solo con OAuth —
+`drive.js` usa `getDriveOAuth() || getDrive()` (mismo criterio de `driveCache.js`), funciona hoy
+sin pedir nada más; (2) typo real en una carpeta ("ESCÁDALO" sin la N) — `seleccion.emparejarCarpetaTono()`
+tolera hasta 2 caracteres de diferencia (Levenshtein), lo cubre sin bloquear. `drive.js`:
+`obtenerCarpetasMusica()`/`listarMusica()`/`descargarMusica()`. `seleccion.js`:
+`emparejarCarpetaTono()` + `elegirPista()` (rotación vía `historial.json`, namespace `musica_<tono>`).
+Verificado con Drive real: los 7 tonos emparejan bien (incluido el typo), rotación usa las 5
+pistas reales de TRAGEDIA completas antes de repetir.
+
+**Próximo paso: Fase 8c (última parte) — integrar en server.js/video.js**: descargar la pista
+elegida y mezclarla con loudnorm + sidechaincompress + fades en `montarVideoPlan`.
 
 ---
 
