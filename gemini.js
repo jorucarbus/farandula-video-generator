@@ -78,8 +78,22 @@ estructura exacta:
   "descripcion": "UNA SOLA descripción adictiva para TikTok terminada en exactamente 5 hashtags estratégicos, todo en un solo bloque",
   "protagonista": "Nombre del famoso principal de la noticia",
   "secundario": "Nombre del segundo involucrado, o cadena vacía si no hay",
-  "accion": "El acontecimiento en 2-4 palabras, lo más corto posible"
+  "accion": "El acontecimiento en 2-4 palabras, lo más corto posible",
+  "tono": "Una sola palabra de esta lista EXACTA: tragedia, tension, escandalo, alegre, romantico, misterio, neutral"
 }
+
+CÓMO ELEGIR "tono" (decide música de fondo, importa acertar):
+- tragedia: muerte, luto, enfermedad grave, ruptura/desamor (SIEMPRE ruptura va acá, NUNCA en
+  "romantico" — son polos opuestos), crimen o víctima de un hecho grave.
+- tension: conflicto activo, pelea, amenaza, acusación en curso, "guerra" entre famosos.
+- escandalo: infidelidad, mentira expuesta, hipocresía revelada, polémica ya confirmada.
+- alegre: logro, buena noticia, celebración, regreso triunfal, reconciliación feliz.
+- romantico: romance NUEVO, compromiso, boda, pareja feliz — nunca rupturas (ver "tragedia").
+- misterio: la noticia gira en una pregunta sin responder o una sospecha sin confirmar
+  ("¿es la misma persona?", "¿estrategia o real?", "el misterio de..."). Si el enfoque es la
+  DUDA en sí, no lo que ya se sabe, es este tono aunque el tema de fondo sea otro.
+- neutral: cualquier caso que no encaje claro en los anteriores, o si dudas entre dos. NUNCA
+  elijas "alegre" para algo grave por error de lectura — ante la duda real, neutral gana siempre.
 
 RESTRICCIONES:
 - protagonista, secundario y accion NO deben contener caracteres prohibidos en nombres de archivo (/ \\ : * ? " < > |).
@@ -307,6 +321,13 @@ async function llamarJSON(prompt, userMessage, tarea = TAREAS.guion, config = {}
   throw new Error(`Gemini devolvió JSON inválido tras ${reintentos} intentos: ${ultimoError.message}`);
 }
 
+// Fase 8 (música por sentido, plan maestro): tonos posibles de una noticia. La lista completa
+// vive acá — Drive necesita una subcarpeta por cada uno, y seleccion.js valida contra esto
+// mismo antes de buscar carpeta, así que agregar/sacar un tono es cambiar un solo lugar.
+// "neutral" SIEMPRE tiene que existir: es el piso de seguridad si el tono no calza claro o la
+// carpeta del tono elegido está vacía — nunca cae a algo alegre por error.
+const TONOS = ['tragedia', 'tension', 'escandalo', 'alegre', 'romantico', 'misterio', 'neutral'];
+
 // Sesgo editorial de la crónica respecto al protagonista
 const SESGOS = {
   favor: 'SESGO EDITORIAL OBLIGATORIO: la crónica debe narrarse A FAVOR del protagonista. Preséntalo como víctima de las circunstancias o como quien actúa con razón; cuestiona los motivos de sus detractores y siembra dudas sobre las versiones que lo acusan.',
@@ -454,6 +475,11 @@ async function sintetizarCronica(actas, sesgo = 'neutral') {
     const accion = limpiar(datos.accion);
     // Nombre de archivo: "Protagonista - Secundario - Hecho" (sin la fecha; se antepone al guardar)
     const nombreCorto = [protagonista, secundario, accion].filter(Boolean).join(' - ').slice(0, 80);
+    // Si Gemini devuelve algo fuera de la lista (o nada), cae a neutral — nunca se inventa un
+    // tono no reconocido ni se deja pasar en blanco (Fase 8: server.js necesita SIEMPRE un tono
+    // válido para elegir carpeta de música).
+    const tonoBruto = (datos.tono || '').toString().trim().toLowerCase();
+    const tono = TONOS.includes(tonoBruto) ? tonoBruto : 'neutral';
 
     return {
       cronica: (datos.cronica || '').trim(),
@@ -463,6 +489,7 @@ async function sintetizarCronica(actas, sesgo = 'neutral') {
       secundario,
       accion,
       nombreCorto: nombreCorto || 'Video farandula',
+      tono,
     };
   } catch (error) {
     throw new Error(`Error en síntesis: ${error.message}`);
@@ -732,4 +759,5 @@ module.exports = {
   CADENAS,
   agregarMarcas,
   generarNombreArchivo,
+  TONOS,
 };

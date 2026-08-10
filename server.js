@@ -410,6 +410,7 @@ app.post('/api/read', async (req, res) => {
       secundario: result.secundario,
       accion: result.accion,
       nombreCorto: result.nombreCorto,
+      tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
     });
   } catch (error) {
     console.error('Error lectura:', error);
@@ -448,6 +449,7 @@ app.post('/api/resintetizar', async (req, res) => {
       secundario: result.secundario,
       accion: result.accion,
       nombreCorto: result.nombreCorto,
+      tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
     });
   } catch (error) {
     console.error('Error re-síntesis:', error);
