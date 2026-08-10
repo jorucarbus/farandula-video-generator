@@ -872,6 +872,7 @@ async function handleGenerateVideo() {
                     zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
                     espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
                     subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
+                    musica: document.getElementById('efecto-musica')?.checked ?? true,
                     subtitulosFuente: subsFuente,
                     subtitulosTamano: subsTamano,
                     subtitulosMarginV: subsMarginV,

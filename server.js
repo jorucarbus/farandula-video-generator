@@ -14,6 +14,7 @@ const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const tiempos = require('./tiempos');
 const subtitulos = require('./subtitulos');
+const musica = require('./musica');
 const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
@@ -799,12 +800,44 @@ app.post('/api/generate-video', async (req, res) => {
       }
     }
 
-    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados si se generaron)
-    // Hyperframes retirado: no terminó de funcionar. El código queda en video.js
+    // 5b. Música por sentido (Fase 8c). Opt-out con efectos.musica===false. El tono viene del
+    // job (lo dejó la síntesis, Fase 8a) — sin jobId o sin tono reconocido, cae a "neutral"
+    // dentro de emparejarCarpetaTono(); si ni neutral existe, sale sin música. Nunca aborta el
+    // render por esto: cualquier fallo acá deja musicaPath en null y sigue.
+    let musicaPath = null;
+    let musicaOffset = 0;
+    if (efectos?.musica !== false) {
+      try {
+        const jobActual = jobId ? jobStore.obtenerJob(jobId) : null;
+        const tono = jobActual?.tono || 'neutral';
+        const carpetasMusica = await driveHelper.obtenerCarpetasMusica();
+        let folderId = seleccion.emparejarCarpetaTono(tono, carpetasMusica);
+        let pistas = folderId ? await driveHelper.listarMusica(folderId) : [];
+        if (pistas.length === 0 && tono !== 'neutral') {
+          // Carpeta del tono vacía (o no encontrada): cae a neutral, nunca a algo alegre por defecto.
+          folderId = seleccion.emparejarCarpetaTono('neutral', carpetasMusica);
+          pistas = folderId ? await driveHelper.listarMusica(folderId) : [];
+        }
+        if (pistas.length > 0) {
+          const elegida = seleccion.elegirPista(`musica_${tono}`, pistas);
+          const ext = (elegida.name.match(/\.[^.]+$/) || ['.mp3'])[0];
+          musicaPath = await driveHelper.descargarMusica(elegida.id, video.TEMP_DIR, ext);
+          musicaOffset = musica.offsetDeNombre(elegida.name);
+          console.log(`  🎵 [${renderId}] Música (${tono}): "${elegida.name}" (offset ${musicaOffset}s)`);
+        } else {
+          console.warn(`  ⚠️ [${renderId}] Sin pistas de música disponibles (tono "${tono}" y neutral vacíos), el video sale sin música`);
+        }
+      } catch (e) {
+        console.warn(`  ⚠️ [${renderId}] No se pudo resolver música (${e.message}), el video sale sin ella`);
+      }
+    }
+
+    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados y música si se
+    // generaron). Hyperframes retirado: no terminó de funcionar. El código queda en video.js
     // (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir });
-    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s`);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset });
+    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
     // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
     // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion

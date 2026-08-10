@@ -193,6 +193,19 @@ async function subirVideo(localPath, fileName, destFolderId, mimeType = 'video/m
   return res.data;
 }
 
+// Renombrar un archivo existente (Fase 8c: etiquetar pistas de música con su offset de inicio
+// directo en el nombre, en vez de un mapeo aparte que se puede desincronizar).
+async function renombrarArchivo(fileId, nuevoNombre) {
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.update({
+    fileId,
+    requestBody: { name: nuevoNombre },
+    fields: 'id, name',
+    supportsAllDrives: true,
+  });
+  return res.data;
+}
+
 // Obtener nombre de una carpeta por su ID
 async function nombreCarpeta(folderId) {
   const res = await getDrive().files.get({
@@ -369,4 +382,5 @@ module.exports = {
   obtenerCarpetasMusica,
   listarMusica,
   descargarMusica,
+  renombrarArchivo,
 };

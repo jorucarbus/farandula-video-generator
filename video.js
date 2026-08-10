@@ -204,6 +204,35 @@ async function renderizarConTransiciones(segmentos, duracionesVisibles, outPath,
   ]);
 }
 
+// Fase 8c: prepara la pista de música elegida para mezclarla — corta su silencio inicial (una
+// sola vez, `offsetInicio` viene de la etiqueta del archivo en Drive, ver musica.js), la
+// repite en loop hasta cubrir la duración del video, y le aplica la ganancia fija que pidió el
+// usuario (-18dB por defecto, "todo el video igual" — SIN ducking dinámico: la voz es continua
+// con pausas menores a 150ms, medido real, así que un compresor nunca llegaría a recuperarse
+// entre palabras sin sonar a bombeo) más un fundido corto de entrada/salida para que no arranque
+// ni corte en seco.
+async function prepararMusica(localPath, offsetInicio, duracionObjetivo, jobId, gananciaDb = -18) {
+  const limpio = path.join(TEMP_DIR, `${jobId}_musica_limpia.mp3`);
+  const listo = path.join(TEMP_DIR, `${jobId}_musica_lista.m4a`);
+
+  // Paso A: cortar el silencio inicial una sola vez (si offsetInicio es 0, esto es un stream
+  // copy trivial). Loopear DESPUÉS de cortar evita la ambigüedad de si -stream_loop respeta
+  // -ss en cada vuelta o solo en la primera — cada vuelta parte de un archivo ya limpio.
+  await ffmpeg(['-ss', offsetInicio.toFixed(2), '-i', localPath, '-c:a', 'libmp3lame', '-q:a', '4', limpio]);
+
+  const fadeOutInicio = Math.max(0, duracionObjetivo - 1);
+  await ffmpeg([
+    '-stream_loop', '-1', '-i', limpio,
+    '-t', duracionObjetivo.toFixed(3),
+    '-af', `volume=${gananciaDb}dB,afade=t=in:st=0:d=1,afade=t=out:st=${fadeOutInicio.toFixed(3)}:d=1`,
+    '-c:a', 'aac', '-b:a', '192k',
+    listo,
+  ]);
+
+  try { fs.unlinkSync(limpio); } catch {}
+  return listo;
+}
+
 // Encadena TODO el plan con transiciones, pero en TANDAS de TANDA_MAX clips en vez de un solo
 // filter_complex gigante (ver TANDA_MAX arriba para el porqué). Cada tanda se renderiza aparte
 // con sus transiciones internas; las tandas se pegan entre sí con concat plano — el clip en el
@@ -347,37 +376,74 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // Subtítulos (Fase 6): filtro `ass` quemado DESPUÉS del tpad, para que también se vea sobre
   // el frame congelado si el video quedó corto. Si el filtro falla (fuente corrupta, .ass mal
   // formado), no aborta el render: reintenta el mismo mux sin subtítulos — Regla de robustez.
-  const conSubs = efectos.subsPath
+  const filtroVideo = efectos.subsPath
     ? `${tpad},ass='${rutaFiltro(efectos.subsPath)}'${efectos.fuentesDir ? `:fontsdir='${rutaFiltro(efectos.fuentesDir)}'` : ''}`
     : tpad;
 
-  const argsMux = (filtroV) => [
-    '-i', basePath,
-    '-i', audioPath,
-    '-filter:v', filtroV,
-    '-map', '0:v', '-map', '1:a',
-    '-t', durAudio.toFixed(3),
-    ...enc,
-    '-c:a', 'aac', '-b:a', '192k',
-    finalPath,
-  ];
+  // Fase 8c: música de fondo (opcional). Se prepara ANTES del mux para no repetir el trabajo
+  // en cada reintento de fallback. Si falla la preparación, el video sale igual, sin música.
+  let musicaPreparada = null;
+  if (efectos.musicaPath) {
+    try {
+      musicaPreparada = await prepararMusica(efectos.musicaPath, efectos.musicaOffset || 0, durAudio, jobId, efectos.musicaGananciaDb ?? -18);
+    } catch (e) {
+      console.warn(`  ⚠️ [${jobId}] No se pudo preparar la música, el video sale sin ella: ${e.message}`);
+    }
+  }
+
+  // amix con normalize=0: normalize=1 (default de ffmpeg) bajaría también la VOZ para que la
+  // suma no sature — acá la voz tiene que quedar intacta, la música ya viene atenuada por su
+  // propia ganancia fija.
+  const argsMux = (filtroV, conMusica) => conMusica
+    ? [
+        '-i', basePath, '-i', audioPath, '-i', musicaPreparada,
+        '-filter_complex', `[0:v]${filtroV}[vout];[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[afinal]`,
+        '-map', '[vout]', '-map', '[afinal]',
+        '-t', durAudio.toFixed(3),
+        ...enc, '-c:a', 'aac', '-b:a', '192k',
+        finalPath,
+      ]
+    : [
+        '-i', basePath, '-i', audioPath,
+        '-filter:v', filtroV,
+        '-map', '0:v', '-map', '1:a',
+        '-t', durAudio.toFixed(3),
+        ...enc, '-c:a', 'aac', '-b:a', '192k',
+        finalPath,
+      ];
 
   try {
-    await ffmpeg(argsMux(conSubs));
+    await ffmpeg(argsMux(filtroVideo, Boolean(musicaPreparada)));
   } catch (e) {
-    if (efectos.subsPath) {
-      console.warn(`  ⚠️ Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
-      await ffmpeg(argsMux(tpad));
+    // Regla de robustez, en cascada: música falla → reintenta sin música; si TODAVÍA falla y
+    // había subtítulos, reintenta también sin ellos. El video siempre sale, degradado capa por
+    // capa, nunca se pierde el render completo por un filtro opcional.
+    if (musicaPreparada) {
+      console.warn(`  ⚠️ [${jobId}] Mux con música falló, reintentando sin música: ${e.message}`);
+      musicaPreparada = null;
+      try {
+        await ffmpeg(argsMux(filtroVideo, false));
+      } catch (e2) {
+        if (efectos.subsPath) {
+          console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e2.message}`);
+          await ffmpeg(argsMux(tpad, false));
+        } else {
+          throw e2;
+        }
+      }
+    } else if (efectos.subsPath) {
+      console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
+      await ffmpeg(argsMux(tpad, false));
     } else {
       throw e;
     }
   }
 
-  [...segmentos, listaPath, basePath].filter(Boolean).forEach(f => {
+  [...segmentos, listaPath, basePath, musicaPreparada].filter(Boolean).forEach(f => {
     try { fs.unlinkSync(f); } catch {}
   });
 
-  return { finalPath, duracion: Math.round(durAudio), clips: segmentos.length };
+  return { finalPath, duracion: Math.round(durAudio), clips: segmentos.length, conMusica: Boolean(musicaPreparada) };
 }
 
 // Limpiar archivos temporales de un job. NO toca los clips fuente cacheados (src_*.mp4):
