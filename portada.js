@@ -24,10 +24,9 @@ const ALTO_VIDEO = 1920;
 const ANCHO_UTIL = ANCHO_VIDEO - 70 - 70; // margen lateral, mismo criterio que ANCHO_UTIL de subtitulos.js
 const FONTSIZE_MAX = 78;
 const FONTSIZE_MIN = 36;
-const MARGEN_IZQUIERDO = 60;
 const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
 const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
-const COLOR_TEXTO = '141414'; // casi negro, alto contraste sobre el rosa (RRGGBB)
+const COLOR_TEXTO = 'FFFFFF'; // blanco, pedido explícito del usuario (RRGGBB)
 
 // ffmpeg necesita los ':' de una ruta de Windows (C\:) escapados dentro del valor de un filtro —
 // mismo criterio que rutaFiltro() en video.js (no exportada, se replica acá).
@@ -124,7 +123,7 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token)
   const anchoMaxLinea = Math.max(...lineas.map(l => l.length)) * fontsize * fuente.factorAncho;
   const boxW = Math.min(ANCHO_UTIL + padX * 2, Math.round(anchoMaxLinea + padX * 2));
   const boxH = lineas.length * lineHeight + (lineas.length - 1) * lineSpacing + padY * 2;
-  const boxX = MARGEN_IZQUIERDO;
+  const boxX = Math.round((ANCHO_VIDEO - boxW) / 2); // burbuja centrada horizontalmente
   const boxY = Math.round(ALTO_VIDEO * POS_Y_FRACCION);
   const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
 
@@ -139,12 +138,12 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS(COLOR_TEXTO)},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
+Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS(COLOR_TEXTO)},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + padX},${boxY + padY})\\bord0\\shad0}${textoASS}
+Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad0}${textoASS}
 `;
 
   const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);
