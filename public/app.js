@@ -964,7 +964,7 @@ function showResult(videoData) {
             y generá la portada. TikTok no deja fijarla por API — la descargás y la subís vos al
             publicar.</p>
             <div class="portada-controls">
-                <input type="text" id="portada-titular" placeholder="Titular..." value="${titularSugerido.replace(/"/g, '&quot;')}">
+                <input type="text" id="portada-titular" placeholder="Titular..." maxlength="90" value="${titularSugerido.replace(/"/g, '&quot;')}">
                 <select id="portada-fuente"><option value="anton">Cargando...</option></select>
                 <button class="btn btn-secondary" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada</button>
             </div>
