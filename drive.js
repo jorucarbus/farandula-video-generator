@@ -228,9 +228,12 @@ async function listarCanales() {
   return res.data.files.map(f => ({ id: f.id, name: f.name }));
 }
 
-// Crear una carpeta dentro de un canal (para guardar insumos de un job)
+// Crear una carpeta dentro de un canal (insumos de un job, o la subcarpeta de un video con su
+// portada). OAuth primero: la carpeta de destino de los videos (`destFolder`) necesita OAuth
+// para subirVideo() — el Service Account solo no siempre tiene acceso a esa misma carpeta.
 async function crearCarpetaInsumo(canalId, nombreCarpeta) {
-  const res = await getDrive().files.create({
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.create({
     requestBody: {
       name: nombreCarpeta,
       mimeType: 'application/vnd.google-apps.folder',

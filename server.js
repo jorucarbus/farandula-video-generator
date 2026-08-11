@@ -107,20 +107,22 @@ app.get('/api/audio/:token', async (req, res) => {
 
 // Servir el video renderizado para verlo en la UI sin descargarlo
 app.get('/api/preview/:token', (req, res) => {
-  const ruta = previews.get(req.params.token);
-  if (!ruta || !fs.existsSync(ruta)) {
+  const entrada = previews.get(req.params.token);
+  if (!entrada || !fs.existsSync(entrada.path)) {
     return res.status(404).json({ error: 'Preview no disponible' });
   }
-  res.sendFile(ruta);
+  res.sendFile(entrada.path);
 });
 
 // Portada (miniatura): fotograma elegido por el usuario + titular quemado encima. Se genera a
 // partir del MP4 de preview (sobrevive a la limpieza de temporales del render), nunca del
-// original — así funciona aunque el render ya se haya limpiado del disco.
+// original — así funciona aunque el render ya se haya limpiado del disco. Además de servirla
+// para descargar, se guarda junto al video (misma subcarpeta que creó /api/generate-video) —
+// pedido explícito del usuario, para no tener que subirla aparte a mano.
 app.post('/api/portada', async (req, res) => {
   const { previewToken, timestamp, titular, fuente } = req.body;
-  const videoPath = previews.get(previewToken);
-  if (!videoPath || !fs.existsSync(videoPath)) {
+  const entrada = previews.get(previewToken);
+  if (!entrada || !fs.existsSync(entrada.path)) {
     return res.status(404).json({ error: 'El preview del video ya no está disponible, genera el video de nuevo' });
   }
   if (!titular || !titular.trim()) {
@@ -128,7 +130,7 @@ app.post('/api/portada', async (req, res) => {
   }
   try {
     const token = crypto.randomBytes(16).toString('hex');
-    const ruta = await portada.generarPortada(videoPath, Number(timestamp) || 0, titular.trim(), fuente, token);
+    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular.trim(), fuente, token);
     // Conservar solo las 3 portadas más recientes, mismo criterio que los previews.
     const viejas = [...portadas.entries()].slice(0, Math.max(0, portadas.size - 2));
     for (const [tok, ruta2] of viejas) {
@@ -136,7 +138,24 @@ app.post('/api/portada', async (req, res) => {
       portadas.delete(tok);
     }
     portadas.set(token, ruta);
-    res.json({ portadaUrl: `/api/portada-file/${token}` });
+
+    // Copiarla/subirla junto al video, si se sabe dónde quedó guardado. Nunca rompe la
+    // respuesta al usuario: si esto falla, la portada sigue disponible para descargar igual.
+    let guardadaJuntoAlVideo = false;
+    if (entrada.destino) {
+      try {
+        if (entrada.destino.modo === 'local') {
+          fs.copyFileSync(ruta, path.join(entrada.destino.carpetaLocal, `${entrada.destino.nombreBase}.jpg`));
+        } else if (entrada.destino.modo === 'api') {
+          await driveHelper.subirVideo(ruta, `${entrada.destino.nombreBase}.jpg`, entrada.destino.carpetaDriveId, 'image/jpeg');
+        }
+        guardadaJuntoAlVideo = true;
+      } catch (e) {
+        console.warn(`⚠️ No se pudo guardar la portada junto al video: ${e.message}`);
+      }
+    }
+
+    res.json({ portadaUrl: `/api/portada-file/${token}`, guardadaJuntoAlVideo });
   } catch (e) {
     console.error('Error generando portada:', e.message);
     res.status(500).json({ error: `No se pudo generar la portada: ${e.message}` });
@@ -895,22 +914,40 @@ app.post('/api/generate-video', async (req, res) => {
       || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
 
-    // 7. Guardar en la carpeta de destino
+    // 7. Guardar en la carpeta de destino, dentro de una subcarpeta con el título del video —
+    // pedido explícito del usuario, para que el video y su portada (Paso extra, generada
+    // después) queden juntos en vez de sueltos en la carpeta del canal.
     const folderName = await driveHelper.nombreCarpeta(destFolder);
     const localBase = process.env.RENDERS_LOCAL_PATH;
     let driveLink;
+    // Dónde guardar la portada más tarde (se genera después, con el usuario ya viendo el
+    // resultado) — se completa en cada rama de abajo, o queda null si no se pudo crear la
+    // subcarpeta (la portada sigue funcionando igual, solo se queda sin copia junto al video).
+    let destinoPortada = null;
 
     if (localBase && fs.existsSync(path.join(localBase, folderName))) {
       // Copiar a la carpeta local de Google Drive (el cliente de escritorio la sincroniza solo)
-      const destPath = path.join(localBase, folderName, fileName);
+      const carpetaVideo = path.join(localBase, folderName, nombreCorto);
+      fs.mkdirSync(carpetaVideo, { recursive: true });
+      const destPath = path.join(carpetaVideo, fileName);
       console.log(`💾 [${renderId}] Guardando en Drive local: ${destPath}`);
       fs.copyFileSync(resultado.finalPath, destPath);
       driveLink = `https://drive.google.com/drive/folders/${destFolder}`;
+      destinoPortada = { modo: 'local', carpetaLocal: carpetaVideo, nombreBase: nombreCorto };
     } else {
       // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
+      let carpetaDestinoId = destFolder;
+      try {
+        carpetaDestinoId = await driveHelper.crearCarpetaInsumo(destFolder, nombreCorto);
+      } catch (e) {
+        console.warn(`  ⚠️ [${renderId}] No se pudo crear la subcarpeta "${nombreCorto}" (${e.message}), el video sube directo a la carpeta del canal`);
+      }
       console.log(`⬆️ [${renderId}] Subiendo a Drive por API: ${fileName}`);
-      const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, destFolder);
+      const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, carpetaDestinoId);
       driveLink = subido.webViewLink;
+      if (carpetaDestinoId !== destFolder) {
+        destinoPortada = { modo: 'api', carpetaDriveId: carpetaDestinoId, nombreBase: nombreCorto };
+      }
     }
 
     // 8. Respaldar la locución en Drive con el mismo nombre que el video
@@ -943,18 +980,19 @@ app.post('/api/generate-video', async (req, res) => {
       console.warn(`⚠️ [${renderId}] No se pudo registrar en Sheets: ${e.message}`);
     }
 
-    // 10. Registrar preview (copia que sobrevive a la limpieza de temporales)
+    // 10. Registrar preview (copia que sobrevive a la limpieza de temporales) — junto con
+    // `destino`, para que /api/portada sepa dónde dejar la miniatura al lado del video.
     const previewToken = crypto.randomBytes(16).toString('hex');
     const previewPath = path.join(video.TEMP_DIR, `preview_${previewToken}.mp4`);
     try {
       fs.copyFileSync(resultado.finalPath, previewPath);
       // Conservar solo los 3 previews más recientes
       const viejos = [...previews.entries()].slice(0, Math.max(0, previews.size - 2));
-      for (const [tok, ruta] of viejos) {
-        try { fs.unlinkSync(ruta); } catch {}
+      for (const [tok, entrada] of viejos) {
+        try { fs.unlinkSync(entrada.path); } catch {}
         previews.delete(tok);
       }
-      previews.set(previewToken, previewPath);
+      previews.set(previewToken, { path: previewPath, destino: destinoPortada });
     } catch (e) {
       console.warn(`⚠️ [${renderId}] No se pudo crear el preview: ${e.message}`);
     }
@@ -1127,7 +1165,7 @@ function limpiarCache() {
   try {
     const ahora = Date.now();
     const activos = new Set([
-      ...[...previews.values()],
+      ...[...previews.values()].map(entrada => entrada.path),
       ...[...portadas.values()],
       ...[...audiosPendientes.values()].map(a => a.path),
     ].map(p => path.basename(p)));

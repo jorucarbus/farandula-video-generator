@@ -1008,14 +1008,18 @@ async function generarPortada() {
     setButtonDisabled('btn-generar-portada', true);
     destino.innerHTML = '';
     try {
-        const { portadaUrl } = await apiCall('/portada', 'POST', {
+        const { portadaUrl, guardadaJuntoAlVideo } = await apiCall('/portada', 'POST', {
             previewToken: state.previewToken,
             timestamp: videoEl ? videoEl.currentTime : 0,
             titular,
             fuente: fuenteEl.value,
         });
+        const notaGuardado = guardadaJuntoAlVideo
+            ? `<p class="hint">${icon('checkCircle')} Guardada junto al video, en su misma carpeta.</p>`
+            : `<p class="hint">${icon('folderOpen')} No se pudo guardar junto al video — descargala y subila vos.</p>`;
         destino.innerHTML = `
             <img src="${portadaUrl}" alt="Portada" class="portada-preview">
+            ${notaGuardado}
             <p><a href="${portadaUrl}" download="portada.jpg" class="btn btn-secondary">${icon('folderOpen')} Descargar portada (JPG)</a></p>
         `;
     } catch (e) {
