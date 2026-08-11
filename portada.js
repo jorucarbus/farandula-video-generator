@@ -22,7 +22,7 @@ const subtitulos = require('./subtitulos');
 const ANCHO_VIDEO = 1080;
 const ALTO_VIDEO = 1920;
 const ANCHO_UTIL = ANCHO_VIDEO - 70 - 70; // margen lateral, mismo criterio que ANCHO_UTIL de subtitulos.js
-const FONTSIZE_MAX = 78;
+const FONTSIZE_MAX = 94;
 const FONTSIZE_MIN = 36;
 const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
 const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
@@ -114,12 +114,13 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token)
   const { lineas, fontsize } = ajustarTamano(titular.toUpperCase(), fuente.factorAncho);
 
   // Geometría de la caja, estimada con el mismo factorAncho que ya se usó para decidir que el
-  // texto entra — da un poco de aire extra (holgado, no ajustado al pixel) en vez de medir el
-  // render real, que ffmpeg no expone de vuelta sin un segundo paso.
-  const padX = Math.round(fontsize * 0.5);
-  const padY = Math.round(fontsize * 0.4);
-  const lineHeight = Math.round(fontsize * 1.18);
-  const lineSpacing = Math.round(fontsize * 0.12);
+  // texto entra. El padding es la caja MISMA (se dibuja exacto, sin margen de error de por sí,
+  // a diferencia de la estimación de ancho que sí necesita ser holgada) — ajustado angosto a
+  // propósito para que el texto llene la burbuja en vez de flotar con aire de sobra alrededor.
+  const padX = Math.round(fontsize * 0.32);
+  const padY = Math.round(fontsize * 0.22);
+  const lineHeight = Math.round(fontsize * 1.08);
+  const lineSpacing = Math.round(fontsize * 0.08);
   const anchoMaxLinea = Math.max(...lineas.map(l => l.length)) * fontsize * fuente.factorAncho;
   const boxW = Math.min(ANCHO_UTIL + padX * 2, Math.round(anchoMaxLinea + padX * 2));
   const boxH = lineas.length * lineHeight + (lineas.length - 1) * lineSpacing + padY * 2;
