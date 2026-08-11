@@ -968,6 +968,12 @@ function showResult(videoData) {
                 <select id="portada-fuente"><option value="anton">Cargando...</option></select>
                 <button class="btn btn-secondary" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada</button>
             </div>
+            <label class="mt-sm"><input type="checkbox" id="portada-tamano-auto" checked> Tamaño de letra automático</label>
+            <div class="tamano-row">
+                <input type="range" id="portada-tamano" min="24" max="160" step="1" value="94" disabled>
+                <input type="number" id="portada-tamano-num" min="24" max="160" step="1" value="94" disabled>
+                <span class="hint">pt</span>
+            </div>
             <div id="portada-resultado"></div>
         </div>
     ` : '';
@@ -986,8 +992,32 @@ function showResult(videoData) {
             El video está listo para publicar en redes sociales.
         </p>
     `;
-    if (state.previewToken) cargarFuentesEnSelect('portada-fuente');
+    if (state.previewToken) {
+        cargarFuentesEnSelect('portada-fuente');
+        initPortadaTamano();
+    }
     log('🎉 ¡Proceso completado!');
+}
+
+// Casilla "automático" prende/apaga el slider+número de tamaño de la portada, y los sincroniza
+// entre sí — mismo patrón que fijarTamano() de los subtítulos, pero acá el número SÍ se manda al
+// server (para subtítulos ese valor lo lee otro código; acá lo lee generarPortada() al enviar).
+function initPortadaTamano() {
+    const auto = document.getElementById('portada-tamano-auto');
+    const slider = document.getElementById('portada-tamano');
+    const num = document.getElementById('portada-tamano-num');
+    if (!auto || !slider || !num) return;
+    const sync = valor => {
+        const n = Math.max(24, Math.min(160, Math.round(valor) || 94));
+        slider.value = n;
+        num.value = n;
+    };
+    auto.addEventListener('change', () => {
+        slider.disabled = auto.checked;
+        num.disabled = auto.checked;
+    });
+    slider.addEventListener('input', () => sync(slider.value));
+    num.addEventListener('input', () => sync(num.value));
 }
 
 // Genera la portada (fotograma actual del player + titular) y la muestra con link de descarga.
@@ -995,6 +1025,8 @@ async function generarPortada() {
     const videoEl = document.getElementById('result-video-player');
     const titularEl = document.getElementById('portada-titular');
     const fuenteEl = document.getElementById('portada-fuente');
+    const tamanoAutoEl = document.getElementById('portada-tamano-auto');
+    const tamanoEl = document.getElementById('portada-tamano-num');
     const destino = document.getElementById('portada-resultado');
     const titular = titularEl.value.trim();
     if (!titular) {
@@ -1013,6 +1045,7 @@ async function generarPortada() {
             timestamp: videoEl ? videoEl.currentTime : 0,
             titular,
             fuente: fuenteEl.value,
+            tamano: (tamanoAutoEl && tamanoAutoEl.checked) ? 'auto' : Number(tamanoEl.value),
         });
         const notaGuardado = guardadaJuntoAlVideo
             ? `<p class="hint">${icon('checkCircle')} Guardada junto al video, en su misma carpeta.</p>`

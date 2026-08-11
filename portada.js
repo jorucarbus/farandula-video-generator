@@ -24,6 +24,11 @@ const ALTO_VIDEO = 1920;
 const ANCHO_UTIL = ANCHO_VIDEO - 70 - 70; // margen lateral, mismo criterio que ANCHO_UTIL de subtitulos.js
 const FONTSIZE_MAX = 94;
 const FONTSIZE_MIN = 36;
+// Rango del tamaño MANUAL (Paso extra, selector del usuario) — más ancho que el que recorre el
+// automático: permite letra bien chica o bien gigante a propósito, algo que el auto nunca elige
+// porque busca el equilibrio "entra sin desbordar", no un efecto visual particular.
+const TAMANO_MANUAL_MIN = 24;
+const TAMANO_MANUAL_MAX = 160;
 const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
 const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
 const COLOR_TEXTO = 'FFFFFF'; // blanco, pedido explícito del usuario (RRGGBB)
@@ -70,18 +75,23 @@ function envolver(palabras, maxChars, maxLineas, forzar = false) {
   return lineas;
 }
 
+// Envuelve `texto` a como máximo 3 líneas para un tamaño de letra YA elegido (manual o cada
+// intento del automático) — `forzar` decide si puede desbordar la última línea en vez de fallar.
+function envolverATamano(texto, fontsize, factorAncho, forzar) {
+  const palabras = texto.trim().split(/\s+/).filter(Boolean);
+  const maxChars = Math.max(1, Math.floor(ANCHO_UTIL / (fontsize * factorAncho)));
+  return envolver(palabras, maxChars, 3, forzar);
+}
+
 // Busca el tamaño de letra más grande (entre FONTSIZE_MAX y FONTSIZE_MIN) que deja el titular en
 // máximo 3 líneas sin desbordar el ancho útil, según el `factorAncho` real de la tipografía
 // elegida (mismo principio que tamanoSeguro() en subtitulos.js, aplicado a un titular completo).
 function ajustarTamano(texto, factorAncho) {
-  const palabras = texto.trim().split(/\s+/).filter(Boolean);
   for (let fontsize = FONTSIZE_MAX; fontsize >= FONTSIZE_MIN; fontsize -= 3) {
-    const maxChars = Math.max(1, Math.floor(ANCHO_UTIL / (fontsize * factorAncho)));
-    const lineas = envolver(palabras, maxChars, 3);
+    const lineas = envolverATamano(texto, fontsize, factorAncho, false);
     if (lineas) return { lineas, fontsize };
   }
-  const maxChars = Math.max(1, Math.floor(ANCHO_UTIL / (FONTSIZE_MIN * factorAncho)));
-  return { lineas: envolver(palabras, maxChars, 3, true), fontsize: FONTSIZE_MIN };
+  return { lineas: envolverATamano(texto, FONTSIZE_MIN, factorAncho, true), fontsize: FONTSIZE_MIN };
 }
 
 // Path ASS ("drawing") de un rectángulo w x h con esquinas redondeadas de radio r, ancladas en el
@@ -106,12 +116,22 @@ function dibujoCajaRedondeada(w, h, r) {
 // timestamp: segundos dentro del video, el fotograma que el usuario eligió pausando el player.
 // titular: texto libre, se pone en mayúsculas.
 // fuenteClave: clave del catálogo de subtitulos.js (default 'anton' si no llega o no existe).
-async function generarPortada(videoPath, timestamp, titular, fuenteClave, token) {
+// tamanoManual: opcional — si el usuario elige un tamaño a mano (Paso extra), se usa TAL CUAL
+// (clamp a [TAMANO_MANUAL_MIN, TAMANO_MANUAL_MAX]) en vez del automático, y el texto se envuelve
+// forzando el desborde de la última línea si hace falta (el usuario eligió el tamaño a propósito,
+// no tiene sentido que el código lo achique solo). Sin valor, o no numérico: automático de siempre.
+async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual) {
   const outPath = path.join(TEMP_DIR, `portada_${token}.jpg`);
   const fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteClave);
   const fuente = subtitulos.FUENTES[fuenteClave] || subtitulos.FUENTES[subtitulos.FUENTE_DEFAULT];
 
-  const { lineas, fontsize } = ajustarTamano(titular.toUpperCase(), fuente.factorAncho);
+  const textoMayus = titular.toUpperCase();
+  const { lineas, fontsize } = Number.isFinite(tamanoManual)
+    ? (() => {
+        const tam = Math.max(TAMANO_MANUAL_MIN, Math.min(TAMANO_MANUAL_MAX, Math.round(tamanoManual)));
+        return { lineas: envolverATamano(textoMayus, tam, fuente.factorAncho, true), fontsize: tam };
+      })()
+    : ajustarTamano(textoMayus, fuente.factorAncho);
 
   // Geometría de la caja, estimada con el mismo factorAncho que ya se usó para decidir que el
   // texto entra. El padding es la caja MISMA (se dibuja exacto, sin margen de error de por sí,

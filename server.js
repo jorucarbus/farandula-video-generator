@@ -120,7 +120,7 @@ app.get('/api/preview/:token', (req, res) => {
 // para descargar, se guarda junto al video (misma subcarpeta que creó /api/generate-video) —
 // pedido explícito del usuario, para no tener que subirla aparte a mano.
 app.post('/api/portada', async (req, res) => {
-  const { previewToken, timestamp, titular, fuente } = req.body;
+  const { previewToken, timestamp, titular, fuente, tamano } = req.body;
   const entrada = previews.get(previewToken);
   if (!entrada || !fs.existsSync(entrada.path)) {
     return res.status(404).json({ error: 'El preview del video ya no está disponible, genera el video de nuevo' });
@@ -130,7 +130,9 @@ app.post('/api/portada', async (req, res) => {
   }
   try {
     const token = crypto.randomBytes(16).toString('hex');
-    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular.trim(), fuente, token);
+    // tamano: número = manual (el usuario lo eligió a mano); ausente o no numérico = automático.
+    const tamanoManual = tamano === undefined || tamano === null || tamano === 'auto' ? undefined : Number(tamano);
+    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular.trim(), fuente, token, tamanoManual);
     // Conservar solo las 3 portadas más recientes, mismo criterio que los previews.
     const viejas = [...portadas.entries()].slice(0, Math.max(0, portadas.size - 2));
     for (const [tok, ruta2] of viejas) {
