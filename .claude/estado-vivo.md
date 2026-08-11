@@ -7,6 +7,52 @@ primero si no conoces el proyecto. Este archivo solo trackea progreso.
 Las dos invariantes que ninguna fase puede romper: video == duración del audio (±0.1s), ningún
 clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
+## Estado al 2026-08-10 — Portada (miniatura), fuera del plan maestro
+
+`test-persistencia` en `cf46124` (push verificado). Pedido directo del usuario ("poner portada
+al video, escoger un fotograma y poner un titular"). Fase 8 (música, todas las sub-partes) y
+la Fase 9 (Director de edición) siguen sin tocar — esto se hizo aparte, no es parte del orden
+del plan maestro.
+
+**Qué es**: TikTok no expone API para fijar la portada al publicar, así que esto genera una
+imagen JPG **aparte** (nunca toca el video final) con un fotograma elegido + un titular quemado
+encima, para que el usuario la suba a mano al publicar.
+
+- `portada.js` (nuevo) — `ffmpeg -ss <t> -frames:v 1` sobre el MP4 de preview (el que ya
+  sobrevive a la limpieza de temporales del render, no el original) + `drawtext` para el
+  titular. Tamaño de letra **dinámico** (`ajustarTamano`): prueba de 92pt a 40pt hasta que el
+  titular entre en máximo 2 líneas sin desbordar el ancho útil, usando el `factorAncho` real de
+  la tipografía elegida — mismo principio que `tamanoSeguro()` de `subtitulos.js` (Fase 6), pero
+  aplicado a un titular completo en vez de una palabra sola. Reusa el catálogo de 9 tipografías
+  tal cual.
+- `server.js` — `POST /api/portada` (genera, `Map` de tokens con la misma política de
+  "conservar los 3 últimos" que ya usan los previews) + `GET /api/portada-file/:token` (público,
+  mismo patrón que `/api/preview/:token`, porque `<img src>` no puede mandar el header de la
+  API key).
+- `public/app.js` — bloque "Portada" debajo del resultado del video: el titular sale
+  pre-rellenado desde el nombre de archivo que ya genera `generarNombreArchivo` (editable, no
+  hace falta una llamada nueva a Gemini), selector de tipografía (mismo catálogo), botón que
+  toma el `currentTime` del reproductor como fotograma elegido. `cargarFuentesEnSelect()`
+  generaliza `cargarFuentesSubtitulos()` para selects que no necesitan trackear el estado global
+  de subtítulos.
+
+**Bug real encontrado y corregido antes de verificar** (no llegó a producción): la primera
+versión envolvía el titular a 2 líneas con un límite fijo de caracteres (22), sin tener en
+cuenta el tamaño de fuente real — con Anton a 72pt un titular normal se salía del cuadro por
+los dos lados. Corregido con `ajustarTamano()` (ver arriba). Verificado quemando frames reales
+con ffmpeg, no solo revisando el código.
+
+**Falsa alarma, para no repetir la confusión**: una corrida de prueba vía `curl` desde bash
+mostró glifos rotos (tofu/cuadros) en "Á" y "¿" con la tipografía Bebas Neue. Parecía un bug de
+cobertura de glifos de la fuente. Repetido con un cliente `fetch` de Node (mismo mecanismo que
+usa el navegador real) contra el mismo endpoint, mismo texto, mismo font: **perfecto, sin tofu**.
+La corrupción era del propio `curl`/bash mangling UTF-8 al pasar el texto por argv, no del
+servidor ni de la fuente. Las 9 tipografías del catálogo sí soportan acentos/ñ/¿/¡ completos —
+confirmado, no asumido.
+
+**Pendiente**: nada a medio hacer. No se tocó `farandula-video-family` (no tiene este flujo de
+resultado con preview) ni se evaluó si vale la pena portarlo — no se pidió.
+
 ## Estado al 2026-08-08 (continuación — noche)
 
 `test-persistencia` en `2cc1db0` (verificado, push llegó). Después de cerrar la Fase 7 hubo dos
