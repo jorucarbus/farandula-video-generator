@@ -50,8 +50,26 @@ La corrupción era del propio `curl`/bash mangling UTF-8 al pasar el texto por a
 servidor ni de la fuente. Las 9 tipografías del catálogo sí soportan acentos/ñ/¿/¡ completos —
 confirmado, no asumido.
 
-**Pendiente**: nada a medio hacer. No se tocó `farandula-video-family` (no tiene este flujo de
-resultado con preview) ni se evaluó si vale la pena portarlo — no se pidió.
+**Rediseño visual** (`279953d`), pedido con referencia de imagen del usuario: caja sólida rosa
+con esquinas redondeadas + texto oscuro en negrita (antes: caja translúcida negra + texto
+blanco). Sin colita de burbuja de chat — decisión explícita, no valía el riesgo en ffmpeg.
+
+**Bug real de producción, encontrado por el usuario con screenshot** (`4c4cb02`): la caja
+redondeada usaba el filtro `geq` (talla el alpha en las 4 esquinas) montado con `overlay` vía
+`filter_complex`. Funcionaba local (Windows) pero en Railway (Linux) daba
+`"Filter not found"` — el binario estático de `ffmpeg-static` en Linux no trae `geq` compilado,
+a diferencia del de Windows. **Reemplazado por completo**: la caja ahora es un "drawing"
+vectorial de ASS (rectángulo con esquinas en bézier) + el titular como texto, en el MISMO
+`.ass`, quemado con el filtro `ass` (libass) — el mismo que ya usan los subtítulos de Fase 6
+en producción todos los días. Cero `geq`, cero `overlay`, cero `filter_complex`. Lección para
+cualquier filtro nuevo de ffmpeg en este proyecto: **verificar que esté compilado en el binario
+de Linux, no asumir por que funciona local en Windows** — los dos binarios de `ffmpeg-static`
+no traen el mismo set de filtros.
+
+**Pendiente**: verificar en Railway (`adventurous-reflection`, redeploy automático al pushear)
+que el fix funciona ahí también — se verificó local con ffmpeg real pero no en el entorno Linux
+exacto donde falló. No se tocó `farandula-video-family` (no tiene este flujo) ni se evaluó
+portarlo — no se pidió.
 
 ## Estado al 2026-08-08 (continuación — noche)
 
