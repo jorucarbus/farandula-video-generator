@@ -66,10 +66,28 @@ cualquier filtro nuevo de ffmpeg en este proyecto: **verificar que esté compila
 de Linux, no asumir por que funciona local en Windows** — los dos binarios de `ffmpeg-static`
 no traen el mismo set de filtros.
 
+**Diseño final** (`3d199f9`): texto blanco centrado dentro de la burbuja (`\an5`, ancla al
+centro de la caja), burbuja centrada horizontalmente en pantalla (antes pegada al margen
+izquierdo).
+
+**Video + portada juntos en una subcarpeta** (`76de615`), pedido explícito del usuario: en vez
+de subir el video suelto a la carpeta del canal, `/api/generate-video` crea una subcarpeta con
+el título (`nombreCorto`) — local (`fs.mkdirSync`, si hay Drive Desktop sincronizado) o por API
+(`driveHelper.crearCarpetaInsumo`, si no) — y el video se guarda ahí. Cuando el usuario genera
+la portada más tarde (paso separado, después de ver el video), se guarda en la MISMA subcarpeta
+junto al video. El vínculo entre ambos pasos viaja en el `Map` `previews` de `server.js`, que
+pasó de `token -> path` a `token -> {path, destino}`.
+**Fix real encontrado en el camino**: `crearCarpetaInsumo` usaba Service-Account-only, pero
+`subirVideo` (misma carpeta destino) ya necesitaba OAuth — asimetría que hacía sospechar que la
+creación de subcarpeta fallaría en silencio por permisos en el camino API. Cambiado a
+`getDriveOAuth() || getDrive()`, mismo criterio que el resto. Confirmado real (no supuesto):
+probado contra un canal real (Supe Lupe), la subcarpeta se creó y subieron video+portada,
+limpiado después.
+
 **Pendiente**: verificar en Railway (`adventurous-reflection`, redeploy automático al pushear)
-que el fix funciona ahí también — se verificó local con ffmpeg real pero no en el entorno Linux
-exacto donde falló. No se tocó `farandula-video-family` (no tiene este flujo) ni se evaluó
-portarlo — no se pidió.
+que el fix de `geq`→`ass` funciona ahí también — se verificó local con ffmpeg real pero no en el
+entorno Linux exacto donde falló originalmente. No se tocó `farandula-video-family` (no tiene
+este flujo) ni se evaluó portarlo — no se pidió.
 
 ## Estado al 2026-08-08 (continuación — noche)
 
