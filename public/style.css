@@ -897,6 +897,31 @@ footer {
     margin: 0 auto 15px;
 }
 
+/* Portada (miniatura): fotograma elegido en el player de arriba + titular quemado */
+.portada-box {
+    border-top: 1px solid var(--border);
+    padding-top: 15px;
+}
+.portada-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+.portada-controls input[type="text"] {
+    flex: 1 1 220px;
+}
+.portada-controls select { flex: 0 0 auto; }
+.portada-preview {
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    aspect-ratio: 9/16;
+    object-fit: cover;
+    border-radius: 12px;
+    margin: 12px auto 8px;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     header { padding: 16px 14px; }

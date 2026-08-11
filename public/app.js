@@ -121,6 +121,7 @@ let state = {
     fuentes: [],    // [{type, content, tipoReal, fuenteResumen}, ...] — hasta 3 por noticia (Fase 4)
     sesgo: 'neutral',
     avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
+    previewToken: null, // token del preview del último video renderizado, para /api/portada
 };
 const MAX_FUENTES = 6;
 
@@ -939,13 +940,37 @@ function showResult(videoData) {
     }
 
     const playerHtml = videoData.previewUrl
-        ? `<video controls playsinline class="result-video-player" src="${videoData.previewUrl}"></video>`
+        ? `<video id="result-video-player" controls playsinline class="result-video-player" src="${videoData.previewUrl}"></video>`
         : '';
     const nombresSesgo = { neutral: `${icon('scales')} Neutral`, favor: `${icon('heart')} A favor`, contra: `${icon('flame')} En contra` };
     const otrosSesgos = ['neutral', 'favor', 'contra'].filter(s => s !== state.sesgo);
     const botonesSesgo = otrosSesgos.map(s =>
         `<button class="btn btn-primary" onclick="otroSesgo('${s}')">${nombresSesgo[s]}</button>`
     ).join('');
+
+    // Token del preview: se extrae de la URL en vez de guardarlo aparte en showResult, porque
+    // acá es el único lugar donde llega — así /api/portada sabe de qué MP4 sacar el fotograma.
+    state.previewToken = videoData.previewUrl ? videoData.previewUrl.split('/').pop() : null;
+    // Sugerencia de titular: el nombre de archivo ya tiene "Protagonista - Secundario - Hecho"
+    // (gemini.generarNombreArchivo), sin fecha ni extensión — punto de partida razonable, editable.
+    const titularSugerido = (videoData.fileName || '')
+        .replace(/\.mp4$/i, '')
+        .replace(/^\d{4}-\d{2}-\d{2}\s*/, '');
+
+    const portadaHtml = state.previewToken ? `
+        <div class="portada-box mt-md" id="portada-box">
+            <p><strong>${icon('videoCamera')} Portada (miniatura)</strong></p>
+            <p class="hint">Pausá el video de arriba en el fotograma que quieras, escribí el titular
+            y generá la portada. TikTok no deja fijarla por API — la descargás y la subís vos al
+            publicar.</p>
+            <div class="portada-controls">
+                <input type="text" id="portada-titular" placeholder="Titular..." value="${titularSugerido.replace(/"/g, '&quot;')}">
+                <select id="portada-fuente"><option value="anton">Cargando...</option></select>
+                <button class="btn btn-secondary" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada</button>
+            </div>
+            <div id="portada-resultado"></div>
+        </div>
+    ` : '';
 
     resultInfo.innerHTML = `
         ${playerHtml}
@@ -956,11 +981,48 @@ function showResult(videoData) {
         <p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Ver en Google Drive</a></p>
         <p class="mt-md"><strong>${icon('repeat')} Generar otro video de la MISMA noticia con otro sesgo:</strong></p>
         <p class="btn-row">${botonesSesgo}</p>
+        ${portadaHtml}
         <p class="hint mt-md">
             El video está listo para publicar en redes sociales.
         </p>
     `;
+    if (state.previewToken) cargarFuentesEnSelect('portada-fuente');
     log('🎉 ¡Proceso completado!');
+}
+
+// Genera la portada (fotograma actual del player + titular) y la muestra con link de descarga.
+async function generarPortada() {
+    const videoEl = document.getElementById('result-video-player');
+    const titularEl = document.getElementById('portada-titular');
+    const fuenteEl = document.getElementById('portada-fuente');
+    const destino = document.getElementById('portada-resultado');
+    const titular = titularEl.value.trim();
+    if (!titular) {
+        alert('Escribí un titular para la portada');
+        return;
+    }
+    if (!state.previewToken) {
+        alert('No hay preview del video disponible (generá el video de nuevo)');
+        return;
+    }
+    setButtonDisabled('btn-generar-portada', true);
+    destino.innerHTML = '';
+    try {
+        const { portadaUrl } = await apiCall('/portada', 'POST', {
+            previewToken: state.previewToken,
+            timestamp: videoEl ? videoEl.currentTime : 0,
+            titular,
+            fuente: fuenteEl.value,
+        });
+        destino.innerHTML = `
+            <img src="${portadaUrl}" alt="Portada" class="portada-preview">
+            <p><a href="${portadaUrl}" download="portada.jpg" class="btn btn-secondary">${icon('folderOpen')} Descargar portada (JPG)</a></p>
+        `;
+    } catch (e) {
+        destino.innerHTML = `<p class="error-text">Error generando la portada: ${e.message}</p>`;
+    } finally {
+        setButtonDisabled('btn-generar-portada', false);
+    }
 }
 
 // Rehacer el flujo con la misma fuente pero otro sesgo (nueva crónica → nuevo guion → nuevo video)
@@ -1471,6 +1533,20 @@ async function cargarFuentesSubtitulos() {
         select.value = subsFuente;
     } catch (e) {
         console.warn('No se pudo cargar el catálogo de tipografías, se usa Anton por defecto:', e.message);
+    }
+}
+
+// Versión genérica de lo de arriba, para selects que no necesitan trackear `subsFuente` (ej.
+// el de la portada). Mismo catálogo/endpoint, no toca la fuente elegida para los subtítulos.
+async function cargarFuentesEnSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    try {
+        const { fuentes, default: porDefecto } = await apiCall('/fuentes-subtitulos', 'GET');
+        select.innerHTML = fuentes.map(f => `<option value="${f.clave}">${f.familia}</option>`).join('');
+        select.value = porDefecto || fuentes[0]?.clave || 'anton';
+    } catch (e) {
+        console.warn(`No se pudo cargar el catálogo de tipografías para #${selectId}:`, e.message);
     }
 }
 

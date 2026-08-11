@@ -19,6 +19,7 @@ const jobStore = require('./jobStore');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
 const exportar = require('./exportar');
+const portada = require('./portada');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,7 +41,7 @@ app.use(express.static('public', {
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -54,6 +55,9 @@ app.use('/api', authenticateApiKey);
 
 // Previews en memoria: token aleatorio -> ruta del MP4 renderizado
 const previews = new Map();
+
+// Portadas en memoria: token aleatorio -> ruta del JPG generado (fotograma + titular)
+const portadas = new Map();
 
 // Audios pendientes de aprobación: token -> {path, duracion, modelo}
 const audiosPendientes = new Map();
@@ -106,6 +110,43 @@ app.get('/api/preview/:token', (req, res) => {
   const ruta = previews.get(req.params.token);
   if (!ruta || !fs.existsSync(ruta)) {
     return res.status(404).json({ error: 'Preview no disponible' });
+  }
+  res.sendFile(ruta);
+});
+
+// Portada (miniatura): fotograma elegido por el usuario + titular quemado encima. Se genera a
+// partir del MP4 de preview (sobrevive a la limpieza de temporales del render), nunca del
+// original — así funciona aunque el render ya se haya limpiado del disco.
+app.post('/api/portada', async (req, res) => {
+  const { previewToken, timestamp, titular, fuente } = req.body;
+  const videoPath = previews.get(previewToken);
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: 'El preview del video ya no está disponible, genera el video de nuevo' });
+  }
+  if (!titular || !titular.trim()) {
+    return res.status(400).json({ error: 'Falta el titular' });
+  }
+  try {
+    const token = crypto.randomBytes(16).toString('hex');
+    const ruta = await portada.generarPortada(videoPath, Number(timestamp) || 0, titular.trim(), fuente, token);
+    // Conservar solo las 3 portadas más recientes, mismo criterio que los previews.
+    const viejas = [...portadas.entries()].slice(0, Math.max(0, portadas.size - 2));
+    for (const [tok, ruta2] of viejas) {
+      try { fs.unlinkSync(ruta2); } catch {}
+      portadas.delete(tok);
+    }
+    portadas.set(token, ruta);
+    res.json({ portadaUrl: `/api/portada-file/${token}` });
+  } catch (e) {
+    console.error('Error generando portada:', e.message);
+    res.status(500).json({ error: `No se pudo generar la portada: ${e.message}` });
+  }
+});
+
+app.get('/api/portada-file/:token', (req, res) => {
+  const ruta = portadas.get(req.params.token);
+  if (!ruta || !fs.existsSync(ruta)) {
+    return res.status(404).json({ error: 'Portada no disponible' });
   }
   res.sendFile(ruta);
 });
@@ -1087,6 +1128,7 @@ function limpiarCache() {
     const ahora = Date.now();
     const activos = new Set([
       ...[...previews.values()],
+      ...[...portadas.values()],
       ...[...audiosPendientes.values()].map(a => a.path),
     ].map(p => path.basename(p)));
 
