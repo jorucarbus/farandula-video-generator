@@ -127,6 +127,7 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token)
   const boxX = Math.round((ANCHO_VIDEO - boxW) / 2); // burbuja centrada horizontalmente
   const boxY = Math.round(ALTO_VIDEO * POS_Y_FRACCION);
   const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
+  const sombra = Math.max(2, Math.round(fontsize * 0.045));
 
   const textoASS = lineas.map(escaparASS).join('\\N');
 
@@ -144,7 +145,7 @@ Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad0}${textoASS}
+Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
 `;
 
   const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);
