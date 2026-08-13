@@ -1095,9 +1095,10 @@ function portadaAjustarTamano(texto, factorAncho) {
 // Pinta la burbuja (rosa+texto) según fórmulas de portada.js (servidor) — ver ese archivo si se
 // cambia acá. Compartida por los dos mockups (diseño en Paso 6 y elegir-foto post-render):
 // `elId` es el prefijo de los 3 ids del mockup (`${elId}-live`/`${elId}-pink`/`${elId}-text`),
-// `datos` es `{titular, fuente, fontsize, lineas, escalaCaja}` ya resuelto por el caller — este
-// función solo mide y pinta, no decide tamaño automático/manual (eso varía entre los dos usos).
-function pintarCartelMockup(elId, { titular, fuente, fontsize, lineas, escalaCaja }) {
+// `datos` es `{titular, fuente, fontsize, lineas, escalaCaja, factorAncho}` ya resuelto por el
+// caller — esta función solo mide y pinta, no decide tamaño automático/manual (eso varía entre
+// los dos usos).
+function pintarCartelMockup(elId, { titular, fuente, fontsize, lineas, escalaCaja, factorAncho }) {
     const pink = document.getElementById(`${elId}-pink`);
     const texto = document.getElementById(`${elId}-text`);
     const cont = document.getElementById(`${elId}-live`);
@@ -1120,6 +1121,17 @@ function pintarCartelMockup(elId, { titular, fuente, fontsize, lineas, escalaCaj
     pink.style.outlineWidth = grosor + 'px';
     pink.style.outlineOffset = `-${separacion}px`;
     pink.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
+
+    // Ancho de la caja: la MISMA estimación que portada.js (servidor) usa para dibujarla —
+    // `Math.max(...largos) * fontsize * factorAncho`, no el ancho real que el navegador mide
+    // para el texto. Encontrado por el usuario comparando capturas: sin esto, `width:max-content`
+    // (CSS) ajusta la caja al texto real y queda más angosta que la del video final, que sale
+    // del tamaño de la ESTIMACIÓN (conservadora, para nunca desbordar) — el mockup mentía.
+    const lineasReales = lineas || [titular];
+    const padXVideo = fontsize * 0.32 * escalaCaja;
+    const anchoMaxLinea = Math.max(...lineasReales.map(l => l.length)) * fontsize * (factorAncho || 0.62);
+    const boxWVideo = Math.min(PORTADA_ANCHO_UTIL + padXVideo * 2, anchoMaxLinea + padXVideo * 2);
+    pink.style.width = Math.round(boxWVideo * escala) + 'px';
 }
 
 // Paso 6 — mockup de DISEÑO: fondo placeholder (no hay video real todavía, se descartó antes
@@ -1141,7 +1153,7 @@ function actualizarPortadaDiseno() {
         ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
         : portadaAjustarTamano(titular, factorAncho);
     const escalaCaja = (Number(cajaEl?.value) || 100) / 100;
-    pintarCartelMockup('portada-diseno', { titular, fuente: clave, fontsize, lineas, escalaCaja });
+    pintarCartelMockup('portada-diseno', { titular, fuente: clave, fontsize, lineas, escalaCaja, factorAncho });
 }
 
 function initPortadaDiseno() {
@@ -1174,7 +1186,7 @@ function initPortadaLive(cartel) {
             ? { fontsize: cartel.tamanoManual, lineas: portadaEnvolverATamano(titular, cartel.tamanoManual, factorAncho, true) }
             : portadaAjustarTamano(titular, factorAncho);
         const escalaCaja = Number.isFinite(cartel.escalaCajaManual) ? cartel.escalaCajaManual : 1;
-        pintarCartelMockup('portada-live', { titular, fuente: cartel.fuente, fontsize, lineas, escalaCaja });
+        pintarCartelMockup('portada-live', { titular, fuente: cartel.fuente, fontsize, lineas, escalaCaja, factorAncho });
     };
 
     videoEl.addEventListener('seeked', () => { capturarFrame(); pintar(); });
