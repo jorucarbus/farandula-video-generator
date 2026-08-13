@@ -7,6 +7,43 @@ primero si no conoces el proyecto. Este archivo solo trackea progreso.
 Las dos invariantes que ninguna fase puede romper: video == duración del audio (±0.1s), ningún
 clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
+## Estado al 2026-08-13 — Cartel de portada en el frame 0 del video, fuera del plan maestro
+
+`test-persistencia` en `b34598d` (push verificado). Sigue siendo aparte del plan maestro, como
+la portada JPG del 2026-08-10 de abajo — esto la EXTIENDE, no la reemplaza.
+
+Pedido del usuario: que TikTok (sin API de portada) tome directamente el primer fotograma del
+video como su portada. Primer intento (`96e88ea`) quemó un banner AUTOMÁTICO en el frame 0
+(texto = `nombreCorto`, sin fuente/tamaño elegidos) — el usuario corrigió: quería DISEÑAR el
+cartel él mismo, ANTES de generar el video, y que ese diseño se reuse IDÉNTICO en dos lugares:
+quemado en el frame 0, y superpuesto sobre una captura elegida DESPUÉS de ver el video, para el
+JPG (que ya no se re-edita ahí). De paso pidió que la subcarpeta del video pase a
+`AAAA-MM-DD - Título` (antes solo el título).
+
+- El editor de cartel (titular/fuente/tamaño auto-manual/caja + mockup CSS) se movió del
+  resultado post-render al **Paso 6** (`public/index.html`), como bloque estático — antes vivía
+  armado como HTML dinámico dentro de `showResult()`. Ahí el mockup usa fondo placeholder (no
+  hay video real todavía; se había descartado antes previsualizar un clip real por complicado).
+- `server.js` arma `cartel` (`{titular, fuente, tamanoManual, escalaCajaManual}`) desde
+  `efectos.portada*` en `/api/generate-video`, lo pasa a `montarVideoPlan` para el frame 0, y lo
+  GUARDA en `previews.get(token).cartel` — así `/api/portada` (elegir foto, post-render) lo lee
+  de ahí en vez de recibirlo del body, garantizando que el JPG y el frame 0 sean idénticos. 400
+  si no hay cartel guardado (Paso 6 vacío).
+- `portada.js`/`video.js`: `generarBannerFrame0` ahora acepta tamaño/caja manual (antes siempre
+  automático a la fuerza).
+- Carpeta: `nombreCorto` → `${fecha} - ${nombreCorto}` en las dos ramas de guardado (local y
+  Drive API). Los archivos adentro (mp4/jpg) no cambian de nombre.
+
+Verificado real: browser contra el server (mockup del Paso 6 responde en vivo, 9 fuentes
+cargadas); render real con tamaño manual (60pt) + caja manual (200%) — caso que el banner viejo
+nunca ejercitaba — confirma en el frame 0 extraído; `/api/portada` real con y sin cartel
+guardado (JPG idéntico al cartel / 400 claro), con ruta de debug temporal removida después
+(confirmado con `grep`).
+
+**Pendiente real**: nada a medio hacer. No se probó en Railway (solo local) — próxima sesión que
+toque este código, confirmar ahí antes de dar por cerrado si el usuario reporta algo raro en
+producción.
+
 ## Estado al 2026-08-10 — Portada (miniatura), fuera del plan maestro
 
 `test-persistencia` en `cf46124` (push verificado). Pedido directo del usuario ("poner portada
