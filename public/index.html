@@ -334,11 +334,10 @@
                         <input type="number" id="portada-caja-num" min="50" max="250" step="5" value="100">
                         <span class="hint">%</span>
                     </div>
-                    <label class="mt-sm">Vista previa (aproximada, fondo de referencia — el video todavía no existe; el render real quema el .ass sobre el primer fotograma de verdad):</label>
+                    <p class="error-text" id="portada-fuente-aviso" style="display:none"></p>
+                    <label class="mt-sm">Vista previa (el fondo es de referencia — el video todavía no existe; el cartel es EXACTO: esta misma imagen es la que se superpone en el video y en el JPG):</label>
                     <div class="portada-live" id="portada-diseno-live">
-                        <div class="portada-live-pink" id="portada-diseno-pink">
-                            <span class="portada-live-text" id="portada-diseno-text"></span>
-                        </div>
+                        <canvas id="portada-diseno-canvas" class="portada-cartel-canvas"></canvas>
                     </div>
                 </div>
 

@@ -899,3 +899,71 @@ afectados) y el job de modo Video conserva su link a `renders`.
 
 **Pendiente**: no se probó en Railway. Ojo que el `jobs.json` de cada entorno es independiente,
 así que la reconciliación correrá por separado en producción y en staging la primera vez.
+
+### 2026-08-13 (Mac) — Cartel de portada: UN solo dibujo (canvas → PNG), en vez de dos que se desincronizaban
+
+**Reportado por el usuario** con dos capturas del mismo cartel: la vista previa del Paso 6 y el
+video final NO coincidían. Distintos saltos de línea (`HACE EL FEO A JD / PANTOJA` en la previa vs
+`HACE EL FEO A / JD PANTOJA` en el video) y distinto ancho de caja.
+
+**Causa de fondo**: la geometría del cartel estaba escrita DOS veces —`portada.js` (servidor, que
+la dibujaba con el filtro `ass` de libass) y `public/app.js` (el mockup, que la replicaba en CSS)—
+con un contrato de "si cambiás allá, cambiá acá". Peor: los dos ESTIMABAN el ancho del texto con un
+`factorAncho` promedio por tipografía en vez de medirlo, y una diferencia de un carácter por línea
+cambia el corte, el tamaño de letra elegido y el ancho de la caja en cascada. Había al menos tres
+caminos por los que podían separarse (tabla de `factorAncho` que se llenaba por fetch y caía a
+0.62 si fallaba, redondeo del tamaño a la escala chica de la previa, y `white-space: pre-line` que
+deja al navegador re-partir una línea). No se pudo determinar cuál de los tres causó ESTE caso sin
+saber los ajustes exactos del usuario — y no hizo falta, porque el rediseño elimina los tres.
+
+**Rediseño (propuesto por el usuario)**: el cartel se dibuja UNA vez, en el navegador, en un
+`<canvas>` de 1080x1920 (el tamaño real del video, mostrado chico por CSS). Ese canvas ES la vista
+previa, y `canvas.toDataURL()` da exactamente esos píxeles como PNG, que viaja en el cuerpo de
+`/api/generate-video`. El server no redibuja nada: guarda el PNG y lo superpone con `overlay` en el
+frame 0 del video y, después, sobre el fotograma que el usuario elija para el JPG. Los tres
+(previa, video, JPG) son literalmente el mismo archivo — la divergencia dejó de ser posible.
+
+- `public/app.js`: `dibujarCartel()` (caja redondeada por `arcTo`, anillo blanco, texto con sombra)
+  + `exportarCartelPNG()`. El ajuste de línea usa `ctx.measureText()` — **desapareció la estimación
+  `factorAncho`, que era la raíz del problema**. Borrado todo el bloque duplicado
+  (`portadaEnvolver*`, `portadaAjustarTamano`, `pintarCartelMockup`, `FACTOR_ANCHO_POR_FUENTE`).
+- `portada.js`: de 254 a ~50 líneas. Ya no construye ASS; solo superpone el PNG.
+- `video.js`: el banner pasó de filtro `ass` encadenado a una ENTRADA más de ffmpeg con
+  `overlay=0:0:enable='lt(n,1)'` (n = número de fotograma, así solo pinta el primero). `argsMux`
+  ahora usa siempre `filter_complex`. **La escalera de degradación se mantiene** (cartel falla →
+  video sin cartel; subtítulos fallan → sin subtítulos). Bonus: al entrar por `-i` desaparece el
+  escapado de rutas del filtro.
+- `server.js`: `guardarCartelPNG()` (valida y decodifica la data URL), `GET /api/cartel/:token`,
+  límite de `express.json` subido a 8mb, y el PNG agregado al set de archivos protegidos de
+  `limpiarCache()` — sin eso el TTL de 1h lo borraría antes de que el usuario elija el fotograma.
+
+**Riesgo que apareció al verificar, y su arreglo**: al mover el dibujo al navegador, la tipografía
+pasó a depender del CDN de Google Fonts. Si no carga, el canvas dibuja con una letra de reemplazo
+—y AHORA eso se hornea en el video (antes no importaba: el server lo dibujaba con libass y el .ttf
+real). Se agregó `GET /api/fuente/:clave`, que sirve el MISMO `.ttf` que el server ya descarga y
+cachea para los subtítulos; el navegador lo carga con la API `FontFace`. Navegador y servidor
+comparten el archivo exacto y no hay CDN de por medio. Si aun así falla, se muestra un aviso
+visible (no se hornea otra letra en silencio) y **solo se cachean los éxitos**, para que un fallo
+transitorio de red no deje la tipografía rota hasta recargar la página.
+
+**Verificado local, con evidencia**:
+- ffmpeg, los tres caminos: sin música, con música (el índice de entrada del cartel cambia), y el
+  JPG. Muestreo de píxeles: frame 0 = rosa `fd2c67`, frames 1/2/5/30/60 = fondo. El cartel está
+  SOLO en el primer fotograma.
+- Alineación: justo dentro de los bordes de la caja hay rosa, justo afuera hay fondo → `overlay`
+  no desplaza ni escala.
+- Canvas en browser real: 1080x1920 internos, caja centrada en x=540 y borde superior en y=1114 =
+  exactamente el 58% de 1920, 3 renglones de texto, PNG válido de ~167KB.
+- `FontFace` contra `/api/fuente/anton`: carga y mide distinto al fallback (834 vs 803 px) → usa de
+  verdad el archivo servido.
+- `guardarCartelPNG()`: round-trip byte a byte idéntico; rechaza null/vacío/jpeg/basura.
+
+**Ojo para la otra máquina**: este entorno (Mac) no tiene salida a internet, así que el server no
+pudo bajar los `.ttf` reales y la prueba de tipografía se hizo con un archivo del sistema puesto a
+mano en `temp-videos/fuentes/` (ya borrado). La cañería quedó probada, pero **la tipografía real
+del cartel no se vio renderizada acá** — vale confirmarlo visualmente en staging.
+
+**Pendiente**: probar en Railway. Ahí el riesgo específico es `overlay` (verificado presente en el
+ffmpeg local, pero es exactamente la trampa que reventó con `geq`: funcionaba local y no estaba
+compilado en producción). Si faltara, la degradación hace que el video salga sin cartel en vez de
+fallar, pero habría que buscar otro camino.

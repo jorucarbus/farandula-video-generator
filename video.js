@@ -381,27 +381,15 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     : '';
   const filtroVideoSinBanner = `${tpad}${filtroSubs}`;
 
-  // Banner automático en el frame 0 (pedido del usuario: "que el letrero solo lo ponga en el
-  // primer frame, sea cual sea" — para que TikTok, sin API de portada, tome ese fotograma como
-  // portada, sin re-codificar el video una segunda vez). Se arma ANTES del mux para no repetirlo
-  // en cada reintento de fallback, mismo criterio que la música. `require` perezoso: portada.js
-  // a su vez requiere este módulo (usa `ffmpeg`/`TEMP_DIR`), requerirlo arriba del archivo crearía
-  // un ciclo que devuelve exports vacíos.
-  let bannerAssPath = null;
-  let bannerFuentesDir = null;
-  if (efectos.bannerTitulo) {
-    try {
-      const portada = require('./portada');
-      const banner = await portada.generarBannerFrame0(TEMP_DIR, jobId, efectos.bannerTitulo, efectos.bannerFuente, efectos.bannerTamanoManual, efectos.bannerEscalaCajaManual);
-      if (banner) { bannerAssPath = banner.assPath; bannerFuentesDir = banner.fuentesDir; }
-    } catch (e) {
-      console.warn(`  ⚠️ [${jobId}] No se pudo preparar el banner del frame 0, el video sale sin él: ${e.message}`);
-    }
+  // Cartel en el frame 0 (pedido del usuario: "que el letrero solo lo ponga en el primer frame,
+  // sea cual sea" — para que TikTok, sin API de portada, tome ese fotograma como portada, sin
+  // re-codificar el video una segunda vez). Es el PNG que el navegador dibujó y mandó: acá solo
+  // se superpone, no se redibuja (ver portada.js para por qué). Entra como una ENTRADA más de
+  // ffmpeg, no como valor dentro de un filtro — así no hay rutas que escapar.
+  const cartelPath = efectos.cartelPath && fs.existsSync(efectos.cartelPath) ? efectos.cartelPath : null;
+  if (efectos.cartelPath && !cartelPath) {
+    console.warn(`  ⚠️ [${jobId}] El PNG del cartel no está en disco, el video sale sin él`);
   }
-  const filtroBanner = bannerAssPath
-    ? `,ass='${rutaFiltro(bannerAssPath)}'${bannerFuentesDir ? `:fontsdir='${rutaFiltro(bannerFuentesDir)}'` : ''}`
-    : '';
-  const filtroVideo = `${filtroVideoSinBanner}${filtroBanner}`;
 
   // Fase 8c: música de fondo (opcional). Se prepara ANTES del mux para no repetir el trabajo
   // en cada reintento de fallback. Si falla la preparación, el video sale igual, sin música.
@@ -417,37 +405,46 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // amix con normalize=0: normalize=1 (default de ffmpeg) bajaría también la VOZ para que la
   // suma no sature — acá la voz tiene que quedar intacta, la música ya viene atenuada por su
   // propia ganancia fija.
-  const argsMux = (filtroV, conMusica) => conMusica
-    ? [
-        '-i', basePath, '-i', audioPath, '-i', musicaPreparada,
-        '-filter_complex', `[0:v]${filtroV}[vout];[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[afinal]`,
-        '-map', '[vout]', '-map', '[afinal]',
-        '-t', durAudio.toFixed(3),
-        ...enc, '-c:a', 'aac', '-b:a', '192k',
-        finalPath,
-      ]
-    : [
-        '-i', basePath, '-i', audioPath,
-        '-filter:v', filtroV,
-        '-map', '0:v', '-map', '1:a',
-        '-t', durAudio.toFixed(3),
-        ...enc, '-c:a', 'aac', '-b:a', '192k',
-        finalPath,
-      ];
+  //
+  // El cartel se superpone con `overlay` limitado a `enable='lt(n,1)'` — n es el número de
+  // fotograma, así que solo pinta el PRIMERO y nunca se ve durante la reproducción. Va después
+  // de los subtítulos para quedar por encima de ellos, igual que antes.
+  const argsMux = (filtroV, conMusica, conCartel) => {
+    const entradas = ['-i', basePath, '-i', audioPath];
+    if (conMusica) entradas.push('-i', musicaPreparada);
+    if (conCartel) entradas.push('-i', cartelPath);
+    const idxCartel = conMusica ? 3 : 2;
 
-  // Escalones de degradación, más allá de música (arriba): banner falla → sin banner;
+    const cadenaV = conCartel
+      ? `[0:v]${filtroV}[vbase];[vbase][${idxCartel}:v]overlay=0:0:enable='lt(n,1)'[vout]`
+      : `[0:v]${filtroV}[vout]`;
+    const filtro = conMusica
+      ? `${cadenaV};[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[afinal]`
+      : cadenaV;
+
+    return [
+      ...entradas,
+      '-filter_complex', filtro,
+      '-map', '[vout]', '-map', conMusica ? '[afinal]' : '1:a',
+      '-t', durAudio.toFixed(3),
+      ...enc, '-c:a', 'aac', '-b:a', '192k',
+      finalPath,
+    ];
+  };
+
+  // Escalones de degradación, más allá de música (arriba): cartel falla → sin cartel;
   // subtítulos fallan → sin subtítulos. Factorizados en helpers porque se llega a ellos desde
   // dos ramas (con y sin música que ya falló antes) — mismo resultado final, sin cuadruplicar
   // el cuerpo. El video siempre sale, degradado capa por capa, nunca se pierde el render
   // completo por un filtro opcional.
-  const degradarDesdeBanner = async (mensaje) => {
+  const degradarDesdeCartel = async (mensaje) => {
     console.warn(`  ⚠️ [${jobId}] ${mensaje}`);
     try {
-      await ffmpeg(argsMux(filtroVideoSinBanner, false));
+      await ffmpeg(argsMux(filtroVideoSinBanner, false, false));
     } catch (e) {
       if (efectos.subsPath) {
         console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
-        await ffmpeg(argsMux(tpad, false));
+        await ffmpeg(argsMux(tpad, false, false));
       } else {
         throw e;
       }
@@ -455,24 +452,24 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   };
   const degradarDesdeSubs = async (mensaje) => {
     console.warn(`  ⚠️ [${jobId}] ${mensaje}`);
-    await ffmpeg(argsMux(tpad, false));
+    await ffmpeg(argsMux(tpad, false, false));
   };
 
   try {
-    await ffmpeg(argsMux(filtroVideo, Boolean(musicaPreparada)));
+    await ffmpeg(argsMux(filtroVideoSinBanner, Boolean(musicaPreparada), Boolean(cartelPath)));
   } catch (e) {
     if (musicaPreparada) {
       console.warn(`  ⚠️ [${jobId}] Mux con música falló, reintentando sin música: ${e.message}`);
       musicaPreparada = null;
       try {
-        await ffmpeg(argsMux(filtroVideo, false));
+        await ffmpeg(argsMux(filtroVideoSinBanner, false, Boolean(cartelPath)));
       } catch (e2) {
-        if (bannerAssPath) await degradarDesdeBanner(`Banner del frame 0 falló al quemarse, reintentando sin él: ${e2.message}`);
+        if (cartelPath) await degradarDesdeCartel(`Cartel del frame 0 falló al superponerse, reintentando sin él: ${e2.message}`);
         else if (efectos.subsPath) await degradarDesdeSubs(`Subtítulos fallaron al quemarse, reintentando sin ellos: ${e2.message}`);
         else throw e2;
       }
-    } else if (bannerAssPath) {
-      await degradarDesdeBanner(`Banner del frame 0 falló al quemarse, reintentando sin él: ${e.message}`);
+    } else if (cartelPath) {
+      await degradarDesdeCartel(`Cartel del frame 0 falló al superponerse, reintentando sin él: ${e.message}`);
     } else if (efectos.subsPath) {
       await degradarDesdeSubs(`Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
     } else {
@@ -480,7 +477,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     }
   }
 
-  [...segmentos, listaPath, basePath, musicaPreparada, bannerAssPath].filter(Boolean).forEach(f => {
+  // El PNG del cartel NO se borra acá: server.js lo conserva junto al preview para reusarlo tal
+  // cual en el JPG de portada cuando el usuario elija el fotograma (y lo limpia con él).
+  [...segmentos, listaPath, basePath, musicaPreparada].filter(Boolean).forEach(f => {
     try { fs.unlinkSync(f); } catch {}
   });
 

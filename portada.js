@@ -1,254 +1,43 @@
 // Portada (miniatura) — pedido del usuario: "escoger un fotograma y poner un titular", con el
-// look de credibilidad de farándula (referencia real: caja sólida redondeada de color, texto
-// oscuro en negrita encima). TikTok no expone API para fijar la portada al publicar, así que
-// esto genera una imagen JPG aparte (nunca toca el video final) para subirla a mano.
+// look de credibilidad de farándula (caja sólida redondeada de color, texto en negrita encima).
+// TikTok no expone API para fijar la portada al publicar, así que además de quemar el cartel en el
+// frame 0 del video (ver video.js), esto genera un JPG aparte para subirlo a mano si hace falta.
 //
-// Sin colita/pico de burbuja de chat (decisión explícita: no vale el riesgo de un caso límite
-// raro por esa forma).
+// EL CARTEL NO SE DIBUJA ACÁ. Lo dibuja el navegador en un <canvas> de 1080x1920 (ver
+// `dibujarCartel()` en public/app.js) y manda el PNG ya rasterizado; este módulo solo lo
+// superpone. Antes el cartel se dibujaba dos veces —acá con el filtro `ass` de libass, y en el
+// navegador con una aproximación en CSS para la vista previa— replicando a mano las mismas
+// fórmulas de geometría en los dos lados. Siempre terminaban difiriendo: el usuario reportó una
+// previa con saltos de línea y ancho de caja distintos a los del video final. La causa de fondo
+// era que ambos ESTIMABAN el ancho del texto con un factor promedio por tipografía en vez de
+// medirlo, y una diferencia de un carácter por línea cambia el corte, el tamaño de letra elegido
+// y el ancho de la caja en cascada. Con un solo dibujo compartido eso no puede volver a pasar:
+// la previa, el frame 0 y el JPG son literalmente el mismo archivo.
 //
-// La caja se dibuja con el filtro `ass` (libass) en vez de `geq`+`overlay`: la primera versión
-// usaba `geq` para tallar las esquinas redondeadas y funcionaba local (Windows), pero reventó en
-// producción (Railway/Linux) con "Filter not found" — el binario estático de ffmpeg de ese
-// entorno no trae `geq` compilado. `ass` sí está probado en producción (Fase 6, subtítulos
-// quemados con este mismo filtro todos los días), así que la caja se dibuja como un "drawing"
-// vectorial de ASS (rectángulo con esquinas en bézier) y el titular como texto encima, en el
-// MISMO archivo .ass — sin filter_complex, sin geq, sin overlay.
-const fs = require('fs');
+// Efecto colateral bienvenido: el servidor ya no necesita la tipografía instalada para el cartel
+// (el texto viene rasterizado), y desaparece el escapado de rutas para el filtro — el PNG entra
+// como una entrada más de ffmpeg (`-i`), no como un valor dentro de un filtro.
 const path = require('path');
 const { ffmpeg, TEMP_DIR } = require('./video');
-const subtitulos = require('./subtitulos');
-
-// Asume el mismo canvas 1080x1920 que subtitulos.js (formato vertical fijo de toda la app).
-const ANCHO_VIDEO = 1080;
-const ALTO_VIDEO = 1920;
-const ANCHO_UTIL = ANCHO_VIDEO - 70 - 70; // margen lateral, mismo criterio que ANCHO_UTIL de subtitulos.js
-const FONTSIZE_MAX = 94;
-const FONTSIZE_MIN = 36;
-// Rango del tamaño MANUAL (Paso extra, selector del usuario) — más ancho que el que recorre el
-// automático: permite letra bien chica o bien gigante a propósito, algo que el auto nunca elige
-// porque busca el equilibrio "entra sin desbordar", no un efecto visual particular.
-const TAMANO_MANUAL_MIN = 24;
-const TAMANO_MANUAL_MAX = 160;
-// Rango del multiplicador de tamaño de CAJA (independiente del tamaño de letra, pedido explícito
-// del usuario) — escala el padding alrededor del texto sin tocar el fontsize. 1 = el default de
-// siempre (padding proporcional al fontsize, sin cambios de comportamiento para quien no lo toque).
-const ESCALA_CAJA_MIN = 0.5;
-const ESCALA_CAJA_MAX = 2.5;
-const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
-const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
-const COLOR_TEXTO = 'FFFFFF'; // blanco, pedido explícito del usuario (RRGGBB)
-const COLOR_MARGEN = 'FFFFFF'; // margen blanco dentro de la caja, pedido explícito del usuario
-
-// ffmpeg necesita los ':' de una ruta de Windows (C\:) escapados dentro del valor de un filtro —
-// mismo criterio que rutaFiltro() en video.js (no exportada, se replica acá).
-function rutaFiltro(p) {
-  return p.replace(/\\/g, '/').replace(/:/g, '\\:');
-}
-
-// "RRGGBB" → "&H00BBGGRR&" (formato de color ASS: alfa-azul-verde-rojo, 00 = opaco). Mismo
-// esquema que COLOR_RESALTE/COLOR_BASE en subtitulos.js.
-function colorASS(rrggbb) {
-  const r = rrggbb.slice(0, 2), g = rrggbb.slice(2, 4), b = rrggbb.slice(4, 6);
-  return `&H00${b}${g}${r}&`.toUpperCase();
-}
-
-// Escapa texto para el campo Text de un evento ASS. La llave abre/cierra bloques de override
-// (rompería el parseo), y la barra invertida no tiene escape simple ahí — ambas se sustituyen en
-// vez de intentar escaparlas (un titular normal jamás las necesita).
-function escaparASS(texto) {
-  return texto.replace(/\\/g, '').replace(/\{/g, '(').replace(/\}/g, ')');
-}
-
-// Intenta acomodar `palabras` en como máximo `maxLineas` líneas de hasta `maxChars` caracteres
-// cada una, sin partir ninguna palabra. Devuelve null si no entra (para que el caller pruebe un
-// tamaño de letra más chico); `forzar=true` lo obliga igual, desbordando la última línea si hace
-// falta — es el último recurso cuando ya se llegó a FONTSIZE_MIN.
-function envolver(palabras, maxChars, maxLineas, forzar = false) {
-  const lineas = [''];
-  for (const palabra of palabras) {
-    const actual = lineas[lineas.length - 1];
-    const candidata = actual ? `${actual} ${palabra}` : palabra;
-    if (candidata.length <= maxChars || !actual) {
-      lineas[lineas.length - 1] = candidata;
-    } else if (lineas.length < maxLineas) {
-      lineas.push(palabra);
-    } else if (forzar) {
-      lineas[lineas.length - 1] = candidata;
-    } else {
-      return null;
-    }
-  }
-  return lineas;
-}
-
-// Envuelve `texto` a como máximo 3 líneas para un tamaño de letra YA elegido (manual o cada
-// intento del automático) — `forzar` decide si puede desbordar la última línea en vez de fallar.
-function envolverATamano(texto, fontsize, factorAncho, forzar) {
-  const palabras = texto.trim().split(/\s+/).filter(Boolean);
-  const maxChars = Math.max(1, Math.floor(ANCHO_UTIL / (fontsize * factorAncho)));
-  return envolver(palabras, maxChars, 3, forzar);
-}
-
-// Busca el tamaño de letra más grande (entre FONTSIZE_MAX y FONTSIZE_MIN) que deja el titular en
-// máximo 3 líneas sin desbordar el ancho útil, según el `factorAncho` real de la tipografía
-// elegida (mismo principio que tamanoSeguro() en subtitulos.js, aplicado a un titular completo).
-function ajustarTamano(texto, factorAncho) {
-  for (let fontsize = FONTSIZE_MAX; fontsize >= FONTSIZE_MIN; fontsize -= 3) {
-    const lineas = envolverATamano(texto, fontsize, factorAncho, false);
-    if (lineas) return { lineas, fontsize };
-  }
-  return { lineas: envolverATamano(texto, FONTSIZE_MIN, factorAncho, true), fontsize: FONTSIZE_MIN };
-}
-
-// Path ASS ("drawing") de un rectángulo w x h con esquinas redondeadas de radio r, ancladas en el
-// origen (0,0) — se posiciona en pantalla con \pos al usarlo. Curva bézier estándar por esquina
-// (constante 0.5523 = aproximación circular clásica de una cuarta de círculo con bézier cúbica).
-function dibujoCajaRedondeada(w, h, r) {
-  const k = Math.round(r * 0.5523);
-  return [
-    `m ${r} 0`,
-    `l ${w - r} 0`,
-    `b ${w - r + k} 0 ${w} ${r - k} ${w} ${r}`,
-    `l ${w} ${h - r}`,
-    `b ${w} ${h - r + k} ${w - r + k} ${h} ${w - r} ${h}`,
-    `l ${r} ${h}`,
-    `b ${r - k} ${h} 0 ${h - r + k} 0 ${h - r}`,
-    `l 0 ${r}`,
-    `b 0 ${r - k} ${r - k} 0 ${r} 0`,
-  ].join(' ');
-}
-
-// Arma el contenido completo del .ass (caja redondeada + línea blanca + texto) — compartido por
-// generarPortada() (JPG editable a mano, extrae 1 frame) y generarBannerFrame0() (banner
-// automático quemado en el frame 0 del video real, Fase "portada = primer frame"). `inicio`/`fin`
-// (formato ASS "H:MM:SS.cc") son la única diferencia real entre los dos usos: la portada JPG no
-// necesita que el rango de tiempo del Dialogue tenga sentido (se extrae 1 solo frame con
-// `-frames:v 1`, así que basta con que cubra igual el instante pedido), pero el banner SÍ — tiene
-// que durar ~1 frame nomás para no verse nunca durante la reproducción real.
-// tamanoManual/escalaCajaManual: mismo criterio que documentaba generarPortada() antes de este
-// refactor — ver ahí abajo.
-async function construirASS(titular, fuenteClave, tamanoManual, escalaCajaManual, inicio, fin) {
-  const fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteClave);
-  const fuente = subtitulos.FUENTES[fuenteClave] || subtitulos.FUENTES[subtitulos.FUENTE_DEFAULT];
-
-  const textoMayus = titular.toUpperCase();
-  const { lineas, fontsize } = Number.isFinite(tamanoManual)
-    ? (() => {
-        const tam = Math.max(TAMANO_MANUAL_MIN, Math.min(TAMANO_MANUAL_MAX, Math.round(tamanoManual)));
-        return { lineas: envolverATamano(textoMayus, tam, fuente.factorAncho, true), fontsize: tam };
-      })()
-    : ajustarTamano(textoMayus, fuente.factorAncho);
-
-  // Multiplicador de tamaño de CAJA, independiente del de letra — pedido explícito del usuario.
-  // Escala el padding (y por lo tanto boxW/boxH), nunca el fontsize.
-  const escalaCaja = Number.isFinite(escalaCajaManual)
-    ? Math.max(ESCALA_CAJA_MIN, Math.min(ESCALA_CAJA_MAX, escalaCajaManual))
-    : 1;
-
-  // Geometría de la caja, estimada con el mismo factorAncho que ya se usó para decidir que el
-  // texto entra. El padding es la caja MISMA (se dibuja exacto, sin margen de error de por sí,
-  // a diferencia de la estimación de ancho que sí necesita ser holgada) — ajustado angosto a
-  // propósito para que el texto llene la burbuja en vez de flotar con aire de sobra alrededor.
-  const padX = Math.round(fontsize * 0.32 * escalaCaja);
-  const padY = Math.round(fontsize * 0.22 * escalaCaja);
-  const lineHeight = Math.round(fontsize * 1.08);
-  const lineSpacing = Math.round(fontsize * 0.08);
-  const anchoMaxLinea = Math.max(...lineas.map(l => l.length)) * fontsize * fuente.factorAncho;
-  const boxW = Math.min(ANCHO_UTIL + padX * 2, Math.round(anchoMaxLinea + padX * 2));
-  const boxH = lineas.length * lineHeight + (lineas.length - 1) * lineSpacing + padY * 2;
-  const boxX = Math.round((ANCHO_VIDEO - boxW) / 2); // burbuja centrada horizontalmente
-  const boxY = Math.round(ALTO_VIDEO * POS_Y_FRACCION);
-  const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
-  const sombra = Math.max(2, Math.round(fontsize * 0.045));
-
-  // Línea blanca DENTRO de la caja, paralela al borde, sin agrandar nada — corrección sobre la
-  // versión anterior (esa hacía blanco = caja de afuera, más grande que antes; era al revés).
-  // La caja de color queda EXACTAMENTE del tamaño de siempre (boxW x boxH). Adentro, a una
-  // distancia `separacion` del borde, va un anillo blanco de espesor `grosor`; adentro de ESE
-  // anillo va de nuevo color, mismo tono que el borde exterior — así el blanco se ve como una
-  // línea, no como un margen que se come la caja. 3 formas concéntricas, mismo centro que el
-  // texto (no se mueve un pixel).
-  const separacion = Math.max(5, Math.round(fontsize * 0.11 * escalaCaja));
-  const grosor = Math.max(3, Math.round(fontsize * 0.05));
-  const radioAnillo = Math.max(4, radio - separacion);
-  const radioInterior = Math.max(4, radio - separacion - grosor);
-
-  const textoASS = lineas.map(escaparASS).join('\\N');
-
-  const ass = `[Script Info]
-ScriptType: v4.00+
-PlayResX: ${ANCHO_VIDEO}
-PlayResY: ${ALTO_VIDEO}
-WrapStyle: 2
-ScaledBorderAndShadow: yes
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS(COLOR_TEXTO)},&H00000000&,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion},${boxY + separacion})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW - separacion * 2, boxH - separacion * 2, radioAnillo)}{\\p0}
-Dialogue: 2,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion + grosor},${boxY + separacion + grosor})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - (separacion + grosor) * 2, boxH - (separacion + grosor) * 2, radioInterior)}{\\p0}
-Dialogue: 3,${inicio},${fin},Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
-`;
-
-  return { ass, fuentesDir };
-}
 
 // videoPath: mp4 fuente (el preview que sobrevive a la limpieza de temporales, ver server.js).
 // timestamp: segundos dentro del video, el fotograma que el usuario eligió pausando el player.
-// titular: texto libre, se pone en mayúsculas.
-// fuenteClave: clave del catálogo de subtitulos.js (default 'anton' si no llega o no existe).
-// tamanoManual: opcional — si el usuario elige un tamaño a mano (Paso extra), se usa TAL CUAL
-// (clamp a [TAMANO_MANUAL_MIN, TAMANO_MANUAL_MAX]) en vez del automático, y el texto se envuelve
-// forzando el desborde de la última línea si hace falta (el usuario eligió el tamaño a propósito,
-// no tiene sentido que el código lo achique solo). Sin valor, o no numérico: automático de siempre.
-// escalaCajaManual: opcional — multiplicador de padding (clamp a [ESCALA_CAJA_MIN,
-// ESCALA_CAJA_MAX]), independiente del tamaño de letra. Sin valor: 1 (default de siempre).
-async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual, escalaCajaManual) {
+// cartelPath: PNG del cartel (el MISMO que se quemó en el frame 0 — server.js lo guarda junto al
+//   preview y lo pasa tal cual; nunca se re-dibuja ni se re-edita).
+// token: identifica el archivo de salida.
+async function generarPortada(videoPath, timestamp, cartelPath, token) {
   const outPath = path.join(TEMP_DIR, `portada_${token}.jpg`);
-  // Rango de tiempo irrelevante acá: se extrae 1 solo frame con `-frames:v 1`, nunca se reproduce.
-  const { ass, fuentesDir } = await construirASS(titular, fuenteClave, tamanoManual, escalaCajaManual, '0:00:00.00', '0:00:59.00');
-
-  const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);
-  fs.writeFileSync(assPath, ass, 'utf8');
-
-  const filtroV = `ass='${rutaFiltro(assPath)}'${fuentesDir ? `:fontsdir='${rutaFiltro(fuentesDir)}'` : ''}`;
-
-  try {
-    await ffmpeg([
-      '-ss', Math.max(0, timestamp).toFixed(2),
-      '-i', videoPath,
-      '-frames:v', '1',
-      '-vf', filtroV,
-      '-q:v', '2',
-      outPath,
-    ]);
-  } finally {
-    try { fs.unlinkSync(assPath); } catch {}
-  }
+  await ffmpeg([
+    '-ss', Math.max(0, timestamp).toFixed(2),
+    '-i', videoPath,
+    '-i', cartelPath,
+    '-filter_complex', '[0:v][1:v]overlay=0:0[vout]',
+    '-map', '[vout]',
+    '-frames:v', '1',
+    '-q:v', '2',
+    outPath,
+  ]);
   return outPath;
 }
 
-// Banner quemado en el frame 0 del VIDEO REAL (no un JPG aparte) — pedido del usuario: "que el
-// letrero solo lo ponga en el primer frame, sea cual sea", para que TikTok (que no expone API de
-// portada) tome ese frame como su portada automática, sin re-codificar el video una segunda vez
-// ni resubirlo. Texto/fuente/tamaño/caja son el MISMO diseño que el usuario armó en el Paso 6
-// (server.js los guarda en `previews.get(token).cartel` para reusarlos después, tal cual, cuando
-// arme el JPG a partir de un fotograma elegido — nunca se re-edita ese diseño). Nunca llama a
-// ffmpeg: solo arma el .ass, quien lo quema es el mux de video.js (que de por sí ya corre una vez
-// — sin esto sería una segunda pasada completa).
-// Devuelve null si el titular viene vacío (el usuario no diseñó cartel en el Paso 6).
-async function generarBannerFrame0(tempDir, jobId, titular, fuenteClave, tamanoManual, escalaCajaManual) {
-  if (!titular || !titular.trim()) return null;
-  // Ventana angosta (~1 frame a 30fps) para que jamás se vea durante la reproducción real —
-  // a diferencia de la portada JPG, acá SÍ importa que el rango sea corto de verdad.
-  const { ass, fuentesDir } = await construirASS(titular.trim(), fuenteClave || 'anton', tamanoManual, escalaCajaManual, '0:00:00.00', '0:00:00.04');
-  const assPath = path.join(tempDir, `banner_${jobId}.ass`);
-  fs.writeFileSync(assPath, ass, 'utf8');
-  return { assPath, fuentesDir };
-}
-
-module.exports = { generarPortada, generarBannerFrame0 };
+module.exports = { generarPortada };

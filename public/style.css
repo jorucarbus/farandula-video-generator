@@ -940,36 +940,17 @@ footer {
     width: 100%;
     height: 100%;
 }
-.portada-live-pink {
+/* El cartel ya no se aproxima con CSS: es un <canvas> de 1080x1920 (o el PNG ya generado)
+   estirado sobre todo el recuadro. Como el canvas tiene la misma relación 9:16 que el
+   contenedor, encaja exacto — lo que se ve acá es, pixel a pixel, lo que va al video. */
+.portada-cartel-canvas,
+.portada-live-cartel {
     position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    /* width:max-content — fallback antes de que JS pinte por primera vez (pintarCartelMockup()
-       siempre fija un `width` inline con la MISMA fórmula que portada.js/servidor, que gana por
-       especificidad). Sin esto de base, un position:absolute con left:50% y sin `right` calcula
-       su ancho "auto" (shrink-to-fit) tomando como disponible SOLO la mitad del contenedor (bug
-       clásico de CSS: available-width = containing-block-width - left).
-       SIN max-width acá a propósito (se sacó un `max-width:88%` que había antes): con la caja al
-       máximo (`escalaCaja` alto) la fórmula real puede pedir más del 88% del contenedor, y ese
-       techo capeaba el mockup por CSS mientras el video real no tiene ningún techo — el mockup
-       mentía a partir de cierto tamaño de caja. Si el ancho real EXCEDE el contenedor, se corta
-       por el `overflow:hidden` de `.portada-live` — mismo destino que tendría en el video real. */
-    width: max-content;
-    background: #ff2d6b;
-    box-sizing: border-box;
-    /* La línea blanca es un outline con offset negativo (lo mete PARA ADENTRO de la caja) — la
-       caja de color no crece ni un pixel, la línea queda paralela al borde, adentro. */
-    outline: 2px solid #fff;
-    outline-offset: -8px;
-}
-.portada-live-text {
+    inset: 0;
+    width: 100%;
+    height: 100%;
     display: block;
-    color: #fff;
-    font-weight: 700;
-    text-align: center;
-    text-transform: uppercase;
-    text-shadow: 0.06em 0.06em 0.1em rgba(0,0,0,0.55);
-    white-space: pre-line;
+    pointer-events: none;
 }
 
 /* Responsive */

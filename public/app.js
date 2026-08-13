@@ -863,6 +863,10 @@ async function handleGenerateVideo() {
         if (MODO === 'video') {
             log('🎞️ Generando video con FFmpeg...');
             updateProgress(70);
+            // Cartel de portada: se exporta acá el PNG EXACTO que se ve en la previa del Paso 6.
+            // El server no lo re-dibuja — lo superpone tal cual en el frame 0 y en el JPG, así
+            // los tres (previa, video, JPG) son literalmente la misma imagen.
+            const cartelPNG = await exportarCartelPNG();
             resultado = await apiCall('/generate-video', 'POST', {
                 fragments: state.fragments,
                 audioToken: state.audioToken,
@@ -889,12 +893,10 @@ async function handleGenerateVideo() {
                     transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
                     transicionTipo: tiposTransicionElegidos(),
                     transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
-                    // Cartel de portada (Paso 6, diseñado ANTES de generar): se quema en el frame
-                    // 0 y se reusa tal cual para el JPG después — ver portada.js/video.js.
-                    portadaTitular: document.getElementById('portada-titular')?.value || '',
-                    portadaFuente: document.getElementById('portada-fuente')?.value || 'anton',
-                    portadaTamano: document.getElementById('portada-tamano-auto')?.checked ? 'auto' : Number(document.getElementById('portada-tamano-num')?.value),
-                    portadaCaja: Number(document.getElementById('portada-caja-num')?.value) || 100,
+                    // PNG del cartel tal cual se ve en la previa (data URL), o null si no hay
+                    // titular. Reemplaza a los antiguos portadaTitular/Fuente/Tamano/Caja: el
+                    // server ya no necesita saber CÓMO se dibujó, solo superpone la imagen.
+                    cartelPNG,
                 },
             });
             log('✅ Video generado');
@@ -965,19 +967,18 @@ function showResult(videoData) {
     // Token del preview: se extrae de la URL en vez de guardarlo aparte en showResult, porque
     // acá es el único lugar donde llega — así /api/portada sabe de qué MP4 sacar el fotograma.
     state.previewToken = videoData.previewUrl ? videoData.previewUrl.split('/').pop() : null;
-    // El cartel (texto/fuente/tamaño/caja) ya quedó FIJO en el Paso 6, antes de generar — el
-    // server lo devuelve tal cual lo usó para quemar el frame 0, para reusarlo sin re-editar acá.
-    const cartel = videoData.cartel || null;
+    // El cartel quedó FIJO en el Paso 6, antes de generar: el server guardó el PNG que le mandó
+    // el navegador y devuelve su URL. Es el MISMO archivo que quemó en el frame 0 y que va a usar
+    // para el JPG — acá se muestra tal cual, no se re-dibuja ni se aproxima.
+    const cartelUrl = videoData.cartelUrl || null;
 
-    const portadaHtml = (state.previewToken && cartel) ? `
+    const portadaHtml = (state.previewToken && cartelUrl) ? `
         <div class="portada-box mt-md" id="portada-box">
             <p><strong>${icon('videoCamera')} Elegí la foto para el JPG de portada</strong></p>
-            <p class="hint">El cartel ("${cartel.titular.replace(/</g, '&lt;')}") ya quedó quemado en el primer fotograma del video, tal como lo definiste en el Paso 6 — acá solo elegís QUÉ FOTO de fondo lleva el JPG descargable (mismo cartel, no se re-edita). Pausá el reproductor de arriba donde quieras.</p>
+            <p class="hint">El cartel ya quedó quemado en el primer fotograma del video, tal como lo definiste en el Paso 6 — acá solo elegís QUÉ FOTO de fondo lleva el JPG descargable (mismo cartel, no se re-edita). Pausá el reproductor de arriba donde quieras.</p>
             <div class="portada-live" id="portada-live">
                 <canvas id="portada-live-canvas"></canvas>
-                <div class="portada-live-pink" id="portada-live-pink">
-                    <span class="portada-live-text" id="portada-live-text"></span>
-                </div>
+                <img class="portada-live-cartel" src="${cartelUrl}" alt="">
             </div>
             <button class="btn btn-secondary mt-sm" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada con esta foto</button>
             <div id="portada-resultado"></div>
@@ -998,7 +999,7 @@ function showResult(videoData) {
             El video está listo para publicar en redes sociales.
         </p>
     `;
-    if (state.previewToken && cartel) {
+    if (state.previewToken && cartelUrl) {
         const videoEl = document.getElementById('result-video-player');
         // Fotograma por defecto: el PRIMERO del video, pedido explícito del usuario — el
         // reproductor sigue pudiéndose pausar en otro punto si se prefiere otro fotograma.
@@ -1010,7 +1011,7 @@ function showResult(videoData) {
         if (videoEl) {
             try { videoEl.currentTime = 0.01; } catch {}
         }
-        initPortadaLive(cartel);
+        initPortadaLive(cartelUrl);
     }
     log('🎉 ¡Proceso completado!');
 }
@@ -1053,21 +1054,53 @@ function initPortadaCaja() {
     num.addEventListener('input', () => { sync(num.value); actualizarPortadaDiseno(); });
 }
 
-// Mismas constantes/funciones puras que portada.js (servidor) — reproducidas acá para que el
-// mockup sepa QUÉ tamaño va a elegir el automático sin ir al server en cada tecla. Si se cambia
-// la lógica de ajustarTamano()/envolver() en portada.js, cambiar también acá.
-const PORTADA_ANCHO_UTIL = 1080 - 70 - 70;
+// ---- Cartel de portada: UN SOLO dibujo, en canvas a tamaño real de video ----
+//
+// Antes esto era un mockup CSS que replicaba a mano las fórmulas de portada.js (servidor), con
+// un contrato de "si cambiás allá, cambiá acá". Siempre terminaban difiriendo: el usuario reportó
+// una previa con saltos de línea y ancho de caja distintos a los del video final. La causa de
+// fondo era que AMBOS lados estimaban el ancho del texto con un `factorAncho` por tipografía
+// (un promedio) en vez de medirlo — y cualquier diferencia de un carácter por línea cambia el
+// corte, el tamaño elegido y el ancho de la caja en cascada.
+//
+// Ahora el cartel se dibuja UNA vez, acá, en un <canvas> de 1080x1920 (el tamaño real del video,
+// mostrado chico por CSS). Ese canvas ES la vista previa, y `canvas.toBlob()` da exactamente esos
+// píxeles como PNG, que es lo que ffmpeg superpone en el frame 0 del video y en el JPG de portada.
+// No hay dos dibujos que puedan diferir: es el mismo archivo en los tres lugares.
+//
+// Beneficio extra: `ctx.measureText()` mide el texto DE VERDAD, así que desapareció la estimación
+// `factorAncho` que causaba el problema.
+const PORTADA_ANCHO_VIDEO = 1080;
+const PORTADA_ALTO_VIDEO = 1920;
+const PORTADA_ANCHO_UTIL = PORTADA_ANCHO_VIDEO - 70 - 70; // margen lateral, igual que portada.js
 const PORTADA_FONTSIZE_MAX = 94;
 const PORTADA_FONTSIZE_MIN = 36;
-const PORTADA_ALTO_VIDEO = 1920;
-const PORTADA_POS_Y_FRACCION = 0.58;
+const PORTADA_POS_Y_FRACCION = 0.58; // top de la caja — encima de la franja de TikTok
+const PORTADA_COLOR_CAJA = '#ff2d6b';
+const PORTADA_COLOR_TEXTO = '#ffffff';
+const PORTADA_MAX_LINEAS = 3;
 
-function portadaEnvolver(palabras, maxChars, maxLineas, forzar) {
+// Familia con la que se registra el .ttf que sirve el server (ver asegurarFuenteCargada). Nombre
+// propio, distinto del de Google Fonts, para no depender de cuál gane si ambas están cargadas.
+// Peso normal siempre: los .ttf del catálogo YA son el corte grueso (Poppins-ExtraBold,
+// PassionOne-Black...), pedir bold encima haría que el navegador lo engrose sintéticamente.
+function portadaFontCss(claveFuente, fontsize) {
+    return `${fontsize}px 'cartel-${claveFuente}', sans-serif`;
+}
+
+// Parte `texto` en como máximo `maxLineas` líneas que quepan en `maxAncho` PÍXELES REALES, sin
+// cortar palabras. `ctx` ya debe tener la fuente/tamaño finales seteados (measureText depende de
+// eso). Devuelve null si no entra —así el automático prueba un tamaño más chico—, salvo `forzar`,
+// que desborda la última línea en vez de fallar (último recurso, o cuando el usuario eligió el
+// tamaño a mano y no corresponde que el código se lo achique solo).
+function portadaEnvolverMedido(ctx, texto, maxAncho, maxLineas, forzar) {
+    const palabras = texto.trim().split(/\s+/).filter(Boolean);
+    if (!palabras.length) return [''];
     const lineas = [''];
     for (const palabra of palabras) {
         const actual = lineas[lineas.length - 1];
         const candidata = actual ? `${actual} ${palabra}` : palabra;
-        if (candidata.length <= maxChars || !actual) {
+        if (ctx.measureText(candidata).width <= maxAncho || !actual) {
             lineas[lineas.length - 1] = candidata;
         } else if (lineas.length < maxLineas) {
             lineas.push(palabra);
@@ -1079,81 +1112,174 @@ function portadaEnvolver(palabras, maxChars, maxLineas, forzar) {
     }
     return lineas;
 }
-function portadaEnvolverATamano(texto, fontsize, factorAncho, forzar) {
-    const palabras = texto.trim().split(/\s+/).filter(Boolean);
-    const maxChars = Math.max(1, Math.floor(PORTADA_ANCHO_UTIL / (fontsize * factorAncho)));
-    return portadaEnvolver(palabras, maxChars, 3, forzar);
-}
-function portadaAjustarTamano(texto, factorAncho) {
+
+// Tamaño de letra más grande (de PORTADA_FONTSIZE_MAX hacia abajo) que deja el titular en como
+// máximo 3 líneas sin desbordar el ancho útil, midiendo real en cada intento.
+function portadaAjustarTamanoMedido(ctx, texto, claveFuente) {
     for (let fontsize = PORTADA_FONTSIZE_MAX; fontsize >= PORTADA_FONTSIZE_MIN; fontsize -= 3) {
-        const lineas = portadaEnvolverATamano(texto, fontsize, factorAncho, false);
+        ctx.font = portadaFontCss(claveFuente, fontsize);
+        const lineas = portadaEnvolverMedido(ctx, texto, PORTADA_ANCHO_UTIL, PORTADA_MAX_LINEAS, false);
         if (lineas) return { lineas, fontsize };
     }
-    return { lineas: portadaEnvolverATamano(texto, PORTADA_FONTSIZE_MIN, factorAncho, true), fontsize: PORTADA_FONTSIZE_MIN };
+    ctx.font = portadaFontCss(claveFuente, PORTADA_FONTSIZE_MIN);
+    return {
+        lineas: portadaEnvolverMedido(ctx, texto, PORTADA_ANCHO_UTIL, PORTADA_MAX_LINEAS, true),
+        fontsize: PORTADA_FONTSIZE_MIN,
+    };
 }
 
-// Pinta la burbuja (rosa+texto) según fórmulas de portada.js (servidor) — ver ese archivo si se
-// cambia acá. Compartida por los dos mockups (diseño en Paso 6 y elegir-foto post-render):
-// `elId` es el prefijo de los 3 ids del mockup (`${elId}-live`/`${elId}-pink`/`${elId}-text`),
-// `datos` es `{titular, fuente, fontsize, lineas, escalaCaja, factorAncho}` ya resuelto por el
-// caller — esta función solo mide y pinta, no decide tamaño automático/manual (eso varía entre
-// los dos usos).
-function pintarCartelMockup(elId, { titular, fuente, fontsize, lineas, escalaCaja, factorAncho }) {
-    const pink = document.getElementById(`${elId}-pink`);
-    const texto = document.getElementById(`${elId}-text`);
-    const cont = document.getElementById(`${elId}-live`);
-    if (!pink || !texto || !cont) return;
-
-    const escala = cont.clientHeight / PORTADA_ALTO_VIDEO;
-    const f = SUBS_FUENTES_CSS[fuente] || SUBS_FUENTES_CSS.anton;
-    texto.style.fontFamily = `'${f.family}', sans-serif`;
-    texto.style.fontWeight = f.weight;
-    texto.style.fontSize = Math.round(fontsize * escala) + 'px';
-    texto.textContent = (lineas || [titular]).join('\n');
-
-    const padX = Math.round(fontsize * 0.32 * escalaCaja * escala);
-    const padY = Math.round(fontsize * 0.22 * escalaCaja * escala);
-    const radio = Math.max(4, Math.round(fontsize * 0.4 * escala));
-    const separacion = Math.max(3, Math.round(fontsize * 0.11 * escalaCaja * escala));
-    const grosor = Math.max(1, Math.round(fontsize * 0.05 * escala));
-    pink.style.padding = `${padY}px ${padX}px`;
-    pink.style.borderRadius = radio + 'px';
-    pink.style.outlineWidth = grosor + 'px';
-    pink.style.outlineOffset = `-${separacion}px`;
-    pink.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
-
-    // Ancho de la caja: la MISMA estimación que portada.js (servidor) usa para dibujarla —
-    // `Math.max(...largos) * fontsize * factorAncho`, no el ancho real que el navegador mide
-    // para el texto. Encontrado por el usuario comparando capturas: sin esto, `width:max-content`
-    // (CSS) ajusta la caja al texto real y queda más angosta que la del video final, que sale
-    // del tamaño de la ESTIMACIÓN (conservadora, para nunca desbordar) — el mockup mentía.
-    const lineasReales = lineas || [titular];
-    const padXVideo = fontsize * 0.32 * escalaCaja;
-    const anchoMaxLinea = Math.max(...lineasReales.map(l => l.length)) * fontsize * (factorAncho || 0.62);
-    const boxWVideo = Math.min(PORTADA_ANCHO_UTIL + padXVideo * 2, anchoMaxLinea + padXVideo * 2);
-    pink.style.width = Math.round(boxWVideo * escala) + 'px';
+// Rectángulo redondeado por camino (arcTo en vez de ctx.roundRect: soporte universal, incluidos
+// navegadores algo viejos donde roundRect no existe).
+function portadaCaminoCajaRedondeada(ctx, x, y, w, h, r) {
+    const radio = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + radio, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radio);
+    ctx.arcTo(x + w, y + h, x, y + h, radio);
+    ctx.arcTo(x, y + h, x, y, radio);
+    ctx.arcTo(x, y, x + w, y, radio);
+    ctx.closePath();
 }
 
-// Paso 6 — mockup de DISEÑO: fondo placeholder (no hay video real todavía, se descartó antes
-// previsualizar un clip real por complicado), texto/fuente/tamaño/caja se leen en vivo de los
-// inputs de acá arriba en cada tecla/cambio.
-function actualizarPortadaDiseno() {
+// Dibuja el cartel completo (caja + línea blanca interior + texto) sobre un canvas de
+// 1080x1920, con el fondo TRANSPARENTE — así el PNG que sale de acá se puede superponer sobre
+// cualquier fotograma. Mismas proporciones que tenía portada.js, ahora en un solo lugar.
+// Devuelve false si no hay titular (nada que dibujar).
+function dibujarCartel(canvas, { titular, fuente, tamanoManual, escalaCaja }) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = PORTADA_ANCHO_VIDEO;
+    canvas.height = PORTADA_ALTO_VIDEO;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const texto = (titular || '').trim().toUpperCase();
+    if (!texto) return false;
+
+    const claveFuente = fuente || 'anton';
+    let lineas, fontsize;
+    if (Number.isFinite(tamanoManual)) {
+        fontsize = Math.max(24, Math.min(160, Math.round(tamanoManual)));
+        ctx.font = portadaFontCss(claveFuente, fontsize);
+        lineas = portadaEnvolverMedido(ctx, texto, PORTADA_ANCHO_UTIL, PORTADA_MAX_LINEAS, true);
+    } else {
+        ({ lineas, fontsize } = portadaAjustarTamanoMedido(ctx, texto, claveFuente));
+    }
+    ctx.font = portadaFontCss(claveFuente, fontsize);
+
+    // Geometría (mismas proporciones de siempre). El ancho de la caja ahora sale del texto MEDIDO,
+    // no de una estimación conservadora: la burbuja abraza el texto real.
+    const esc = Number.isFinite(escalaCaja) ? escalaCaja : 1;
+    const padX = Math.round(fontsize * 0.32 * esc);
+    const padY = Math.round(fontsize * 0.22 * esc);
+    const lineHeight = Math.round(fontsize * 1.08);
+    const lineSpacing = Math.round(fontsize * 0.08);
+    const anchoMaxLinea = Math.max(...lineas.map(l => ctx.measureText(l).width));
+    const boxW = Math.min(PORTADA_ANCHO_UTIL + padX * 2, Math.round(anchoMaxLinea + padX * 2));
+    const boxH = lineas.length * lineHeight + (lineas.length - 1) * lineSpacing + padY * 2;
+    const boxX = Math.round((PORTADA_ANCHO_VIDEO - boxW) / 2);
+    const boxY = Math.round(PORTADA_ALTO_VIDEO * PORTADA_POS_Y_FRACCION);
+    const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
+    const sombra = Math.max(2, Math.round(fontsize * 0.045));
+    // Línea blanca DENTRO de la caja (no un margen que la agrande): 3 formas concéntricas —
+    // color, anillo blanco, color de nuevo.
+    const separacion = Math.max(5, Math.round(fontsize * 0.11 * esc));
+    const grosor = Math.max(3, Math.round(fontsize * 0.05));
+
+    portadaCaminoCajaRedondeada(ctx, boxX, boxY, boxW, boxH, radio);
+    ctx.fillStyle = PORTADA_COLOR_CAJA;
+    ctx.fill();
+    portadaCaminoCajaRedondeada(ctx, boxX + separacion, boxY + separacion,
+        boxW - separacion * 2, boxH - separacion * 2, Math.max(4, radio - separacion));
+    ctx.fillStyle = PORTADA_COLOR_TEXTO;
+    ctx.fill();
+    portadaCaminoCajaRedondeada(ctx, boxX + separacion + grosor, boxY + separacion + grosor,
+        boxW - (separacion + grosor) * 2, boxH - (separacion + grosor) * 2,
+        Math.max(4, radio - separacion - grosor));
+    ctx.fillStyle = PORTADA_COLOR_CAJA;
+    ctx.fill();
+
+    ctx.fillStyle = PORTADA_COLOR_TEXTO;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowOffsetX = sombra;
+    ctx.shadowOffsetY = sombra;
+    ctx.shadowBlur = sombra * 1.5;
+    const altoTexto = lineas.length * lineHeight + (lineas.length - 1) * lineSpacing;
+    let y = boxY + boxH / 2 - altoTexto / 2 + lineHeight / 2;
+    for (const linea of lineas) {
+        ctx.fillText(linea, boxX + boxW / 2, y);
+        y += lineHeight + lineSpacing;
+    }
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.shadowBlur = 0;
+    return true;
+}
+
+// Lee los controles del Paso 6 y devuelve el diseño del cartel.
+function leerDisenoCartel() {
     const titularEl = document.getElementById('portada-titular');
-    const fuenteEl = document.getElementById('portada-fuente');
+    if (!titularEl) return null;
     const autoEl = document.getElementById('portada-tamano-auto');
     const tamanoEl = document.getElementById('portada-tamano-num');
     const cajaEl = document.getElementById('portada-caja-num');
-    if (!titularEl) return;
+    return {
+        titular: titularEl.value || '',
+        fuente: document.getElementById('portada-fuente')?.value || 'anton',
+        tamanoManual: autoEl && !autoEl.checked ? Number(tamanoEl?.value) || 94 : undefined,
+        escalaCaja: (Number(cajaEl?.value) || 100) / 100,
+    };
+}
 
-    const clave = fuenteEl?.value || 'anton';
-    const factorAncho = FACTOR_ANCHO_POR_FUENTE[clave] || 0.62;
-    const titular = (titularEl.value || '...').toUpperCase();
-    const manual = autoEl && !autoEl.checked;
-    const { lineas, fontsize } = manual
-        ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
-        : portadaAjustarTamano(titular, factorAncho);
-    const escalaCaja = (Number(cajaEl?.value) || 100) / 100;
-    pintarCartelMockup('portada-diseno', { titular, fuente: clave, fontsize, lineas, escalaCaja, factorAncho });
+// La tipografía tiene que estar CARGADA antes de medir/dibujar: si no, el canvas mide y dibuja con
+// una de reemplazo, y como este dibujo es el que se hornea en el video, la letra equivocada llega
+// al resultado final (antes esto era solo un problema de la previa, porque el video lo dibujaba el
+// server con libass y el .ttf real).
+//
+// Se carga el MISMO .ttf que usa el server (`/api/fuente/:clave`), no el de Google Fonts: así los
+// dos lados comparten el archivo exacto, y no depende de que el CDN esté disponible. Se cachea la
+// promesa por tipografía para no re-pedirla en cada tecla.
+const fuentesCartelCargadas = new Map();
+async function asegurarFuenteCargada(claveFuente) {
+    if (!window.FontFace || !document.fonts) return false;
+    if (!fuentesCartelCargadas.has(claveFuente)) {
+        fuentesCartelCargadas.set(claveFuente, (async () => {
+            try {
+                const ff = new FontFace(`cartel-${claveFuente}`, `url(/api/fuente/${encodeURIComponent(claveFuente)})`);
+                await ff.load();
+                document.fonts.add(ff);
+                return true;
+            } catch (e) {
+                // Solo se cachean los ÉXITOS: si falla (red caída, el server todavía no bajó el
+                // .ttf), se borra la entrada para que el próximo intento vuelva a probar. Cachear
+                // el fallo dejaría la tipografía rota hasta recargar la página, y el usuario
+                // terminaría horneando el cartel con una letra de reemplazo sin poder corregirlo.
+                fuentesCartelCargadas.delete(claveFuente);
+                console.warn(`No se pudo cargar la tipografía "${claveFuente}" para el cartel:`, e.message);
+                return false;
+            }
+        })());
+    }
+    return fuentesCartelCargadas.get(claveFuente);
+}
+
+// Aviso visible si la tipografía no cargó: el cartel se dibujaría con una letra de reemplazo Y ESA
+// sería la que queda en el video. Mejor decirlo que hornear en silencio algo distinto a lo pedido.
+function avisarFuenteCartel(ok) {
+    const el = document.getElementById('portada-fuente-aviso');
+    if (!el) return;
+    el.textContent = ok ? '' : '⚠️ No se pudo cargar esa tipografía: el cartel se está dibujando con una letra de reemplazo, y así quedaría en el video. Revisá la conexión o elegí otra.';
+    el.style.display = ok ? 'none' : 'block';
+}
+
+// Paso 6 — vista previa REAL: es el mismo canvas que después se exporta como PNG.
+async function actualizarPortadaDiseno() {
+    const canvas = document.getElementById('portada-diseno-canvas');
+    const diseno = leerDisenoCartel();
+    if (!canvas || !diseno) return;
+    avisarFuenteCartel(await asegurarFuenteCargada(diseno.fuente));
+    dibujarCartel(canvas, { ...diseno, titular: diseno.titular || '...' });
 }
 
 function initPortadaDiseno() {
@@ -1162,11 +1288,23 @@ function initPortadaDiseno() {
     actualizarPortadaDiseno();
 }
 
-// Post-render — mockup de ELEGIR FOTO: fotograma real capturado del reproductor (canvas) +
-// aproximación CSS de la burbuja, PERO el cartel (texto/fuente/tamaño/caja) ya no se lee de
-// inputs — viene fijo del `cartel` que el server devolvió (lo mismo que quemó en el frame 0),
-// pedido explícito del usuario: acá solo se elige la foto, nunca se re-edita el cartel.
-function initPortadaLive(cartel) {
+// PNG del cartel tal como se ve en la previa, listo para mandar al server. Devuelve null si no
+// hay titular (el usuario no quiere cartel). Es una data URL porque viaja dentro del JSON del
+// pedido de generar video, junto al resto de los efectos.
+async function exportarCartelPNG() {
+    const diseno = leerDisenoCartel();
+    if (!diseno || !diseno.titular.trim()) return null;
+    await asegurarFuenteCargada(diseno.fuente);
+    const canvas = document.createElement('canvas');
+    if (!dibujarCartel(canvas, diseno)) return null;
+    return canvas.toDataURL('image/png');
+}
+
+// Post-render — ELEGIR FOTO: fotograma real capturado del reproductor + EL PNG REAL del cartel
+// encima (`cartelUrl`, el mismo archivo que el server ya quemó en el frame 0 y que va a usar para
+// el JPG). Ya no se re-dibuja ni se aproxima nada acá: es la imagen final, estirada al mismo
+// recuadro. Acá solo se elige la foto, nunca se re-edita el cartel.
+function initPortadaLive(cartelUrl) {
     const videoEl = document.getElementById('result-video-player');
     const canvas = document.getElementById('portada-live-canvas');
     if (!videoEl || !canvas) return;
@@ -1179,18 +1317,8 @@ function initPortadaLive(cartel) {
         } catch {} // video aún no tiene un frame decodificado (CORS/timing) — se reintenta en el próximo evento
     };
 
-    const pintar = () => {
-        const factorAncho = FACTOR_ANCHO_POR_FUENTE[cartel.fuente] || 0.62;
-        const titular = (cartel.titular || '...').toUpperCase();
-        const { lineas, fontsize } = Number.isFinite(cartel.tamanoManual)
-            ? { fontsize: cartel.tamanoManual, lineas: portadaEnvolverATamano(titular, cartel.tamanoManual, factorAncho, true) }
-            : portadaAjustarTamano(titular, factorAncho);
-        const escalaCaja = Number.isFinite(cartel.escalaCajaManual) ? cartel.escalaCajaManual : 1;
-        pintarCartelMockup('portada-live', { titular, fuente: cartel.fuente, fontsize, lineas, escalaCaja, factorAncho });
-    };
-
-    videoEl.addEventListener('seeked', () => { capturarFrame(); pintar(); });
-    videoEl.addEventListener('loadeddata', () => { capturarFrame(); pintar(); });
+    videoEl.addEventListener('seeked', capturarFrame);
+    videoEl.addEventListener('loadeddata', capturarFrame);
 
     // Primera captura: si el <video> ya está listo, directo; si no (carrera real medida: el
     // fetch de /api/fuentes-subtitulos que precede a esta función a veces tarda MÁS que la carga
@@ -1199,13 +1327,8 @@ function initPortadaLive(cartel) {
     // negro para siempre.
     let intentos = 0;
     const intentarCaptura = () => {
-        if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
-            capturarFrame();
-            pintar();
-        } else if (intentos < 20) {
-            intentos++;
-            setTimeout(intentarCaptura, 100);
-        }
+        if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) capturarFrame();
+        else if (intentos < 20) { intentos++; setTimeout(intentarCaptura, 100); }
     };
     intentarCaptura();
 }
@@ -1703,10 +1826,6 @@ let subsTamano = 264;
 let subsMarginV = 300;
 let subsFuente = 'anton';
 
-// factorAncho por tipografía (clave del catálogo -> número), lo llena cargarFuentesEnSelect() al
-// pedir /api/fuentes-subtitulos. Lo usa SOLO el mockup en vivo de la portada (más abajo).
-const FACTOR_ANCHO_POR_FUENTE = {};
-
 // Mapeo clave del catálogo (subtitulos.js) → familia/peso CSS que carga el <link> de Google
 // Fonts en index.html. Es SOLO para que el preview se vea con la tipografía real — el render
 // final sigue self-hosted con ffmpeg (fontsdir), esto no lo toca. Si se agrega una fuente al
@@ -1766,10 +1885,6 @@ async function cargarFuentesEnSelect(selectId) {
         const { fuentes, default: porDefecto } = await apiCall('/fuentes-subtitulos', 'GET');
         select.innerHTML = fuentes.map(f => `<option value="${f.clave}">${f.familia}</option>`).join('');
         select.value = porDefecto || fuentes[0]?.clave || 'anton';
-        // factorAncho de cada tipografía: lo usa el mockup en vivo de la portada para replicar
-        // ajustarTamano() de portada.js sin ir al server. Guardado acá porque este mismo fetch
-        // ya trae el dato, sin pedirlo dos veces.
-        fuentes.forEach(f => { FACTOR_ANCHO_POR_FUENTE[f.clave] = f.factorAncho; });
     } catch (e) {
         console.warn(`No se pudo cargar el catálogo de tipografías para #${selectId}:`, e.message);
     }

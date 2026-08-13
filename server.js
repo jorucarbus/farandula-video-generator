@@ -27,7 +27,11 @@ const API_KEY = process.env.API_KEY;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+// 8mb (el default de express son 100kb): el cartel de portada viaja como PNG en data URL dentro
+// del cuerpo de /api/generate-video. Un cartel 1080x1920 casi todo transparente pesa decenas de
+// kb, pero el margen evita que un titular largo con letra grande haga fallar el render entero
+// con un 413 poco claro.
+app.use(express.json({ limit: '8mb' }));
 // no-cache en estáticos: el HTML/CSS/JS cambia seguido durante el desarrollo y el
 // navegador se quedaba pegado con versiones viejas (parecía que los cambios no aplicaban).
 app.use(express.static('public', {
@@ -41,7 +45,7 @@ app.use(express.static('public', {
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -53,8 +57,30 @@ const authenticateApiKey = (req, res, next) => {
 
 app.use('/api', authenticateApiKey);
 
-// Previews en memoria: token aleatorio -> ruta del MP4 renderizado
+// Previews en memoria: token aleatorio -> {path del MP4 renderizado, destino, cartelPath}
 const previews = new Map();
+
+// Guarda en disco el PNG del cartel que mandó el navegador (data URL "data:image/png;base64,...").
+// Ese archivo es la ÚNICA versión del cartel: se superpone tal cual en el frame 0 del video y,
+// después, en el JPG de portada — así los dos salen idénticos entre sí y a la previa, sin que el
+// server tenga que redibujar nada. Devuelve null si no vino cartel (el usuario no quiso) o si el
+// dato no tiene la forma esperada; el video sale igual, sin cartel.
+function guardarCartelPNG(dataUrl, renderId) {
+  if (typeof dataUrl !== 'string') return null;
+  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl.trim());
+  if (!m) {
+    if (dataUrl.trim()) console.warn(`⚠️ [${renderId}] El cartel recibido no es un PNG en data URL, el video sale sin cartel`);
+    return null;
+  }
+  try {
+    const ruta = path.join(video.TEMP_DIR, `cartel_${renderId}.png`);
+    fs.writeFileSync(ruta, Buffer.from(m[1], 'base64'));
+    return ruta;
+  } catch (e) {
+    console.warn(`⚠️ [${renderId}] No se pudo guardar el cartel, el video sale sin él: ${e.message}`);
+    return null;
+  }
+}
 
 // Portadas en memoria: token aleatorio -> ruta del JPG generado (fotograma + titular)
 const portadas = new Map();
@@ -114,28 +140,59 @@ app.get('/api/preview/:token', (req, res) => {
   res.sendFile(entrada.path);
 });
 
-// Portada (miniatura): fotograma elegido por el usuario + EL MISMO cartel diseñado en el Paso 6
-// (texto/fuente/tamaño/caja) quemado encima — pedido explícito del usuario: el cartel se diseña
-// UNA sola vez, antes de generar el video, y se reusa tal cual acá (nunca se re-edita), para que
-// el JPG y el frame 0 del video sean idénticos. Por eso el body YA NO manda titular/fuente/
-// tamano/escalaCaja: salen de `entrada.cartel`, guardado por /api/generate-video cuando armó el
-// banner del frame 0. Se genera a partir del MP4 de preview (sobrevive a la limpieza de
-// temporales del render), nunca del original — así funciona aunque el render ya se haya limpiado
-// del disco. Además de servirla para descargar, se guarda junto al video (misma subcarpeta que
-// creó /api/generate-video) — pedido explícito del usuario, para no tener que subirla aparte a mano.
+// Archivo .ttf de una tipografía del catálogo, el MISMO que el server ya descarga (y cachea) para
+// quemar los subtítulos con libass. El navegador lo carga con la API FontFace para dibujar el
+// cartel de portada. Sin esto, el canvas dependía del CDN de Google Fonts: si no cargaba (red
+// lenta, bloqueo, offline), dibujaba con una tipografía de reemplazo — y como ese dibujo AHORA es
+// lo que se hornea en el video, el error dejaba de ser solo visual. Con el .ttf servido de acá,
+// navegador y servidor usan literalmente el mismo archivo.
+// Público (sin API key) a propósito: FontFace.load() no puede mandar headers.
+app.get('/api/fuente/:clave', async (req, res) => {
+  const fuente = subtitulos.FUENTES[req.params.clave];
+  if (!fuente) return res.status(404).json({ error: 'Tipografía desconocida' });
+  try {
+    const dir = await subtitulos.obtenerCarpetaFuentes(req.params.clave);
+    const ruta = dir && path.join(dir, fuente.archivo);
+    if (!ruta || !fs.existsSync(ruta)) {
+      return res.status(503).json({ error: `No se pudo obtener la tipografía "${fuente.familia}"` });
+    }
+    res.type('font/ttf');
+    res.sendFile(ruta);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PNG del cartel que el navegador dibujó en el Paso 6 y el server quemó en el frame 0. Se sirve
+// para que la UI lo muestre encima del fotograma elegido — la imagen REAL, no una aproximación.
+app.get('/api/cartel/:token', (req, res) => {
+  const entrada = previews.get(req.params.token);
+  if (!entrada?.cartelPath || !fs.existsSync(entrada.cartelPath)) {
+    return res.status(404).json({ error: 'Cartel no disponible' });
+  }
+  res.sendFile(entrada.cartelPath);
+});
+
+// Portada (miniatura): fotograma elegido por el usuario + EL MISMO PNG de cartel superpuesto —
+// pedido explícito del usuario: el cartel se diseña UNA sola vez, antes de generar el video, y se
+// reusa tal cual acá (nunca se re-edita), para que el JPG y el frame 0 del video sean idénticos.
+// Ese "idéntico" ahora es literal: es el mismo archivo PNG (`entrada.cartelPath`), no un redibujo
+// a partir de los mismos parámetros. Se genera a partir del MP4 de preview (sobrevive a la
+// limpieza de temporales del render), nunca del original — así funciona aunque el render ya se
+// haya limpiado del disco. Además de servirla para descargar, se guarda junto al video (misma
+// subcarpeta que creó /api/generate-video), para no tener que subirla aparte a mano.
 app.post('/api/portada', async (req, res) => {
   const { previewToken, timestamp } = req.body;
   const entrada = previews.get(previewToken);
   if (!entrada || !fs.existsSync(entrada.path)) {
     return res.status(404).json({ error: 'El preview del video ya no está disponible, genera el video de nuevo' });
   }
-  if (!entrada.cartel?.titular) {
+  if (!entrada.cartelPath || !fs.existsSync(entrada.cartelPath)) {
     return res.status(400).json({ error: 'No se diseñó un cartel en el Paso 6, no hay nada que superponer' });
   }
   try {
     const token = crypto.randomBytes(16).toString('hex');
-    const { titular, fuente, tamanoManual, escalaCajaManual } = entrada.cartel;
-    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular, fuente, token, tamanoManual, escalaCajaManual);
+    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, entrada.cartelPath, token);
     // Conservar solo las 3 portadas más recientes, mismo criterio que los previews.
     const viejas = [...portadas.entries()].slice(0, Math.max(0, portadas.size - 2));
     for (const [tok, ruta2] of viejas) {
@@ -916,18 +973,13 @@ app.post('/api/generate-video', async (req, res) => {
       || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
 
-    // Cartel de portada (Paso 6): texto/fuente/tamaño/caja diseñados por el usuario ANTES de
-    // generar el video — se usa DOS veces, idéntico las dos: quemado en el frame 0 acá abajo, y
-    // reusado tal cual (sin re-editar) cuando el usuario elija un fotograma real para el JPG
-    // (POST /api/portada, que lee esto mismo desde `previews.get(token).cartel`). Mismo criterio
-    // de parseo que usaba antes /api/portada: tamano/escalaCaja ausentes o 'auto' → automático.
-    const tamanoManual = efectos?.portadaTamano === undefined || efectos?.portadaTamano === null || efectos?.portadaTamano === 'auto'
-      ? undefined : Number(efectos.portadaTamano);
-    const escalaCajaManual = efectos?.portadaCaja === undefined || efectos?.portadaCaja === null
-      ? undefined : Number(efectos.portadaCaja) / 100;
-    const cartel = efectos?.portadaTitular?.trim()
-      ? { titular: efectos.portadaTitular.trim(), fuente: efectos.portadaFuente, tamanoManual, escalaCajaManual }
-      : null;
+    // Cartel de portada (Paso 6): el navegador ya lo dibujó y manda el PNG EXACTO que el usuario
+    // vio en la previa. El server no lo re-dibuja — solo lo guarda en disco y lo superpone dos
+    // veces, idéntico las dos: en el frame 0 acá abajo, y en el JPG cuando el usuario elija un
+    // fotograma real (POST /api/portada, que lee esta misma ruta desde `previews`). Antes esto
+    // reconstruía la geometría a partir de texto/fuente/tamaño/caja, con la lógica duplicada
+    // entre servidor y navegador: siempre terminaban difiriendo (ver portada.js).
+    const cartelPath = guardarCartelPNG(efectos?.cartelPNG, renderId);
 
     // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, cartel en el frame 0
     // y música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda
@@ -935,7 +987,7 @@ app.post('/api/generate-video', async (req, res) => {
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
     const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, {
       ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset,
-      bannerTitulo: cartel?.titular, bannerFuente: cartel?.fuente, bannerTamanoManual: cartel?.tamanoManual, bannerEscalaCajaManual: cartel?.escalaCajaManual,
+      cartelPath,
     });
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
@@ -1019,9 +1071,10 @@ app.post('/api/generate-video', async (req, res) => {
       const viejos = [...previews.entries()].slice(0, Math.max(0, previews.size - 2));
       for (const [tok, entrada] of viejos) {
         try { fs.unlinkSync(entrada.path); } catch {}
+        if (entrada.cartelPath) { try { fs.unlinkSync(entrada.cartelPath); } catch {} }
         previews.delete(tok);
       }
-      previews.set(previewToken, { path: previewPath, destino: destinoPortada, cartel });
+      previews.set(previewToken, { path: previewPath, destino: destinoPortada, cartelPath });
     } catch (e) {
       console.warn(`⚠️ [${renderId}] No se pudo crear el preview: ${e.message}`);
     }
@@ -1048,9 +1101,10 @@ app.post('/api/generate-video', async (req, res) => {
       duration: resultado.duracion,
       driveLink: driveLink,
       previewUrl: previews.has(previewToken) ? `/api/preview/${previewToken}` : null,
-      // El cliente lo usa para saber si mostrar el paso "elegir portada" (post-render) y con qué
-      // valores pintar el mockup — el cartel ya no se re-edita ahí, solo se elige el fotograma.
-      cartel,
+      // URL del PNG del cartel (el mismo que se quemó en el frame 0). El cliente lo usa para
+      // saber si mostrar el paso "elegir portada" y para dibujarlo encima del fotograma elegido
+      // —la imagen REAL, ya no una aproximación en CSS.
+      cartelUrl: (cartelPath && previews.has(previewToken)) ? `/api/cartel/${previewToken}` : null,
     });
   } catch (error) {
     console.error(`Error video [${renderId}]:`, error);
@@ -1198,12 +1252,16 @@ function limpiarCache() {
     const ahora = Date.now();
     const activos = new Set([
       ...[...previews.values()].map(entrada => entrada.path),
+      // El PNG del cartel tiene que sobrevivir tanto como su preview: el usuario puede tardar
+      // más de 1h en elegir el fotograma, y sin este archivo /api/portada no puede armar el JPG
+      // (es el cartel mismo, ya no se puede redibujar a partir de parámetros).
+      ...[...previews.values()].map(entrada => entrada.cartelPath).filter(Boolean),
       ...[...portadas.values()],
       ...[...audiosPendientes.values()].map(a => a.path),
     ].map(p => path.basename(p)));
 
     for (const f of fs.readdirSync(video.TEMP_DIR)) {
-      if (activos.has(f)) continue; // no tocar previews/audios en uso
+      if (activos.has(f)) continue; // no tocar previews/carteles/audios en uso
       const ruta = path.join(video.TEMP_DIR, f);
       try {
         if (ahora - fs.statSync(ruta).mtimeMs > UNA_HORA) fs.unlinkSync(ruta);
