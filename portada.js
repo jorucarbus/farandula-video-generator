@@ -118,18 +118,16 @@ function dibujoCajaRedondeada(w, h, r) {
   ].join(' ');
 }
 
-// videoPath: mp4 fuente (el preview que sobrevive a la limpieza de temporales, ver server.js).
-// timestamp: segundos dentro del video, el fotograma que el usuario eligió pausando el player.
-// titular: texto libre, se pone en mayúsculas.
-// fuenteClave: clave del catálogo de subtitulos.js (default 'anton' si no llega o no existe).
-// tamanoManual: opcional — si el usuario elige un tamaño a mano (Paso extra), se usa TAL CUAL
-// (clamp a [TAMANO_MANUAL_MIN, TAMANO_MANUAL_MAX]) en vez del automático, y el texto se envuelve
-// forzando el desborde de la última línea si hace falta (el usuario eligió el tamaño a propósito,
-// no tiene sentido que el código lo achique solo). Sin valor, o no numérico: automático de siempre.
-// escalaCajaManual: opcional — multiplicador de padding (clamp a [ESCALA_CAJA_MIN,
-// ESCALA_CAJA_MAX]), independiente del tamaño de letra. Sin valor: 1 (default de siempre).
-async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual, escalaCajaManual) {
-  const outPath = path.join(TEMP_DIR, `portada_${token}.jpg`);
+// Arma el contenido completo del .ass (caja redondeada + línea blanca + texto) — compartido por
+// generarPortada() (JPG editable a mano, extrae 1 frame) y generarBannerFrame0() (banner
+// automático quemado en el frame 0 del video real, Fase "portada = primer frame"). `inicio`/`fin`
+// (formato ASS "H:MM:SS.cc") son la única diferencia real entre los dos usos: la portada JPG no
+// necesita que el rango de tiempo del Dialogue tenga sentido (se extrae 1 solo frame con
+// `-frames:v 1`, así que basta con que cubra igual el instante pedido), pero el banner SÍ — tiene
+// que durar ~1 frame nomás para no verse nunca durante la reproducción real.
+// tamanoManual/escalaCajaManual: mismo criterio que documentaba generarPortada() antes de este
+// refactor — ver ahí abajo.
+async function construirASS(titular, fuenteClave, tamanoManual, escalaCajaManual, inicio, fin) {
   const fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteClave);
   const fuente = subtitulos.FUENTES[fuenteClave] || subtitulos.FUENTES[subtitulos.FUENTE_DEFAULT];
 
@@ -190,11 +188,29 @@ Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion},${boxY + separacion})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW - separacion * 2, boxH - separacion * 2, radioAnillo)}{\\p0}
-Dialogue: 2,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion + grosor},${boxY + separacion + grosor})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - (separacion + grosor) * 2, boxH - (separacion + grosor) * 2, radioInterior)}{\\p0}
-Dialogue: 3,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
+Dialogue: 0,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
+Dialogue: 1,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion},${boxY + separacion})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW - separacion * 2, boxH - separacion * 2, radioAnillo)}{\\p0}
+Dialogue: 2,${inicio},${fin},Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion + grosor},${boxY + separacion + grosor})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - (separacion + grosor) * 2, boxH - (separacion + grosor) * 2, radioInterior)}{\\p0}
+Dialogue: 3,${inicio},${fin},Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
 `;
+
+  return { ass, fuentesDir };
+}
+
+// videoPath: mp4 fuente (el preview que sobrevive a la limpieza de temporales, ver server.js).
+// timestamp: segundos dentro del video, el fotograma que el usuario eligió pausando el player.
+// titular: texto libre, se pone en mayúsculas.
+// fuenteClave: clave del catálogo de subtitulos.js (default 'anton' si no llega o no existe).
+// tamanoManual: opcional — si el usuario elige un tamaño a mano (Paso extra), se usa TAL CUAL
+// (clamp a [TAMANO_MANUAL_MIN, TAMANO_MANUAL_MAX]) en vez del automático, y el texto se envuelve
+// forzando el desborde de la última línea si hace falta (el usuario eligió el tamaño a propósito,
+// no tiene sentido que el código lo achique solo). Sin valor, o no numérico: automático de siempre.
+// escalaCajaManual: opcional — multiplicador de padding (clamp a [ESCALA_CAJA_MIN,
+// ESCALA_CAJA_MAX]), independiente del tamaño de letra. Sin valor: 1 (default de siempre).
+async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual, escalaCajaManual) {
+  const outPath = path.join(TEMP_DIR, `portada_${token}.jpg`);
+  // Rango de tiempo irrelevante acá: se extrae 1 solo frame con `-frames:v 1`, nunca se reproduce.
+  const { ass, fuentesDir } = await construirASS(titular, fuenteClave, tamanoManual, escalaCajaManual, '0:00:00.00', '0:00:59.00');
 
   const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);
   fs.writeFileSync(assPath, ass, 'utf8');
@@ -216,4 +232,22 @@ Dialogue: 3,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2}
   return outPath;
 }
 
-module.exports = { generarPortada };
+// Banner automático quemado en el frame 0 del VIDEO REAL (no un JPG aparte) — pedido del
+// usuario: "que el letrero solo lo ponga en el primer frame, sea cual sea", para que TikTok (que
+// no expone API de portada) tome ese frame como su portada automática, sin re-codificar el video
+// una segunda vez ni resubirlo. Texto y frame NO los elige el usuario acá (eso es lo que hace el
+// editor de portada aparte, sin tocar); es automático, con el nombre corto que ya se genera para
+// el archivo. Nunca llama a ffmpeg: solo arma el .ass, quien lo quema es el mux de video.js
+// (que de por sí ya corre una vez — sin esto sería una segunda pasada completa).
+// Devuelve null si el titular viene vacío (nada que poner).
+async function generarBannerFrame0(tempDir, jobId, titular, fuenteClave) {
+  if (!titular || !titular.trim()) return null;
+  // Ventana angosta (~1 frame a 30fps) para que jamás se vea durante la reproducción real —
+  // a diferencia de la portada JPG, acá SÍ importa que el rango sea corto de verdad.
+  const { ass, fuentesDir } = await construirASS(titular.trim(), fuenteClave || 'anton', undefined, undefined, '0:00:00.00', '0:00:00.04');
+  const assPath = path.join(tempDir, `banner_${jobId}.ass`);
+  fs.writeFileSync(assPath, ass, 'utf8');
+  return { assPath, fuentesDir };
+}
+
+module.exports = { generarPortada, generarBannerFrame0 };

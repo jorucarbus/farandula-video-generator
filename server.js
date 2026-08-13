@@ -905,19 +905,21 @@ app.post('/api/generate-video', async (req, res) => {
       }
     }
 
-    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados y música si se
-    // generaron). Hyperframes retirado: no terminó de funcionar. El código queda en video.js
-    // (montarVideoHyper) y en el historial de git por si se retoma.
-    console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset });
-    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
-
-    // 6. Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4"
-    // Viene de la lectura (sin llamada extra a Gemini); fallback: generarlo desde el guion
+    // Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4" — adelantado a ANTES
+    // del render (antes vivía después) porque el banner automático del frame 0 (más abajo) lo
+    // necesita como titular. Viene de la lectura (sin llamada extra a Gemini); fallback:
+    // generarlo desde el guion.
     const fecha = new Date().toISOString().slice(0, 10);
     const nombreCorto = metadatos?.nombreCorto
       || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
+
+    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, banner del frame 0 y
+    // música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda en
+    // video.js (montarVideoHyper) y en el historial de git por si se retoma.
+    console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset, bannerTitulo: nombreCorto });
+    console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
     // 7. Guardar en la carpeta de destino, dentro de una subcarpeta con el título del video —
     // pedido explícito del usuario, para que el video y su portada (Paso extra, generada

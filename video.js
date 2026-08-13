@@ -376,9 +376,32 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // Subtítulos (Fase 6): filtro `ass` quemado DESPUÉS del tpad, para que también se vea sobre
   // el frame congelado si el video quedó corto. Si el filtro falla (fuente corrupta, .ass mal
   // formado), no aborta el render: reintenta el mismo mux sin subtítulos — Regla de robustez.
-  const filtroVideo = efectos.subsPath
-    ? `${tpad},ass='${rutaFiltro(efectos.subsPath)}'${efectos.fuentesDir ? `:fontsdir='${rutaFiltro(efectos.fuentesDir)}'` : ''}`
-    : tpad;
+  const filtroSubs = efectos.subsPath
+    ? `,ass='${rutaFiltro(efectos.subsPath)}'${efectos.fuentesDir ? `:fontsdir='${rutaFiltro(efectos.fuentesDir)}'` : ''}`
+    : '';
+  const filtroVideoSinBanner = `${tpad}${filtroSubs}`;
+
+  // Banner automático en el frame 0 (pedido del usuario: "que el letrero solo lo ponga en el
+  // primer frame, sea cual sea" — para que TikTok, sin API de portada, tome ese fotograma como
+  // portada, sin re-codificar el video una segunda vez). Se arma ANTES del mux para no repetirlo
+  // en cada reintento de fallback, mismo criterio que la música. `require` perezoso: portada.js
+  // a su vez requiere este módulo (usa `ffmpeg`/`TEMP_DIR`), requerirlo arriba del archivo crearía
+  // un ciclo que devuelve exports vacíos.
+  let bannerAssPath = null;
+  let bannerFuentesDir = null;
+  if (efectos.bannerTitulo) {
+    try {
+      const portada = require('./portada');
+      const banner = await portada.generarBannerFrame0(TEMP_DIR, jobId, efectos.bannerTitulo, efectos.bannerFuente);
+      if (banner) { bannerAssPath = banner.assPath; bannerFuentesDir = banner.fuentesDir; }
+    } catch (e) {
+      console.warn(`  ⚠️ [${jobId}] No se pudo preparar el banner del frame 0, el video sale sin él: ${e.message}`);
+    }
+  }
+  const filtroBanner = bannerAssPath
+    ? `,ass='${rutaFiltro(bannerAssPath)}'${bannerFuentesDir ? `:fontsdir='${rutaFiltro(bannerFuentesDir)}'` : ''}`
+    : '';
+  const filtroVideo = `${filtroVideoSinBanner}${filtroBanner}`;
 
   // Fase 8c: música de fondo (opcional). Se prepara ANTES del mux para no repetir el trabajo
   // en cada reintento de fallback. Si falla la preparación, el video sale igual, sin música.
@@ -412,34 +435,52 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
         finalPath,
       ];
 
+  // Escalones de degradación, más allá de música (arriba): banner falla → sin banner;
+  // subtítulos fallan → sin subtítulos. Factorizados en helpers porque se llega a ellos desde
+  // dos ramas (con y sin música que ya falló antes) — mismo resultado final, sin cuadruplicar
+  // el cuerpo. El video siempre sale, degradado capa por capa, nunca se pierde el render
+  // completo por un filtro opcional.
+  const degradarDesdeBanner = async (mensaje) => {
+    console.warn(`  ⚠️ [${jobId}] ${mensaje}`);
+    try {
+      await ffmpeg(argsMux(filtroVideoSinBanner, false));
+    } catch (e) {
+      if (efectos.subsPath) {
+        console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
+        await ffmpeg(argsMux(tpad, false));
+      } else {
+        throw e;
+      }
+    }
+  };
+  const degradarDesdeSubs = async (mensaje) => {
+    console.warn(`  ⚠️ [${jobId}] ${mensaje}`);
+    await ffmpeg(argsMux(tpad, false));
+  };
+
   try {
     await ffmpeg(argsMux(filtroVideo, Boolean(musicaPreparada)));
   } catch (e) {
-    // Regla de robustez, en cascada: música falla → reintenta sin música; si TODAVÍA falla y
-    // había subtítulos, reintenta también sin ellos. El video siempre sale, degradado capa por
-    // capa, nunca se pierde el render completo por un filtro opcional.
     if (musicaPreparada) {
       console.warn(`  ⚠️ [${jobId}] Mux con música falló, reintentando sin música: ${e.message}`);
       musicaPreparada = null;
       try {
         await ffmpeg(argsMux(filtroVideo, false));
       } catch (e2) {
-        if (efectos.subsPath) {
-          console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e2.message}`);
-          await ffmpeg(argsMux(tpad, false));
-        } else {
-          throw e2;
-        }
+        if (bannerAssPath) await degradarDesdeBanner(`Banner del frame 0 falló al quemarse, reintentando sin él: ${e2.message}`);
+        else if (efectos.subsPath) await degradarDesdeSubs(`Subtítulos fallaron al quemarse, reintentando sin ellos: ${e2.message}`);
+        else throw e2;
       }
+    } else if (bannerAssPath) {
+      await degradarDesdeBanner(`Banner del frame 0 falló al quemarse, reintentando sin él: ${e.message}`);
     } else if (efectos.subsPath) {
-      console.warn(`  ⚠️ [${jobId}] Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
-      await ffmpeg(argsMux(tpad, false));
+      await degradarDesdeSubs(`Subtítulos fallaron al quemarse, reintentando sin ellos: ${e.message}`);
     } else {
       throw e;
     }
   }
 
-  [...segmentos, listaPath, basePath, musicaPreparada].filter(Boolean).forEach(f => {
+  [...segmentos, listaPath, basePath, musicaPreparada, bannerAssPath].filter(Boolean).forEach(f => {
     try { fs.unlinkSync(f); } catch {}
   });
 
