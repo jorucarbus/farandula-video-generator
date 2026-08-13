@@ -108,6 +108,18 @@ negro. Fix: `currentTime = 0.01` en vez de `0` (diferencia visual nula, fuerza u
 reintento cada 100ms hasta 2s como red de seguridad. Verificado con un video de prueba
 (`testsrc2`, para distinguir visualmente qué frame se capturó) — mockup y render real coinciden.
 
+**Corrección del margen blanco + tamaño de caja independiente** (`f650943`): el margen blanco
+del commit anterior estaba al revés — blanco afuera (agrandaba la caja), rosa adentro. El
+usuario aclaró: la caja de color se queda EXACTA como estaba, y adentro va una línea blanca fina
+paralela al borde (rosa→anillo blanco→rosa otra vez, 3 formas concéntricas en vez de 2). De paso
+pidió poder cambiar el tamaño de la CAJA sin tocar el de la LETRA — nuevo control (slider
+50-250%) que multiplica solo el padding.
+**Bug de CSS real encontrado probando el slider en browser**: `.portada-live-pink` (mockup) tenía
+`left:50%` + `transform:translateX(-50%)` sin `width` — el ancho "auto" de un `position:absolute`
+así se calcula tomando como disponible SOLO la mitad del contenedor (gotcha clásico de CSS), así
+que el ancho quedaba pegado sin importar el padding (el alto sí respondía bien). Fix:
+`width:max-content`.
+
 **Pendiente**: verificar en Railway (`adventurous-reflection`, redeploy automático al pushear)
 que el fix de `geq`→`ass` funciona ahí también — se verificó local con ffmpeg real pero no en el
 entorno Linux exacto donde falló originalmente. No se tocó `farandula-video-family` (no tiene
