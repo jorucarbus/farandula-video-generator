@@ -994,3 +994,22 @@ titular (legítimo, no quiere cartel) → pasa; front nuevo con PNG → pasa.
 
 **Para el usuario / la otra máquina**: si el cartel no aparece después de un deploy, recargar con
 Cmd/Ctrl + Shift + R antes de buscar el problema en el código.
+
+**Cierre de sesión 2026-08-13 (Mac) — qué queda por verificar en casa (Windows)**
+
+Todo pusheado a `test-persistencia` (`7c578ec` + `0d883e8`, SHA local = remoto). Railway redeploya
+staging solo. **Antes de probar: recargar con Ctrl + Shift + R** (ver la entrada de arriba).
+
+Pendiente de confirmar en staging, en este orden:
+1. Que la vista previa del Paso 6 y el cartel del video final ahora **coincidan** — que era el
+   problema original que abrió todo esto.
+2. Que el cartel se vea con la **tipografía elegida** y no con una de reemplazo. Es lo único que
+   NO se pudo ver renderizado en la Mac (sin salida a internet, el server no bajaba los `.ttf`;
+   la cañería se probó con un archivo del sistema puesto a mano, ya borrado). Si sale con otra
+   letra, aparece un aviso en pantalla — no falla en silencio.
+3. Que el filtro `overlay` exista en el ffmpeg de Railway. Es la trampa que reventó con `geq`
+   (funcionaba local, no estaba compilado en producción). Si faltara, la degradación hace que el
+   video salga sin cartel en vez de romperse, pero habría que buscar otro camino.
+
+No tocado y todavía pendiente de antes: merge a `main` (producción sigue con el código previo a
+este cambio).
