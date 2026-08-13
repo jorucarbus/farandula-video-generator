@@ -84,6 +84,30 @@ creación de subcarpeta fallaría en silencio por permisos en el camino API. Cam
 probado contra un canal real (Supe Lupe), la subcarpeta se creó y subieron video+portada,
 limpiado después.
 
+**Sombra al texto** (`ef3c5ea`): `\shad` escalado con el fontsize (mínimo 2px), color negro al
+62% de opacidad — más sutil que una sombra sólida.
+
+**Selector manual de tamaño** (`d0e116e`): checkbox "automático" (default, sin cambios de
+comportamiento) + slider/número 24-160pt. `envolverATamano()` extraído de `ajustarTamano()` para
+reusar el cálculo de wrapping en las dos rutas. Con tamaño manual el texto se envuelve forzando
+el desborde de la última línea si hace falta — el usuario lo eligió a propósito.
+
+**Margen blanco + editor en vivo + frame inicial por defecto** (`b48748f`), tres pedidos juntos:
+- La caja pasó de 1 rectángulo a 2 concéntricos (blanco completo + rosa angostado por un margen
+  proporcional al fontsize) — el texto no se mueve (mismo centro).
+- Mockup en vivo bajo los controles: fotograma REAL capturado del `<video>` a un `<canvas>` +
+  aproximación CSS de la burbuja, se actualiza en cada tecla/cambio sin ir al server. Reusa
+  `factorAncho` (ahora expuesto por `/api/fuentes-subtitulos`) para replicar `ajustarTamano()`
+  del lado del cliente — mismo criterio que el mockup de subtítulos del Paso 6.
+- El reproductor arranca en el primer fotograma por defecto (antes quedaba donde el video
+  terminaba de renderizar).
+**Bug real encontrado probando en el Browser pane contra el server real** (no en el código a
+simple vista): el `<video>` nunca decodifica un frame pintable si `currentTime` YA está en 0 y
+se le reasigna 0 — es un no-op, nunca dispara `seeked`, así que el `canvas.drawImage()` capturaba
+negro. Fix: `currentTime = 0.01` en vez de `0` (diferencia visual nula, fuerza un seek real) +
+reintento cada 100ms hasta 2s como red de seguridad. Verificado con un video de prueba
+(`testsrc2`, para distinguir visualmente qué frame se capturó) — mockup y render real coinciden.
+
 **Pendiente**: verificar en Railway (`adventurous-reflection`, redeploy automático al pushear)
 que el fix de `geq`→`ass` funciona ahí también — se verificó local con ffmpeg real pero no en el
 entorno Linux exacto donde falló originalmente. No se tocó `farandula-video-family` (no tiene
