@@ -44,6 +44,24 @@ guardado (JPG idéntico al cartel / 400 claro), con ruta de debug temporal remov
 toque este código, confirmar ahí antes de dar por cerrado si el usuario reporta algo raro en
 producción.
 
+**Corrección el mismo día (`871a3c3`, `494720c`)**: el usuario mandó capturas mostrando que el
+mockup del Paso 6 no coincidía con el video final (caja más angosta en el mockup que en la
+realidad). Dos bugs en cadena, ambos en `.portada-live-pink`/`pintarCartelMockup()`
+(`public/app.js`/`style.css`), ninguno en `portada.js` (servidor) — el servidor siempre estuvo
+bien:
+1. `width: max-content` hacía que el navegador AUTO-AJUSTE la caja al ancho REAL medido del
+   texto — pero el servidor nunca mide texto real, calcula el ancho con la misma ESTIMACIÓN
+   (`factorAncho`) que decide cuántas líneas entran, y esa estimación casi siempre sobreestima
+   un poco (a propósito, para no desbordar). Fix: `pintarCartelMockup()` ahora calcula `boxW`
+   con la fórmula exacta de `portada.js` y fija `pink.style.width` explícito.
+2. Quedaba un `max-width: 88%` viejo (de cuando la caja se autoajustaba, techo cosmético) que
+   seguía capeando ese ancho explícito a valores de `escalaCaja` altos (probado con 210%: pedía
+   314px, CSS lo recortaba a 281px). El servidor no tiene techo así. Sacado.
+
+Verificado en 3 capas para el segundo bug (no solo código): fórmula reimplementada aparte
+(boxW=1058 de 1080 = 98% a caja 210%), `getComputedStyle` en browser real antes/después del fix,
+y un render real (`montarVideoPlan` directo) confirmando visualmente la misma proporción.
+
 ## Estado al 2026-08-10 — Portada (miniatura), fuera del plan maestro
 
 `test-persistencia` en `cf46124` (push verificado). Pedido directo del usuario ("poner portada
