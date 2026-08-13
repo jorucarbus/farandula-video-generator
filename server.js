@@ -283,7 +283,9 @@ app.get('/api/canales', async (req, res) => {
 // Catálogo de tipografías de subtítulos (Fase 6) — la UI lo pide en vez de mantener una lista
 // duplicada; si se agrega/saca una fuente en subtitulos.js, el selector se actualiza solo.
 app.get('/api/fuentes-subtitulos', (req, res) => {
-  const fuentes = Object.entries(subtitulos.FUENTES).map(([clave, f]) => ({ clave, familia: f.familia }));
+  // factorAncho viaja también: lo usa la vista previa en vivo de la portada (public/app.js) para
+  // replicar el mismo cálculo de ajustarTamano() de portada.js sin llamar al server en cada tecla.
+  const fuentes = Object.entries(subtitulos.FUENTES).map(([clave, f]) => ({ clave, familia: f.familia, factorAncho: f.factorAncho }));
   res.json({ fuentes, default: subtitulos.FUENTE_DEFAULT });
 });
 

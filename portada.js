@@ -32,6 +32,7 @@ const TAMANO_MANUAL_MAX = 160;
 const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
 const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
 const COLOR_TEXTO = 'FFFFFF'; // blanco, pedido explícito del usuario (RRGGBB)
+const COLOR_MARGEN = 'FFFFFF'; // margen blanco dentro de la caja, pedido explícito del usuario
 
 // ffmpeg necesita los ':' de una ruta de Windows (C\:) escapados dentro del valor de un filtro —
 // mismo criterio que rutaFiltro() en video.js (no exportada, se replica acá).
@@ -148,6 +149,12 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token,
   const boxY = Math.round(ALTO_VIDEO * POS_Y_FRACCION);
   const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
   const sombra = Math.max(2, Math.round(fontsize * 0.045));
+  // Margen blanco DENTRO de la caja, pedido explícito del usuario: se dibuja como una caja
+  // blanca del tamaño completo (boxW x boxH) y la caja de color va ENCIMA, angostada por este
+  // margen en los 4 lados — el blanco que sobra alrededor es justo el margen. Mismo centro que
+  // la caja de color (concéntricas), así el texto centrado no se mueve un pixel.
+  const margen = Math.max(6, Math.round(fontsize * 0.1));
+  const radioInterior = Math.max(6, radio - margen);
 
   const textoASS = lineas.map(escaparASS).join('\\N');
 
@@ -164,8 +171,9 @@ Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
+Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
+Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + margen},${boxY + margen})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - margen * 2, boxH - margen * 2, radioInterior)}{\\p0}
+Dialogue: 2,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
 `;
 
   const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);

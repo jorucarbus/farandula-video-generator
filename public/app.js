@@ -960,9 +960,10 @@ function showResult(videoData) {
     const portadaHtml = state.previewToken ? `
         <div class="portada-box mt-md" id="portada-box">
             <p><strong>${icon('videoCamera')} Portada (miniatura)</strong></p>
-            <p class="hint">Pausá el video de arriba en el fotograma que quieras, escribí el titular
-            y generá la portada. TikTok no deja fijarla por API — la descargás y la subís vos al
-            publicar.</p>
+            <p class="hint">Arranca en el primer fotograma del video; si querés otro, pausá el
+            reproductor de arriba donde quieras. Sirve como portada al publicar en TikTok y
+            también en las demás redes — TikTok no deja fijarla por API, así que la descargás y
+            la subís vos al publicar.</p>
             <div class="portada-controls">
                 <input type="text" id="portada-titular" placeholder="Titular..." maxlength="90" value="${titularSugerido.replace(/"/g, '&quot;')}">
                 <select id="portada-fuente"><option value="anton">Cargando...</option></select>
@@ -973,6 +974,15 @@ function showResult(videoData) {
                 <input type="range" id="portada-tamano" min="24" max="160" step="1" value="94" disabled>
                 <input type="number" id="portada-tamano-num" min="24" max="160" step="1" value="94" disabled>
                 <span class="hint">pt</span>
+            </div>
+            <label class="mt-sm">Vista previa (aproximada, sobre el fotograma real — el render final quema el .ass, esto es un mockup en CSS):</label>
+            <div class="portada-live" id="portada-live">
+                <canvas id="portada-live-canvas"></canvas>
+                <div class="portada-live-white" id="portada-live-white">
+                    <div class="portada-live-pink" id="portada-live-pink">
+                        <span id="portada-live-text"></span>
+                    </div>
+                </div>
             </div>
             <div id="portada-resultado"></div>
         </div>
@@ -993,7 +1003,18 @@ function showResult(videoData) {
         </p>
     `;
     if (state.previewToken) {
-        cargarFuentesEnSelect('portada-fuente');
+        const videoEl = document.getElementById('result-video-player');
+        // Fotograma por defecto: el PRIMERO del video, pedido explícito del usuario — el
+        // reproductor sigue pudiéndose pausar en otro punto si se prefiere otro fotograma.
+        // 0.01 y no 0 a propósito (encontrado probando en browser real): si currentTime YA está
+        // en 0 (arranca ahí por defecto), asignarle 0 de nuevo es un no-op — nunca dispara
+        // 'seeked' y el navegador no llega a decodificar un frame pintable, así que el mockup
+        // capturaba un canvas negro. Con 0.01s sí hay un seek real, y la diferencia visual con
+        // el frame 0 es nula.
+        if (videoEl) {
+            try { videoEl.currentTime = 0.01; } catch {}
+        }
+        cargarFuentesEnSelect('portada-fuente').then(initPortadaLive);
         initPortadaTamano();
     }
     log('🎉 ¡Proceso completado!');
@@ -1002,6 +1023,7 @@ function showResult(videoData) {
 // Casilla "automático" prende/apaga el slider+número de tamaño de la portada, y los sincroniza
 // entre sí — mismo patrón que fijarTamano() de los subtítulos, pero acá el número SÍ se manda al
 // server (para subtítulos ese valor lo lee otro código; acá lo lee generarPortada() al enviar).
+// También dispara actualizarPortadaLive() en cada cambio, para que el mockup siga al slider.
 function initPortadaTamano() {
     const auto = document.getElementById('portada-tamano-auto');
     const slider = document.getElementById('portada-tamano');
@@ -1015,9 +1037,123 @@ function initPortadaTamano() {
     auto.addEventListener('change', () => {
         slider.disabled = auto.checked;
         num.disabled = auto.checked;
+        if (window.actualizarPortadaLive) actualizarPortadaLive();
     });
-    slider.addEventListener('input', () => sync(slider.value));
-    num.addEventListener('input', () => sync(num.value));
+    slider.addEventListener('input', () => { sync(slider.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+    num.addEventListener('input', () => { sync(num.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+}
+
+// Mismas constantes/funciones puras que portada.js (servidor) — reproducidas acá para que el
+// mockup sepa QUÉ tamaño va a elegir el automático sin ir al server en cada tecla. Si se cambia
+// la lógica de ajustarTamano()/envolver() en portada.js, cambiar también acá.
+const PORTADA_ANCHO_UTIL = 1080 - 70 - 70;
+const PORTADA_FONTSIZE_MAX = 94;
+const PORTADA_FONTSIZE_MIN = 36;
+const PORTADA_ALTO_VIDEO = 1920;
+const PORTADA_POS_Y_FRACCION = 0.58;
+
+function portadaEnvolver(palabras, maxChars, maxLineas, forzar) {
+    const lineas = [''];
+    for (const palabra of palabras) {
+        const actual = lineas[lineas.length - 1];
+        const candidata = actual ? `${actual} ${palabra}` : palabra;
+        if (candidata.length <= maxChars || !actual) {
+            lineas[lineas.length - 1] = candidata;
+        } else if (lineas.length < maxLineas) {
+            lineas.push(palabra);
+        } else if (forzar) {
+            lineas[lineas.length - 1] = candidata;
+        } else {
+            return null;
+        }
+    }
+    return lineas;
+}
+function portadaEnvolverATamano(texto, fontsize, factorAncho, forzar) {
+    const palabras = texto.trim().split(/\s+/).filter(Boolean);
+    const maxChars = Math.max(1, Math.floor(PORTADA_ANCHO_UTIL / (fontsize * factorAncho)));
+    return portadaEnvolver(palabras, maxChars, 3, forzar);
+}
+function portadaAjustarTamano(texto, factorAncho) {
+    for (let fontsize = PORTADA_FONTSIZE_MAX; fontsize >= PORTADA_FONTSIZE_MIN; fontsize -= 3) {
+        const lineas = portadaEnvolverATamano(texto, fontsize, factorAncho, false);
+        if (lineas) return { lineas, fontsize };
+    }
+    return { lineas: portadaEnvolverATamano(texto, PORTADA_FONTSIZE_MIN, factorAncho, true), fontsize: PORTADA_FONTSIZE_MIN };
+}
+
+// Mockup en vivo: fotograma real capturado del reproductor (canvas) + aproximación CSS de la
+// burbuja (blanco+rosa+texto), reproduciendo a escala lo mismo que va a hacer el .ass real.
+function initPortadaLive() {
+    const videoEl = document.getElementById('result-video-player');
+    const canvas = document.getElementById('portada-live-canvas');
+    if (!videoEl || !canvas) return;
+
+    const capturarFrame = () => {
+        try {
+            canvas.width = 270;
+            canvas.height = 480;
+            canvas.getContext('2d').drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+        } catch {} // video aún no tiene un frame decodificado (CORS/timing) — se reintenta en el próximo evento
+    };
+
+    window.actualizarPortadaLive = () => {
+        const titularEl = document.getElementById('portada-titular');
+        const fuenteEl = document.getElementById('portada-fuente');
+        const autoEl = document.getElementById('portada-tamano-auto');
+        const tamanoEl = document.getElementById('portada-tamano-num');
+        const white = document.getElementById('portada-live-white');
+        const pink = document.getElementById('portada-live-pink');
+        const texto = document.getElementById('portada-live-text');
+        if (!titularEl || !white || !pink || !texto) return;
+
+        const clave = fuenteEl?.value || 'anton';
+        const factorAncho = FACTOR_ANCHO_POR_FUENTE[clave] || 0.62;
+        const titular = (titularEl.value || '...').toUpperCase();
+        const manual = autoEl && !autoEl.checked;
+        const { lineas, fontsize } = manual
+            ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
+            : portadaAjustarTamano(titular, factorAncho);
+
+        const escala = document.getElementById('portada-live').clientHeight / PORTADA_ALTO_VIDEO;
+        const f = SUBS_FUENTES_CSS[clave] || SUBS_FUENTES_CSS.anton;
+        texto.style.fontFamily = `'${f.family}', sans-serif`;
+        texto.style.fontWeight = f.weight;
+        texto.style.fontSize = Math.round(fontsize * escala) + 'px';
+        texto.textContent = (lineas || [titular]).join('\n');
+
+        const padX = Math.round(fontsize * 0.32 * escala);
+        const padY = Math.round(fontsize * 0.22 * escala);
+        const margen = Math.max(2, Math.round(fontsize * 0.1 * escala));
+        const radio = Math.max(6, Math.round(fontsize * 0.4 * escala));
+        pink.style.padding = `${padY}px ${padX}px`;
+        pink.style.borderRadius = Math.max(2, radio - margen) + 'px';
+        white.style.padding = margen + 'px';
+        white.style.borderRadius = radio + 'px';
+        white.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
+    };
+
+    videoEl.addEventListener('seeked', () => { capturarFrame(); actualizarPortadaLive(); });
+    videoEl.addEventListener('loadeddata', () => { capturarFrame(); actualizarPortadaLive(); });
+    document.getElementById('portada-titular')?.addEventListener('input', actualizarPortadaLive);
+    document.getElementById('portada-fuente')?.addEventListener('change', actualizarPortadaLive);
+
+    // Primera captura: si el <video> ya está listo, directo; si no (carrera real medida: el
+    // fetch de /api/fuentes-subtitulos que precede a esta función a veces tarda MÁS que la carga
+    // del propio video local, así que el evento 'loadeddata' ya disparó antes de que este
+    // listener se enganchara), reintenta cada 100ms hasta 2s en vez de quedarse con el canvas en
+    // negro para siempre.
+    let intentos = 0;
+    const intentarCaptura = () => {
+        if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
+            capturarFrame();
+            actualizarPortadaLive();
+        } else if (intentos < 20) {
+            intentos++;
+            setTimeout(intentarCaptura, 100);
+        }
+    };
+    intentarCaptura();
 }
 
 // Genera la portada (fotograma actual del player + titular) y la muestra con link de descarga.
@@ -1523,6 +1659,10 @@ let subsTamano = 264;
 let subsMarginV = 300;
 let subsFuente = 'anton';
 
+// factorAncho por tipografía (clave del catálogo -> número), lo llena cargarFuentesEnSelect() al
+// pedir /api/fuentes-subtitulos. Lo usa SOLO el mockup en vivo de la portada (más abajo).
+const FACTOR_ANCHO_POR_FUENTE = {};
+
 // Mapeo clave del catálogo (subtitulos.js) → familia/peso CSS que carga el <link> de Google
 // Fonts en index.html. Es SOLO para que el preview se vea con la tipografía real — el render
 // final sigue self-hosted con ffmpeg (fontsdir), esto no lo toca. Si se agrega una fuente al
@@ -1582,6 +1722,10 @@ async function cargarFuentesEnSelect(selectId) {
         const { fuentes, default: porDefecto } = await apiCall('/fuentes-subtitulos', 'GET');
         select.innerHTML = fuentes.map(f => `<option value="${f.clave}">${f.familia}</option>`).join('');
         select.value = porDefecto || fuentes[0]?.clave || 'anton';
+        // factorAncho de cada tipografía: lo usa el mockup en vivo de la portada para replicar
+        // ajustarTamano() de portada.js sin ir al server. Guardado acá porque este mismo fetch
+        // ya trae el dato, sin pedirlo dos veces.
+        fuentes.forEach(f => { FACTOR_ANCHO_POR_FUENTE[f.clave] = f.factorAncho; });
     } catch (e) {
         console.warn(`No se pudo cargar el catálogo de tipografías para #${selectId}:`, e.message);
     }
