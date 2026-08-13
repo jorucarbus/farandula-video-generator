@@ -975,13 +975,17 @@ function showResult(videoData) {
                 <input type="number" id="portada-tamano-num" min="24" max="160" step="1" value="94" disabled>
                 <span class="hint">pt</span>
             </div>
+            <label class="mt-sm">Tamaño de la caja (independiente de la letra):</label>
+            <div class="tamano-row">
+                <input type="range" id="portada-caja" min="50" max="250" step="5" value="100">
+                <input type="number" id="portada-caja-num" min="50" max="250" step="5" value="100">
+                <span class="hint">%</span>
+            </div>
             <label class="mt-sm">Vista previa (aproximada, sobre el fotograma real — el render final quema el .ass, esto es un mockup en CSS):</label>
             <div class="portada-live" id="portada-live">
                 <canvas id="portada-live-canvas"></canvas>
-                <div class="portada-live-white" id="portada-live-white">
-                    <div class="portada-live-pink" id="portada-live-pink">
-                        <span id="portada-live-text"></span>
-                    </div>
+                <div class="portada-live-pink" id="portada-live-pink">
+                    <span id="portada-live-text"></span>
                 </div>
             </div>
             <div id="portada-resultado"></div>
@@ -1016,6 +1020,7 @@ function showResult(videoData) {
         }
         cargarFuentesEnSelect('portada-fuente').then(initPortadaLive);
         initPortadaTamano();
+        initPortadaCaja();
     }
     log('🎉 ¡Proceso completado!');
 }
@@ -1039,6 +1044,21 @@ function initPortadaTamano() {
         num.disabled = auto.checked;
         if (window.actualizarPortadaLive) actualizarPortadaLive();
     });
+    slider.addEventListener('input', () => { sync(slider.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+    num.addEventListener('input', () => { sync(num.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+}
+
+// Tamaño de la CAJA — independiente del de letra, pedido explícito del usuario. Sin casilla de
+// "automático": 100% ya es el default de siempre, no hace falta un modo aparte para eso.
+function initPortadaCaja() {
+    const slider = document.getElementById('portada-caja');
+    const num = document.getElementById('portada-caja-num');
+    if (!slider || !num) return;
+    const sync = valor => {
+        const n = Math.max(50, Math.min(250, Math.round(valor) || 100));
+        slider.value = n;
+        num.value = n;
+    };
     slider.addEventListener('input', () => { sync(slider.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
     num.addEventListener('input', () => { sync(num.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
 }
@@ -1102,10 +1122,10 @@ function initPortadaLive() {
         const fuenteEl = document.getElementById('portada-fuente');
         const autoEl = document.getElementById('portada-tamano-auto');
         const tamanoEl = document.getElementById('portada-tamano-num');
-        const white = document.getElementById('portada-live-white');
+        const cajaEl = document.getElementById('portada-caja-num');
         const pink = document.getElementById('portada-live-pink');
         const texto = document.getElementById('portada-live-text');
-        if (!titularEl || !white || !pink || !texto) return;
+        if (!titularEl || !pink || !texto) return;
 
         const clave = fuenteEl?.value || 'anton';
         const factorAncho = FACTOR_ANCHO_POR_FUENTE[clave] || 0.62;
@@ -1114,6 +1134,7 @@ function initPortadaLive() {
         const { lineas, fontsize } = manual
             ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
             : portadaAjustarTamano(titular, factorAncho);
+        const escalaCaja = (Number(cajaEl?.value) || 100) / 100;
 
         const escala = document.getElementById('portada-live').clientHeight / PORTADA_ALTO_VIDEO;
         const f = SUBS_FUENTES_CSS[clave] || SUBS_FUENTES_CSS.anton;
@@ -1122,15 +1143,17 @@ function initPortadaLive() {
         texto.style.fontSize = Math.round(fontsize * escala) + 'px';
         texto.textContent = (lineas || [titular]).join('\n');
 
-        const padX = Math.round(fontsize * 0.32 * escala);
-        const padY = Math.round(fontsize * 0.22 * escala);
-        const margen = Math.max(2, Math.round(fontsize * 0.1 * escala));
-        const radio = Math.max(6, Math.round(fontsize * 0.4 * escala));
+        // Mismas fórmulas que portada.js (servidor) — ver ese archivo si se cambia acá.
+        const padX = Math.round(fontsize * 0.32 * escalaCaja * escala);
+        const padY = Math.round(fontsize * 0.22 * escalaCaja * escala);
+        const radio = Math.max(4, Math.round(fontsize * 0.4 * escala));
+        const separacion = Math.max(3, Math.round(fontsize * 0.11 * escalaCaja * escala));
+        const grosor = Math.max(1, Math.round(fontsize * 0.05 * escala));
         pink.style.padding = `${padY}px ${padX}px`;
-        pink.style.borderRadius = Math.max(2, radio - margen) + 'px';
-        white.style.padding = margen + 'px';
-        white.style.borderRadius = radio + 'px';
-        white.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
+        pink.style.borderRadius = radio + 'px';
+        pink.style.outlineWidth = grosor + 'px';
+        pink.style.outlineOffset = `-${separacion}px`;
+        pink.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
     };
 
     videoEl.addEventListener('seeked', () => { capturarFrame(); actualizarPortadaLive(); });
@@ -1163,6 +1186,7 @@ async function generarPortada() {
     const fuenteEl = document.getElementById('portada-fuente');
     const tamanoAutoEl = document.getElementById('portada-tamano-auto');
     const tamanoEl = document.getElementById('portada-tamano-num');
+    const cajaEl = document.getElementById('portada-caja-num');
     const destino = document.getElementById('portada-resultado');
     const titular = titularEl.value.trim();
     if (!titular) {
@@ -1182,6 +1206,7 @@ async function generarPortada() {
             titular,
             fuente: fuenteEl.value,
             tamano: (tamanoAutoEl && tamanoAutoEl.checked) ? 'auto' : Number(tamanoEl.value),
+            escalaCaja: (Number(cajaEl?.value) || 100) / 100,
         });
         const notaGuardado = guardadaJuntoAlVideo
             ? `<p class="hint">${icon('checkCircle')} Guardada junto al video, en su misma carpeta.</p>`

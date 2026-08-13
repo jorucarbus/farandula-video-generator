@@ -29,6 +29,11 @@ const FONTSIZE_MIN = 36;
 // porque busca el equilibrio "entra sin desbordar", no un efecto visual particular.
 const TAMANO_MANUAL_MIN = 24;
 const TAMANO_MANUAL_MAX = 160;
+// Rango del multiplicador de tamaño de CAJA (independiente del tamaño de letra, pedido explícito
+// del usuario) — escala el padding alrededor del texto sin tocar el fontsize. 1 = el default de
+// siempre (padding proporcional al fontsize, sin cambios de comportamiento para quien no lo toque).
+const ESCALA_CAJA_MIN = 0.5;
+const ESCALA_CAJA_MAX = 2.5;
 const POS_Y_FRACCION = 0.58; // top de la caja, fracción de ALTO_VIDEO — encima de la franja de TikTok
 const COLOR_CAJA = 'FF2D6B'; // rosa/rojo vivo, según la referencia del usuario (RRGGBB)
 const COLOR_TEXTO = 'FFFFFF'; // blanco, pedido explícito del usuario (RRGGBB)
@@ -121,7 +126,9 @@ function dibujoCajaRedondeada(w, h, r) {
 // (clamp a [TAMANO_MANUAL_MIN, TAMANO_MANUAL_MAX]) en vez del automático, y el texto se envuelve
 // forzando el desborde de la última línea si hace falta (el usuario eligió el tamaño a propósito,
 // no tiene sentido que el código lo achique solo). Sin valor, o no numérico: automático de siempre.
-async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual) {
+// escalaCajaManual: opcional — multiplicador de padding (clamp a [ESCALA_CAJA_MIN,
+// ESCALA_CAJA_MAX]), independiente del tamaño de letra. Sin valor: 1 (default de siempre).
+async function generarPortada(videoPath, timestamp, titular, fuenteClave, token, tamanoManual, escalaCajaManual) {
   const outPath = path.join(TEMP_DIR, `portada_${token}.jpg`);
   const fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteClave);
   const fuente = subtitulos.FUENTES[fuenteClave] || subtitulos.FUENTES[subtitulos.FUENTE_DEFAULT];
@@ -134,12 +141,18 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token,
       })()
     : ajustarTamano(textoMayus, fuente.factorAncho);
 
+  // Multiplicador de tamaño de CAJA, independiente del de letra — pedido explícito del usuario.
+  // Escala el padding (y por lo tanto boxW/boxH), nunca el fontsize.
+  const escalaCaja = Number.isFinite(escalaCajaManual)
+    ? Math.max(ESCALA_CAJA_MIN, Math.min(ESCALA_CAJA_MAX, escalaCajaManual))
+    : 1;
+
   // Geometría de la caja, estimada con el mismo factorAncho que ya se usó para decidir que el
   // texto entra. El padding es la caja MISMA (se dibuja exacto, sin margen de error de por sí,
   // a diferencia de la estimación de ancho que sí necesita ser holgada) — ajustado angosto a
   // propósito para que el texto llene la burbuja en vez de flotar con aire de sobra alrededor.
-  const padX = Math.round(fontsize * 0.32);
-  const padY = Math.round(fontsize * 0.22);
+  const padX = Math.round(fontsize * 0.32 * escalaCaja);
+  const padY = Math.round(fontsize * 0.22 * escalaCaja);
   const lineHeight = Math.round(fontsize * 1.08);
   const lineSpacing = Math.round(fontsize * 0.08);
   const anchoMaxLinea = Math.max(...lineas.map(l => l.length)) * fontsize * fuente.factorAncho;
@@ -149,12 +162,18 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token,
   const boxY = Math.round(ALTO_VIDEO * POS_Y_FRACCION);
   const radio = Math.max(14, Math.min(32, Math.round(fontsize * 0.4)));
   const sombra = Math.max(2, Math.round(fontsize * 0.045));
-  // Margen blanco DENTRO de la caja, pedido explícito del usuario: se dibuja como una caja
-  // blanca del tamaño completo (boxW x boxH) y la caja de color va ENCIMA, angostada por este
-  // margen en los 4 lados — el blanco que sobra alrededor es justo el margen. Mismo centro que
-  // la caja de color (concéntricas), así el texto centrado no se mueve un pixel.
-  const margen = Math.max(6, Math.round(fontsize * 0.1));
-  const radioInterior = Math.max(6, radio - margen);
+
+  // Línea blanca DENTRO de la caja, paralela al borde, sin agrandar nada — corrección sobre la
+  // versión anterior (esa hacía blanco = caja de afuera, más grande que antes; era al revés).
+  // La caja de color queda EXACTAMENTE del tamaño de siempre (boxW x boxH). Adentro, a una
+  // distancia `separacion` del borde, va un anillo blanco de espesor `grosor`; adentro de ESE
+  // anillo va de nuevo color, mismo tono que el borde exterior — así el blanco se ve como una
+  // línea, no como un margen que se come la caja. 3 formas concéntricas, mismo centro que el
+  // texto (no se mueve un pixel).
+  const separacion = Math.max(5, Math.round(fontsize * 0.11 * escalaCaja));
+  const grosor = Math.max(3, Math.round(fontsize * 0.05));
+  const radioAnillo = Math.max(4, radio - separacion);
+  const radioInterior = Math.max(4, radio - separacion - grosor);
 
   const textoASS = lineas.map(escaparASS).join('\\N');
 
@@ -171,9 +190,10 @@ Style: Portada,${fuente.familia},${fontsize},${colorASS(COLOR_TEXTO)},${colorASS
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
-Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + margen},${boxY + margen})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - margen * 2, boxH - margen * 2, radioInterior)}{\\p0}
-Dialogue: 2,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
+Dialogue: 0,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX},${boxY})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW, boxH, radio)}{\\p0}
+Dialogue: 1,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion},${boxY + separacion})\\bord0\\shad0\\1c${colorASS(COLOR_MARGEN)}\\p1}${dibujoCajaRedondeada(boxW - separacion * 2, boxH - separacion * 2, radioAnillo)}{\\p0}
+Dialogue: 2,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an7\\pos(${boxX + separacion + grosor},${boxY + separacion + grosor})\\bord0\\shad0\\1c${colorASS(COLOR_CAJA)}\\p1}${dibujoCajaRedondeada(boxW - (separacion + grosor) * 2, boxH - (separacion + grosor) * 2, radioInterior)}{\\p0}
+Dialogue: 3,0:00:00.00,0:00:59.00,Portada,,0,0,0,,{\\an5\\pos(${boxX + boxW / 2},${boxY + boxH / 2})\\bord0\\shad${sombra}\\4c&H000000&\\4a&H60&}${textoASS}
 `;
 
   const assPath = path.join(TEMP_DIR, `portada_${token}.ass`);
