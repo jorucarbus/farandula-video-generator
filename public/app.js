@@ -867,6 +867,12 @@ async function handleGenerateVideo() {
             // El server no lo re-dibuja — lo superpone tal cual en el frame 0 y en el JPG, así
             // los tres (previa, video, JPG) son literalmente la misma imagen.
             const cartelPNG = await exportarCartelPNG();
+            // Si hay titular escrito pero no salió PNG, algo falló al dibujarlo. Avisar en vez de
+            // seguir en silencio: el video saldría sin el cartel que el usuario diseñó, y recién
+            // se enteraría al final, cuando no aparezca la opción de generar el JPG.
+            if (document.getElementById('portada-titular')?.value.trim() && !cartelPNG) {
+                log('⚠️ No se pudo generar el cartel de portada: el video va a salir sin él.');
+            }
             resultado = await apiCall('/generate-video', 'POST', {
                 fragments: state.fragments,
                 audioToken: state.audioToken,

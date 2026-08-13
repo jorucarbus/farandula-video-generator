@@ -967,3 +967,30 @@ del cartel no se vio renderizada acá** — vale confirmarlo visualmente en stag
 ffmpeg local, pero es exactamente la trampa que reventó con `geq`: funcionaba local y no estaba
 compilado en producción). Si faltara, la degradación hace que el video salga sin cartel en vez de
 fallar, pero habría que buscar otro camino.
+
+### 2026-08-13 (Mac) — Secuela: el cartel no salía tras el deploy (pestaña vieja) + guarda para que no vuelva a pasar en silencio
+
+Tras desplegar el cambio de arriba, el usuario generó un video en staging y **no salió el cartel,
+ni apareció la opción de generar el JPG**.
+
+**No era un bug del código nuevo.** Se reprodujo el flujo completo local con un render real (clips
+de Drive, audio, `destFolder` a la carpeta `transicion`, después borrada): la respuesta trae
+`cartelUrl`, el frame 0 del MP4 tiene el rosa del cartel (`ff4366`) y los frames 1/5/30 imagen
+real, y `POST /api/portada` generó el JPG y lo guardó junto al video. La cadena entera funciona.
+
+**Causa real**: la pestaña del navegador estaba abierta desde ANTES del deploy, así que corría el
+`app.js` viejo — el que manda `portadaTitular/Fuente/Tamano/Caja` y no el PNG. El server nuevo
+busca `efectos.cartelPNG`, no lo encuentra, y `guardarCartelPNG()` devuelve null. Resultado: video
+sin cartel, sin `cartelUrl`, sin opción de JPG, y sin ninguna pista de por qué.
+
+**Arreglado el modo de fallo, no solo el caso**:
+- `server.js`: si el pedido trae `portadaTitular` pero no `cartelPNG`, es definitivamente un front
+  viejo → 400 con el mensaje de recargar la página. Antes seguía y devolvía un video mudo.
+- `public/app.js`: si hay titular escrito pero `exportarCartelPNG()` devolvió null, se avisa en el
+  log en vez de seguir en silencio.
+
+**Verificado** los tres casos por API: front viejo → el 400 con las instrucciones; front nuevo sin
+titular (legítimo, no quiere cartel) → pasa; front nuevo con PNG → pasa.
+
+**Para el usuario / la otra máquina**: si el cartel no aparece después de un deploy, recargar con
+Cmd/Ctrl + Shift + R antes de buscar el problema en el código.

@@ -852,6 +852,16 @@ app.post('/api/generate-video', async (req, res) => {
     if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
     }
+    // Navegador con la versión vieja del front cargada (pestaña abierta desde antes del deploy):
+    // manda `portadaTitular` —el campo que se usaba cuando el server redibujaba el cartel— y no
+    // el PNG que ahora dibuja el navegador. Sin esta guarda el render salía SIN cartel y sin
+    // explicación: no aparecía ni la opción de generar el JPG. Pasó de verdad tras el primer
+    // deploy de este cambio, y no había forma de saber por qué.
+    if (efectos?.portadaTitular && !efectos?.cartelPNG) {
+      return res.status(400).json({
+        error: 'Tenés cargada una versión vieja de la página: recargala (Cmd/Ctrl + Shift + R) y volvé a generar. El cartel de portada ahora lo dibuja el navegador, y esta pestaña todavía no tiene ese código.',
+      });
+    }
     // Audio: preferir el aprobado por token; compatibilidad con audioPath directo
     const audioAprobado = audioToken ? audiosPendientes.get(audioToken) : null;
     let audioPath = audioAprobado?.path || audioPathBody;
