@@ -958,7 +958,7 @@ footer {
     outline: 2px solid #fff;
     outline-offset: -8px;
 }
-#portada-live-text {
+.portada-live-text {
     display: block;
     color: #fff;
     font-weight: 700;

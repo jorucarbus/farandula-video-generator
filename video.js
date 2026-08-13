@@ -392,7 +392,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   if (efectos.bannerTitulo) {
     try {
       const portada = require('./portada');
-      const banner = await portada.generarBannerFrame0(TEMP_DIR, jobId, efectos.bannerTitulo, efectos.bannerFuente);
+      const banner = await portada.generarBannerFrame0(TEMP_DIR, jobId, efectos.bannerTitulo, efectos.bannerFuente, efectos.bannerTamanoManual, efectos.bannerEscalaCajaManual);
       if (banner) { bannerAssPath = banner.assPath; bannerFuentesDir = banner.fuentesDir; }
     } catch (e) {
       console.warn(`  ⚠️ [${jobId}] No se pudo preparar el banner del frame 0, el video sale sin él: ${e.message}`);

@@ -315,6 +315,33 @@
                     <p class="hint">Ejemplo a escala, no es un render real — sirve para ubicar tamaño y posición antes de generar el video (la tipografía exacta solo se ve en el resultado final).</p>
                 </div>
 
+                <div class="form-group" id="portada-diseno-group">
+                    <label><strong>Cartel de portada</strong></label>
+                    <p class="hint">Se quema en el primer fotograma del video (para que sirva como portada en TikTok y las demás redes, que no tienen API para fijarla) y se reusa TAL CUAL, sin volver a editarlo, cuando después elijas la foto para el JPG descargable — ambos salen idénticos. Dejalo vacío si no querés cartel.</p>
+                    <div class="portada-controls">
+                        <input type="text" id="portada-titular" placeholder="Titular..." maxlength="90">
+                        <select id="portada-fuente"><option value="anton">Cargando...</option></select>
+                    </div>
+                    <label class="mt-sm"><input type="checkbox" id="portada-tamano-auto" checked> Tamaño de letra automático</label>
+                    <div class="tamano-row">
+                        <input type="range" id="portada-tamano" min="24" max="160" step="1" value="94" disabled>
+                        <input type="number" id="portada-tamano-num" min="24" max="160" step="1" value="94" disabled>
+                        <span class="hint">pt</span>
+                    </div>
+                    <label class="mt-sm">Tamaño de la caja (independiente de la letra):</label>
+                    <div class="tamano-row">
+                        <input type="range" id="portada-caja" min="50" max="250" step="5" value="100">
+                        <input type="number" id="portada-caja-num" min="50" max="250" step="5" value="100">
+                        <span class="hint">%</span>
+                    </div>
+                    <label class="mt-sm">Vista previa (aproximada, fondo de referencia — el video todavía no existe; el render real quema el .ass sobre el primer fotograma de verdad):</label>
+                    <div class="portada-live" id="portada-diseno-live">
+                        <div class="portada-live-pink" id="portada-diseno-pink">
+                            <span class="portada-live-text" id="portada-diseno-text"></span>
+                        </div>
+                    </div>
+                </div>
+
                 <button class="btn btn-success" id="btn-generate-video" onclick="handleGenerateVideo()">
                     <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
                 </button>

@@ -114,26 +114,28 @@ app.get('/api/preview/:token', (req, res) => {
   res.sendFile(entrada.path);
 });
 
-// Portada (miniatura): fotograma elegido por el usuario + titular quemado encima. Se genera a
-// partir del MP4 de preview (sobrevive a la limpieza de temporales del render), nunca del
-// original — así funciona aunque el render ya se haya limpiado del disco. Además de servirla
-// para descargar, se guarda junto al video (misma subcarpeta que creó /api/generate-video) —
-// pedido explícito del usuario, para no tener que subirla aparte a mano.
+// Portada (miniatura): fotograma elegido por el usuario + EL MISMO cartel diseñado en el Paso 6
+// (texto/fuente/tamaño/caja) quemado encima — pedido explícito del usuario: el cartel se diseña
+// UNA sola vez, antes de generar el video, y se reusa tal cual acá (nunca se re-edita), para que
+// el JPG y el frame 0 del video sean idénticos. Por eso el body YA NO manda titular/fuente/
+// tamano/escalaCaja: salen de `entrada.cartel`, guardado por /api/generate-video cuando armó el
+// banner del frame 0. Se genera a partir del MP4 de preview (sobrevive a la limpieza de
+// temporales del render), nunca del original — así funciona aunque el render ya se haya limpiado
+// del disco. Además de servirla para descargar, se guarda junto al video (misma subcarpeta que
+// creó /api/generate-video) — pedido explícito del usuario, para no tener que subirla aparte a mano.
 app.post('/api/portada', async (req, res) => {
-  const { previewToken, timestamp, titular, fuente, tamano, escalaCaja } = req.body;
+  const { previewToken, timestamp } = req.body;
   const entrada = previews.get(previewToken);
   if (!entrada || !fs.existsSync(entrada.path)) {
     return res.status(404).json({ error: 'El preview del video ya no está disponible, genera el video de nuevo' });
   }
-  if (!titular || !titular.trim()) {
-    return res.status(400).json({ error: 'Falta el titular' });
+  if (!entrada.cartel?.titular) {
+    return res.status(400).json({ error: 'No se diseñó un cartel en el Paso 6, no hay nada que superponer' });
   }
   try {
     const token = crypto.randomBytes(16).toString('hex');
-    // tamano: número = manual (el usuario lo eligió a mano); ausente o no numérico = automático.
-    const tamanoManual = tamano === undefined || tamano === null || tamano === 'auto' ? undefined : Number(tamano);
-    const escalaCajaManual = escalaCaja === undefined || escalaCaja === null ? undefined : Number(escalaCaja);
-    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular.trim(), fuente, token, tamanoManual, escalaCajaManual);
+    const { titular, fuente, tamanoManual, escalaCajaManual } = entrada.cartel;
+    const ruta = await portada.generarPortada(entrada.path, Number(timestamp) || 0, titular, fuente, token, tamanoManual, escalaCajaManual);
     // Conservar solo las 3 portadas más recientes, mismo criterio que los previews.
     const viejas = [...portadas.entries()].slice(0, Math.max(0, portadas.size - 2));
     for (const [tok, ruta2] of viejas) {
@@ -906,35 +908,55 @@ app.post('/api/generate-video', async (req, res) => {
     }
 
     // Nombre de archivo: "2026-07-11 Protagonista - Secundario - Hecho.mp4" — adelantado a ANTES
-    // del render (antes vivía después) porque el banner automático del frame 0 (más abajo) lo
-    // necesita como titular. Viene de la lectura (sin llamada extra a Gemini); fallback:
+    // del render (antes vivía después) porque el cartel del frame 0 (más abajo) lo necesita para
+    // nombrar la subcarpeta. Viene de la lectura (sin llamada extra a Gemini); fallback:
     // generarlo desde el guion.
     const fecha = new Date().toISOString().slice(0, 10);
     const nombreCorto = metadatos?.nombreCorto
       || await gemini.generarNombreArchivo(guion || fragments.map(f => f.texto).join(' '));
     const fileName = `${fecha} ${nombreCorto}.mp4`;
 
-    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, banner del frame 0 y
-    // música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda en
-    // video.js (montarVideoHyper) y en el historial de git por si se retoma.
+    // Cartel de portada (Paso 6): texto/fuente/tamaño/caja diseñados por el usuario ANTES de
+    // generar el video — se usa DOS veces, idéntico las dos: quemado en el frame 0 acá abajo, y
+    // reusado tal cual (sin re-editar) cuando el usuario elija un fotograma real para el JPG
+    // (POST /api/portada, que lee esto mismo desde `previews.get(token).cartel`). Mismo criterio
+    // de parseo que usaba antes /api/portada: tamano/escalaCaja ausentes o 'auto' → automático.
+    const tamanoManual = efectos?.portadaTamano === undefined || efectos?.portadaTamano === null || efectos?.portadaTamano === 'auto'
+      ? undefined : Number(efectos.portadaTamano);
+    const escalaCajaManual = efectos?.portadaCaja === undefined || efectos?.portadaCaja === null
+      ? undefined : Number(efectos.portadaCaja) / 100;
+    const cartel = efectos?.portadaTitular?.trim()
+      ? { titular: efectos.portadaTitular.trim(), fuente: efectos.portadaFuente, tamanoManual, escalaCajaManual }
+      : null;
+
+    // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, cartel en el frame 0
+    // y música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda
+    // en video.js (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, { ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset, bannerTitulo: nombreCorto });
+    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, {
+      ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset,
+      bannerTitulo: cartel?.titular, bannerFuente: cartel?.fuente, bannerTamanoManual: cartel?.tamanoManual, bannerEscalaCajaManual: cartel?.escalaCajaManual,
+    });
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
-    // 7. Guardar en la carpeta de destino, dentro de una subcarpeta con el título del video —
-    // pedido explícito del usuario, para que el video y su portada (Paso extra, generada
-    // después) queden juntos en vez de sueltos en la carpeta del canal.
+    // 7. Guardar en la carpeta de destino, dentro de una subcarpeta "AAAA-MM-DD - Título" —
+    // pedido explícito del usuario, para que el video y su portada (elegida después de ver el
+    // resultado) queden juntos en vez de sueltos en la carpeta del canal, y para poder ordenar
+    // por fecha de un vistazo.
+    const nombreSubcarpeta = `${fecha} - ${nombreCorto}`;
     const folderName = await driveHelper.nombreCarpeta(destFolder);
     const localBase = process.env.RENDERS_LOCAL_PATH;
     let driveLink;
     // Dónde guardar la portada más tarde (se genera después, con el usuario ya viendo el
     // resultado) — se completa en cada rama de abajo, o queda null si no se pudo crear la
     // subcarpeta (la portada sigue funcionando igual, solo se queda sin copia junto al video).
+    // `nombreBase` (para los ARCHIVOS adentro, `nombreCorto.jpg`) se queda sin fecha — el usuario
+    // pidió la fecha en la carpeta, no duplicarla en cada archivo.
     let destinoPortada = null;
 
     if (localBase && fs.existsSync(path.join(localBase, folderName))) {
       // Copiar a la carpeta local de Google Drive (el cliente de escritorio la sincroniza solo)
-      const carpetaVideo = path.join(localBase, folderName, nombreCorto);
+      const carpetaVideo = path.join(localBase, folderName, nombreSubcarpeta);
       fs.mkdirSync(carpetaVideo, { recursive: true });
       const destPath = path.join(carpetaVideo, fileName);
       console.log(`💾 [${renderId}] Guardando en Drive local: ${destPath}`);
@@ -945,9 +967,9 @@ app.post('/api/generate-video', async (req, res) => {
       // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
       let carpetaDestinoId = destFolder;
       try {
-        carpetaDestinoId = await driveHelper.crearCarpetaInsumo(destFolder, nombreCorto);
+        carpetaDestinoId = await driveHelper.crearCarpetaInsumo(destFolder, nombreSubcarpeta);
       } catch (e) {
-        console.warn(`  ⚠️ [${renderId}] No se pudo crear la subcarpeta "${nombreCorto}" (${e.message}), el video sube directo a la carpeta del canal`);
+        console.warn(`  ⚠️ [${renderId}] No se pudo crear la subcarpeta "${nombreSubcarpeta}" (${e.message}), el video sube directo a la carpeta del canal`);
       }
       console.log(`⬆️ [${renderId}] Subiendo a Drive por API: ${fileName}`);
       const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, carpetaDestinoId);
@@ -999,7 +1021,7 @@ app.post('/api/generate-video', async (req, res) => {
         try { fs.unlinkSync(entrada.path); } catch {}
         previews.delete(tok);
       }
-      previews.set(previewToken, { path: previewPath, destino: destinoPortada });
+      previews.set(previewToken, { path: previewPath, destino: destinoPortada, cartel });
     } catch (e) {
       console.warn(`⚠️ [${renderId}] No se pudo crear el preview: ${e.message}`);
     }
@@ -1026,6 +1048,9 @@ app.post('/api/generate-video', async (req, res) => {
       duration: resultado.duracion,
       driveLink: driveLink,
       previewUrl: previews.has(previewToken) ? `/api/preview/${previewToken}` : null,
+      // El cliente lo usa para saber si mostrar el paso "elegir portada" (post-render) y con qué
+      // valores pintar el mockup — el cartel ya no se re-edita ahí, solo se elige el fotograma.
+      cartel,
     });
   } catch (error) {
     console.error(`Error video [${renderId}]:`, error);

@@ -232,19 +232,20 @@ async function generarPortada(videoPath, timestamp, titular, fuenteClave, token,
   return outPath;
 }
 
-// Banner automático quemado en el frame 0 del VIDEO REAL (no un JPG aparte) — pedido del
-// usuario: "que el letrero solo lo ponga en el primer frame, sea cual sea", para que TikTok (que
-// no expone API de portada) tome ese frame como su portada automática, sin re-codificar el video
-// una segunda vez ni resubirlo. Texto y frame NO los elige el usuario acá (eso es lo que hace el
-// editor de portada aparte, sin tocar); es automático, con el nombre corto que ya se genera para
-// el archivo. Nunca llama a ffmpeg: solo arma el .ass, quien lo quema es el mux de video.js
-// (que de por sí ya corre una vez — sin esto sería una segunda pasada completa).
-// Devuelve null si el titular viene vacío (nada que poner).
-async function generarBannerFrame0(tempDir, jobId, titular, fuenteClave) {
+// Banner quemado en el frame 0 del VIDEO REAL (no un JPG aparte) — pedido del usuario: "que el
+// letrero solo lo ponga en el primer frame, sea cual sea", para que TikTok (que no expone API de
+// portada) tome ese frame como su portada automática, sin re-codificar el video una segunda vez
+// ni resubirlo. Texto/fuente/tamaño/caja son el MISMO diseño que el usuario armó en el Paso 6
+// (server.js los guarda en `previews.get(token).cartel` para reusarlos después, tal cual, cuando
+// arme el JPG a partir de un fotograma elegido — nunca se re-edita ese diseño). Nunca llama a
+// ffmpeg: solo arma el .ass, quien lo quema es el mux de video.js (que de por sí ya corre una vez
+// — sin esto sería una segunda pasada completa).
+// Devuelve null si el titular viene vacío (el usuario no diseñó cartel en el Paso 6).
+async function generarBannerFrame0(tempDir, jobId, titular, fuenteClave, tamanoManual, escalaCajaManual) {
   if (!titular || !titular.trim()) return null;
   // Ventana angosta (~1 frame a 30fps) para que jamás se vea durante la reproducción real —
   // a diferencia de la portada JPG, acá SÍ importa que el rango sea corto de verdad.
-  const { ass, fuentesDir } = await construirASS(titular.trim(), fuenteClave || 'anton', undefined, undefined, '0:00:00.00', '0:00:00.04');
+  const { ass, fuentesDir } = await construirASS(titular.trim(), fuenteClave || 'anton', tamanoManual, escalaCajaManual, '0:00:00.00', '0:00:00.04');
   const assPath = path.join(tempDir, `banner_${jobId}.ass`);
   fs.writeFileSync(assPath, ass, 'utf8');
   return { assPath, fuentesDir };

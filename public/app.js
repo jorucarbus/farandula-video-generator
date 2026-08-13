@@ -778,6 +778,14 @@ async function aprobarAudio() {
         await loadDestinationFolders();
         setStepStatus('audio-section', 'done');
         setStepStatus('destination-section', 'active');
+        // Prefill del titular del cartel con el mismo nombre corto que ya calculó la lectura
+        // (Paso 1) — editable, y sin pisar si el usuario ya escribió algo (ej. al reaprobar
+        // audio de nuevo tras rehacer un paso anterior).
+        const portadaTitularEl = document.getElementById('portada-titular');
+        if (portadaTitularEl && !portadaTitularEl.value.trim()) {
+            portadaTitularEl.value = state.sourceData?.nombreCorto || '';
+            actualizarPortadaDiseno();
+        }
     } finally {
         setButtonDisabled('btn-approve-audio', false);
     }
@@ -881,6 +889,12 @@ async function handleGenerateVideo() {
                     transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
                     transicionTipo: tiposTransicionElegidos(),
                     transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
+                    // Cartel de portada (Paso 6, diseñado ANTES de generar): se quema en el frame
+                    // 0 y se reusa tal cual para el JPG después — ver portada.js/video.js.
+                    portadaTitular: document.getElementById('portada-titular')?.value || '',
+                    portadaFuente: document.getElementById('portada-fuente')?.value || 'anton',
+                    portadaTamano: document.getElementById('portada-tamano-auto')?.checked ? 'auto' : Number(document.getElementById('portada-tamano-num')?.value),
+                    portadaCaja: Number(document.getElementById('portada-caja-num')?.value) || 100,
                 },
             });
             log('✅ Video generado');
@@ -951,43 +965,21 @@ function showResult(videoData) {
     // Token del preview: se extrae de la URL en vez de guardarlo aparte en showResult, porque
     // acá es el único lugar donde llega — así /api/portada sabe de qué MP4 sacar el fotograma.
     state.previewToken = videoData.previewUrl ? videoData.previewUrl.split('/').pop() : null;
-    // Sugerencia de titular: el nombre de archivo ya tiene "Protagonista - Secundario - Hecho"
-    // (gemini.generarNombreArchivo), sin fecha ni extensión — punto de partida razonable, editable.
-    const titularSugerido = (videoData.fileName || '')
-        .replace(/\.mp4$/i, '')
-        .replace(/^\d{4}-\d{2}-\d{2}\s*/, '');
+    // El cartel (texto/fuente/tamaño/caja) ya quedó FIJO en el Paso 6, antes de generar — el
+    // server lo devuelve tal cual lo usó para quemar el frame 0, para reusarlo sin re-editar acá.
+    const cartel = videoData.cartel || null;
 
-    const portadaHtml = state.previewToken ? `
+    const portadaHtml = (state.previewToken && cartel) ? `
         <div class="portada-box mt-md" id="portada-box">
-            <p><strong>${icon('videoCamera')} Portada (miniatura)</strong></p>
-            <p class="hint">Arranca en el primer fotograma del video; si querés otro, pausá el
-            reproductor de arriba donde quieras. Sirve como portada al publicar en TikTok y
-            también en las demás redes — TikTok no deja fijarla por API, así que la descargás y
-            la subís vos al publicar.</p>
-            <div class="portada-controls">
-                <input type="text" id="portada-titular" placeholder="Titular..." maxlength="90" value="${titularSugerido.replace(/"/g, '&quot;')}">
-                <select id="portada-fuente"><option value="anton">Cargando...</option></select>
-                <button class="btn btn-secondary" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada</button>
-            </div>
-            <label class="mt-sm"><input type="checkbox" id="portada-tamano-auto" checked> Tamaño de letra automático</label>
-            <div class="tamano-row">
-                <input type="range" id="portada-tamano" min="24" max="160" step="1" value="94" disabled>
-                <input type="number" id="portada-tamano-num" min="24" max="160" step="1" value="94" disabled>
-                <span class="hint">pt</span>
-            </div>
-            <label class="mt-sm">Tamaño de la caja (independiente de la letra):</label>
-            <div class="tamano-row">
-                <input type="range" id="portada-caja" min="50" max="250" step="5" value="100">
-                <input type="number" id="portada-caja-num" min="50" max="250" step="5" value="100">
-                <span class="hint">%</span>
-            </div>
-            <label class="mt-sm">Vista previa (aproximada, sobre el fotograma real — el render final quema el .ass, esto es un mockup en CSS):</label>
+            <p><strong>${icon('videoCamera')} Elegí la foto para el JPG de portada</strong></p>
+            <p class="hint">El cartel ("${cartel.titular.replace(/</g, '&lt;')}") ya quedó quemado en el primer fotograma del video, tal como lo definiste en el Paso 6 — acá solo elegís QUÉ FOTO de fondo lleva el JPG descargable (mismo cartel, no se re-edita). Pausá el reproductor de arriba donde quieras.</p>
             <div class="portada-live" id="portada-live">
                 <canvas id="portada-live-canvas"></canvas>
                 <div class="portada-live-pink" id="portada-live-pink">
-                    <span id="portada-live-text"></span>
+                    <span class="portada-live-text" id="portada-live-text"></span>
                 </div>
             </div>
+            <button class="btn btn-secondary mt-sm" type="button" id="btn-generar-portada" onclick="generarPortada()">${icon('sparkle')} Generar portada con esta foto</button>
             <div id="portada-resultado"></div>
         </div>
     ` : '';
@@ -1006,7 +998,7 @@ function showResult(videoData) {
             El video está listo para publicar en redes sociales.
         </p>
     `;
-    if (state.previewToken) {
+    if (state.previewToken && cartel) {
         const videoEl = document.getElementById('result-video-player');
         // Fotograma por defecto: el PRIMERO del video, pedido explícito del usuario — el
         // reproductor sigue pudiéndose pausar en otro punto si se prefiere otro fotograma.
@@ -1018,17 +1010,15 @@ function showResult(videoData) {
         if (videoEl) {
             try { videoEl.currentTime = 0.01; } catch {}
         }
-        cargarFuentesEnSelect('portada-fuente').then(initPortadaLive);
-        initPortadaTamano();
-        initPortadaCaja();
+        initPortadaLive(cartel);
     }
     log('🎉 ¡Proceso completado!');
 }
 
 // Casilla "automático" prende/apaga el slider+número de tamaño de la portada, y los sincroniza
 // entre sí — mismo patrón que fijarTamano() de los subtítulos, pero acá el número SÍ se manda al
-// server (para subtítulos ese valor lo lee otro código; acá lo lee generarPortada() al enviar).
-// También dispara actualizarPortadaLive() en cada cambio, para que el mockup siga al slider.
+// server (lo lee handleGenerateVideo() al armar `efectos`). También dispara
+// actualizarPortadaDiseno() en cada cambio, para que el mockup del Paso 6 siga al slider.
 function initPortadaTamano() {
     const auto = document.getElementById('portada-tamano-auto');
     const slider = document.getElementById('portada-tamano');
@@ -1042,10 +1032,10 @@ function initPortadaTamano() {
     auto.addEventListener('change', () => {
         slider.disabled = auto.checked;
         num.disabled = auto.checked;
-        if (window.actualizarPortadaLive) actualizarPortadaLive();
+        actualizarPortadaDiseno();
     });
-    slider.addEventListener('input', () => { sync(slider.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
-    num.addEventListener('input', () => { sync(num.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+    slider.addEventListener('input', () => { sync(slider.value); actualizarPortadaDiseno(); });
+    num.addEventListener('input', () => { sync(num.value); actualizarPortadaDiseno(); });
 }
 
 // Tamaño de la CAJA — independiente del de letra, pedido explícito del usuario. Sin casilla de
@@ -1059,8 +1049,8 @@ function initPortadaCaja() {
         slider.value = n;
         num.value = n;
     };
-    slider.addEventListener('input', () => { sync(slider.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
-    num.addEventListener('input', () => { sync(num.value); if (window.actualizarPortadaLive) actualizarPortadaLive(); });
+    slider.addEventListener('input', () => { sync(slider.value); actualizarPortadaDiseno(); });
+    num.addEventListener('input', () => { sync(num.value); actualizarPortadaDiseno(); });
 }
 
 // Mismas constantes/funciones puras que portada.js (servidor) — reproducidas acá para que el
@@ -1102,9 +1092,69 @@ function portadaAjustarTamano(texto, factorAncho) {
     return { lineas: portadaEnvolverATamano(texto, PORTADA_FONTSIZE_MIN, factorAncho, true), fontsize: PORTADA_FONTSIZE_MIN };
 }
 
-// Mockup en vivo: fotograma real capturado del reproductor (canvas) + aproximación CSS de la
-// burbuja (blanco+rosa+texto), reproduciendo a escala lo mismo que va a hacer el .ass real.
-function initPortadaLive() {
+// Pinta la burbuja (rosa+texto) según fórmulas de portada.js (servidor) — ver ese archivo si se
+// cambia acá. Compartida por los dos mockups (diseño en Paso 6 y elegir-foto post-render):
+// `elId` es el prefijo de los 3 ids del mockup (`${elId}-live`/`${elId}-pink`/`${elId}-text`),
+// `datos` es `{titular, fuente, fontsize, lineas, escalaCaja}` ya resuelto por el caller — este
+// función solo mide y pinta, no decide tamaño automático/manual (eso varía entre los dos usos).
+function pintarCartelMockup(elId, { titular, fuente, fontsize, lineas, escalaCaja }) {
+    const pink = document.getElementById(`${elId}-pink`);
+    const texto = document.getElementById(`${elId}-text`);
+    const cont = document.getElementById(`${elId}-live`);
+    if (!pink || !texto || !cont) return;
+
+    const escala = cont.clientHeight / PORTADA_ALTO_VIDEO;
+    const f = SUBS_FUENTES_CSS[fuente] || SUBS_FUENTES_CSS.anton;
+    texto.style.fontFamily = `'${f.family}', sans-serif`;
+    texto.style.fontWeight = f.weight;
+    texto.style.fontSize = Math.round(fontsize * escala) + 'px';
+    texto.textContent = (lineas || [titular]).join('\n');
+
+    const padX = Math.round(fontsize * 0.32 * escalaCaja * escala);
+    const padY = Math.round(fontsize * 0.22 * escalaCaja * escala);
+    const radio = Math.max(4, Math.round(fontsize * 0.4 * escala));
+    const separacion = Math.max(3, Math.round(fontsize * 0.11 * escalaCaja * escala));
+    const grosor = Math.max(1, Math.round(fontsize * 0.05 * escala));
+    pink.style.padding = `${padY}px ${padX}px`;
+    pink.style.borderRadius = radio + 'px';
+    pink.style.outlineWidth = grosor + 'px';
+    pink.style.outlineOffset = `-${separacion}px`;
+    pink.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
+}
+
+// Paso 6 — mockup de DISEÑO: fondo placeholder (no hay video real todavía, se descartó antes
+// previsualizar un clip real por complicado), texto/fuente/tamaño/caja se leen en vivo de los
+// inputs de acá arriba en cada tecla/cambio.
+function actualizarPortadaDiseno() {
+    const titularEl = document.getElementById('portada-titular');
+    const fuenteEl = document.getElementById('portada-fuente');
+    const autoEl = document.getElementById('portada-tamano-auto');
+    const tamanoEl = document.getElementById('portada-tamano-num');
+    const cajaEl = document.getElementById('portada-caja-num');
+    if (!titularEl) return;
+
+    const clave = fuenteEl?.value || 'anton';
+    const factorAncho = FACTOR_ANCHO_POR_FUENTE[clave] || 0.62;
+    const titular = (titularEl.value || '...').toUpperCase();
+    const manual = autoEl && !autoEl.checked;
+    const { lineas, fontsize } = manual
+        ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
+        : portadaAjustarTamano(titular, factorAncho);
+    const escalaCaja = (Number(cajaEl?.value) || 100) / 100;
+    pintarCartelMockup('portada-diseno', { titular, fuente: clave, fontsize, lineas, escalaCaja });
+}
+
+function initPortadaDiseno() {
+    document.getElementById('portada-titular')?.addEventListener('input', actualizarPortadaDiseno);
+    document.getElementById('portada-fuente')?.addEventListener('change', actualizarPortadaDiseno);
+    actualizarPortadaDiseno();
+}
+
+// Post-render — mockup de ELEGIR FOTO: fotograma real capturado del reproductor (canvas) +
+// aproximación CSS de la burbuja, PERO el cartel (texto/fuente/tamaño/caja) ya no se lee de
+// inputs — viene fijo del `cartel` que el server devolvió (lo mismo que quemó en el frame 0),
+// pedido explícito del usuario: acá solo se elige la foto, nunca se re-edita el cartel.
+function initPortadaLive(cartel) {
     const videoEl = document.getElementById('result-video-player');
     const canvas = document.getElementById('portada-live-canvas');
     if (!videoEl || !canvas) return;
@@ -1117,49 +1167,18 @@ function initPortadaLive() {
         } catch {} // video aún no tiene un frame decodificado (CORS/timing) — se reintenta en el próximo evento
     };
 
-    window.actualizarPortadaLive = () => {
-        const titularEl = document.getElementById('portada-titular');
-        const fuenteEl = document.getElementById('portada-fuente');
-        const autoEl = document.getElementById('portada-tamano-auto');
-        const tamanoEl = document.getElementById('portada-tamano-num');
-        const cajaEl = document.getElementById('portada-caja-num');
-        const pink = document.getElementById('portada-live-pink');
-        const texto = document.getElementById('portada-live-text');
-        if (!titularEl || !pink || !texto) return;
-
-        const clave = fuenteEl?.value || 'anton';
-        const factorAncho = FACTOR_ANCHO_POR_FUENTE[clave] || 0.62;
-        const titular = (titularEl.value || '...').toUpperCase();
-        const manual = autoEl && !autoEl.checked;
-        const { lineas, fontsize } = manual
-            ? { fontsize: Number(tamanoEl.value) || 94, lineas: portadaEnvolverATamano(titular, Number(tamanoEl.value) || 94, factorAncho, true) }
+    const pintar = () => {
+        const factorAncho = FACTOR_ANCHO_POR_FUENTE[cartel.fuente] || 0.62;
+        const titular = (cartel.titular || '...').toUpperCase();
+        const { lineas, fontsize } = Number.isFinite(cartel.tamanoManual)
+            ? { fontsize: cartel.tamanoManual, lineas: portadaEnvolverATamano(titular, cartel.tamanoManual, factorAncho, true) }
             : portadaAjustarTamano(titular, factorAncho);
-        const escalaCaja = (Number(cajaEl?.value) || 100) / 100;
-
-        const escala = document.getElementById('portada-live').clientHeight / PORTADA_ALTO_VIDEO;
-        const f = SUBS_FUENTES_CSS[clave] || SUBS_FUENTES_CSS.anton;
-        texto.style.fontFamily = `'${f.family}', sans-serif`;
-        texto.style.fontWeight = f.weight;
-        texto.style.fontSize = Math.round(fontsize * escala) + 'px';
-        texto.textContent = (lineas || [titular]).join('\n');
-
-        // Mismas fórmulas que portada.js (servidor) — ver ese archivo si se cambia acá.
-        const padX = Math.round(fontsize * 0.32 * escalaCaja * escala);
-        const padY = Math.round(fontsize * 0.22 * escalaCaja * escala);
-        const radio = Math.max(4, Math.round(fontsize * 0.4 * escala));
-        const separacion = Math.max(3, Math.round(fontsize * 0.11 * escalaCaja * escala));
-        const grosor = Math.max(1, Math.round(fontsize * 0.05 * escala));
-        pink.style.padding = `${padY}px ${padX}px`;
-        pink.style.borderRadius = radio + 'px';
-        pink.style.outlineWidth = grosor + 'px';
-        pink.style.outlineOffset = `-${separacion}px`;
-        pink.style.top = (PORTADA_POS_Y_FRACCION * 100) + '%';
+        const escalaCaja = Number.isFinite(cartel.escalaCajaManual) ? cartel.escalaCajaManual : 1;
+        pintarCartelMockup('portada-live', { titular, fuente: cartel.fuente, fontsize, lineas, escalaCaja });
     };
 
-    videoEl.addEventListener('seeked', () => { capturarFrame(); actualizarPortadaLive(); });
-    videoEl.addEventListener('loadeddata', () => { capturarFrame(); actualizarPortadaLive(); });
-    document.getElementById('portada-titular')?.addEventListener('input', actualizarPortadaLive);
-    document.getElementById('portada-fuente')?.addEventListener('change', actualizarPortadaLive);
+    videoEl.addEventListener('seeked', () => { capturarFrame(); pintar(); });
+    videoEl.addEventListener('loadeddata', () => { capturarFrame(); pintar(); });
 
     // Primera captura: si el <video> ya está listo, directo; si no (carrera real medida: el
     // fetch de /api/fuentes-subtitulos que precede a esta función a veces tarda MÁS que la carga
@@ -1170,7 +1189,7 @@ function initPortadaLive() {
     const intentarCaptura = () => {
         if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
             capturarFrame();
-            actualizarPortadaLive();
+            pintar();
         } else if (intentos < 20) {
             intentos++;
             setTimeout(intentarCaptura, 100);
@@ -1179,20 +1198,12 @@ function initPortadaLive() {
     intentarCaptura();
 }
 
-// Genera la portada (fotograma actual del player + titular) y la muestra con link de descarga.
+// Genera el JPG de portada: fotograma elegido en el player + EL MISMO cartel ya quemado en el
+// frame 0 (texto/fuente/tamaño/caja vienen del server, guardados junto al preview — acá no se
+// re-envían ni se re-editan, pedido explícito del usuario).
 async function generarPortada() {
     const videoEl = document.getElementById('result-video-player');
-    const titularEl = document.getElementById('portada-titular');
-    const fuenteEl = document.getElementById('portada-fuente');
-    const tamanoAutoEl = document.getElementById('portada-tamano-auto');
-    const tamanoEl = document.getElementById('portada-tamano-num');
-    const cajaEl = document.getElementById('portada-caja-num');
     const destino = document.getElementById('portada-resultado');
-    const titular = titularEl.value.trim();
-    if (!titular) {
-        alert('Escribí un titular para la portada');
-        return;
-    }
     if (!state.previewToken) {
         alert('No hay preview del video disponible (generá el video de nuevo)');
         return;
@@ -1203,10 +1214,6 @@ async function generarPortada() {
         const { portadaUrl, guardadaJuntoAlVideo } = await apiCall('/portada', 'POST', {
             previewToken: state.previewToken,
             timestamp: videoEl ? videoEl.currentTime : 0,
-            titular,
-            fuente: fuenteEl.value,
-            tamano: (tamanoAutoEl && tamanoAutoEl.checked) ? 'auto' : Number(tamanoEl.value),
-            escalaCaja: (Number(cajaEl?.value) || 100) / 100,
         });
         const notaGuardado = guardadaJuntoAlVideo
             ? `<p class="hint">${icon('checkCircle')} Guardada junto al video, en su misma carpeta.</p>`
@@ -1846,6 +1853,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
     cargarFuentesSubtitulos().then(initSubsPreview);
+    cargarFuentesEnSelect('portada-fuente').then(initPortadaDiseno);
+    initPortadaTamano();
+    initPortadaCaja();
     cargarTonosMusica();
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
