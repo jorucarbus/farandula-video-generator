@@ -23,6 +23,6 @@
     "google-auth-library": "^10.9.0",
     "googleapis": "^173.0.0",
     "multer": "^2.2.0",
-    "youtube-dl-exec": "^3.1.9"
+    "youtube-dl-exec": "^3.1.12"
   }
 }

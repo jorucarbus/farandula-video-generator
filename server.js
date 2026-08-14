@@ -1272,6 +1272,7 @@ function limpiarCache() {
 
     for (const f of fs.readdirSync(video.TEMP_DIR)) {
       if (activos.has(f)) continue; // no tocar previews/carteles/audios en uso
+      if (/^yt-dlp-legacy/.test(f)) continue; // binario de fallback (fuentes.js) — cachear, no volver a descargar cada hora
       const ruta = path.join(video.TEMP_DIR, f);
       try {
         if (ahora - fs.statSync(ruta).mtimeMs > UNA_HORA) fs.unlinkSync(ruta);
