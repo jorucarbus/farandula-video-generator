@@ -7,6 +7,48 @@ primero si no conoces el proyecto. Este archivo solo trackea progreso.
 Las dos invariantes que ninguna fase puede romper: video == duración del audio (±0.1s), ningún
 clip pasa de 3.0s (uso legítimo, ver memoria `farandula-limite-3-segundos`).
 
+## Estado al 2026-08-13 (noche, Windows) — yt-dlp: timeout+reintento, y bug abierto de TikTok
+
+Verificando en staging (`adventurous-reflection`) el cartel de portada de la sección de abajo
+con un link real de TikTok, el pipeline se colgó 5 minutos y Railway devolvió 502 sin ninguna
+pista. Diagnóstico: `fuentes.js` llamaba a yt-dlp con `execFile` sin timeout ni reintento — si
+el anti-bot de la red social se cuelga sin responder, el proceso espera indefinidamente hasta
+que el gateway mata la conexión.
+
+**Fix general (`76a6122`)**: `ytdlp()` reintenta hasta 3 veces con timeout de 40s por intento —
+"colgado 5 min sin pista" pasa a "falla clara en <2 min", para cualquier red social.
+
+**Hallazgo específico de TikTok, confirmado en vivo con 2 links reales distintos**: TikTok está
+roto para TODOS ahora mismo, no es cosa de este proyecto — bug abierto de yt-dlp
+([yt-dlp/yt-dlp#17403](https://github.com/yt-dlp/yt-dlp/issues/17403) y
+[#17407](https://github.com/yt-dlp/yt-dlp/issues/17407), agosto 2026): el "challenge" que
+TikTok exige resolver cambió y ninguna versión reciente de yt-dlp (incluida la última estable,
+2026.07.04) sabe resolverlo. Los workarounds que la comunidad probó primero (user-agent custom,
+`--impersonate`) ya dejaron de funcionar según el hilo. El único que sigue sirviendo es bajar a
+la versión **2026.03.17**, anterior al cambio que rompió el challenge.
+
+Se agregó `asegurarYtdlpLegacy()`: descarga esa versión vieja UNA sola vez (on-demand, cacheada
+en `temp-videos/`, excluida de la limpieza horaria) a un binario aparte — **no reemplaza** el
+yt-dlp normal (más nuevo = mejor para YouTube y todo lo demás). Se usa solo como último recurso
+cuando el normal falla con la firma exacta de este bug contra un link de `tiktok.com`. El día
+que yt-dlp lo arregle río arriba, el binario normal vuelve a ganar solo, sin tocar código.
+
+**Límite real, no ocultarlo**: el fallback funciona para audio-only (2/2 pruebas, MP3 real de
+66s bajado y confirmado con `ffprobe`) pero NO para descarga de video completo con `--format`
+explícito — bug DISTINTO en la misma versión vieja ("Unable to extract universal data for
+rehydration"). Como el server ya intenta audio primero para TikTok y solo cae a video si el
+audio falla, la mejora cubre el camino más común, no todos. Además el éxito de TikTok fluctúa
+pedido a pedido con el MISMO link (a veces el yt-dlp normal solo ya alcanza, a veces ni el
+fallback alcanza) — coincide con lo que el usuario ya sabía de memoria de otra herramienta suya
+("a veces toca insistir varias veces y de repente descarga"). No hay forma de garantizar 100%
+mientras TikTok siga así; esto reduce cuánto hay que insistir, no lo elimina.
+
+**Pendiente**: verificar en Railway tras el redeploy automático (push ya confirmado). Si el bug
+de TikTok se sigue reportando como roto en la comunidad, no hay más que hacer del lado nuestro
+más que esperar a que yt-dlp lo arregle río arriba — no reintentar workarounds ya probados y
+descartados (user-agent, `--impersonate`) sin chequear primero si el hilo de GitHub reporta algo
+nuevo.
+
 ## Estado al 2026-08-13 — Cartel de portada en el frame 0 del video, fuera del plan maestro
 
 `test-persistencia` en `b34598d` (push verificado). Sigue siendo aparte del plan maestro, como
