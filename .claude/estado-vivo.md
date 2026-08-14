@@ -43,10 +43,22 @@ fallback alcanza) — coincide con lo que el usuario ya sabía de memoria de otr
 ("a veces toca insistir varias veces y de repente descarga"). No hay forma de garantizar 100%
 mientras TikTok siga así; esto reduce cuánto hay que insistir, no lo elimina.
 
-**Pendiente**: verificar en Railway tras el redeploy automático (push ya confirmado). Si el bug
-de TikTok se sigue reportando como roto en la comunidad, no hay más que hacer del lado nuestro
-más que esperar a que yt-dlp lo arregle río arriba — no reintentar workarounds ya probados y
-descartados (user-agent, `--impersonate`) sin chequear primero si el hilo de GitHub reporta algo
+**Verificado en Railway tras el redeploy, de punta a punta con un link real de TikTok del
+usuario** (`/api/read` → `tipoReal: "social-audio"`, pasó por el fallback): guion → locución →
+video completo. Confirmado con extracción real de frames del video descargado de Drive: cartel
+("MELISSA NAVARRO - CESAR PARRA - VACACIONAN JUNTOS EN BAHAMAS") presente y bien formado en el
+frame 0 exacto (tipografía Anton real, no de reemplazo — el filtro `overlay` SÍ está compilado
+en el ffmpeg de Railway, no era la trampa de `geq`), ausente en frame 60 (solo queda el subtítulo
+normal). JPG de portada generado vía `/api/portada` con el MISMO cartel exacto sobre otro
+fotograma elegido. De paso, el nombre de archivo (`2026-08-14 Melissa Navarro - Cesar Parra -
+vacacionan juntos en Bahamas.mp4`) confirma también el formato de carpeta con fecha del punto
+anterior. **Con esto, todo el punto "Cartel de portada" de la sección de abajo queda cerrado y
+confirmado en producción de staging — ya no es solo "verificado local".**
+
+**Pendiente**: si el bug de TikTok se sigue reportando como roto en la comunidad, no hay más que
+hacer del lado nuestro más que esperar a que yt-dlp lo arregle río arriba — no reintentar
+workarounds ya probados y descartados (user-agent, `--impersonate`) sin chequear primero si el
+hilo de GitHub reporta algo
 nuevo.
 
 ## Estado al 2026-08-13 — Cartel de portada en el frame 0 del video, fuera del plan maestro
