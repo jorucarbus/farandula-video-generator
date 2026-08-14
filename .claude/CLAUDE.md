@@ -1032,3 +1032,29 @@ cual era falso, y se corrigió a "-20dB" a secas. Con el catálogo actual alcanz
 parejo, pero una pista futura masterizada mucho más fuerte volvería a sonar alta con el mismo
 número. Si vuelve a pasar, la solución de fondo es normalizar a LUFS (`loudnorm`) antes de
 aplicar el offset, no seguir bajando el número.
+
+**Cierre de sesión 2026-08-14 (Mac) — supersede el cierre del 2026-08-13**
+
+Los tres puntos que el "Cierre de sesión 2026-08-13" dejaba por verificar **ya están todos
+confirmados** en la entrada del 13 a la noche (Windows) — no volver a hacerlos:
+1. Previa vs. video final: coinciden. ✔
+2. Tipografía real (Anton, no de reemplazo) en el video. ✔
+3. `overlay` compilado en el ffmpeg de Railway — NO era la trampa de `geq`. ✔
+
+**Estado ahora**: `test-persistencia` en `4933cad`, todo pusheado (SHA local = remoto). Lo último
+que entró (música a -20dB) todavía **no se escuchó en un video real** — es el único pendiente de
+verificación de esta sesión, y es a oído, no medible: la medición ya se hizo (17.1 dB de
+separación contra una locución real).
+
+**Pendientes reales, en orden de peso**:
+1. **Merge `test-persistencia` → `main`.** Producción sigue sin NADA de todo esto: ni Fases 1-8,
+   ni portada, ni el fix de yt-dlp/TikTok, ni la música a -20. Es la brecha más grande abierta.
+2. Desplegar `farandula-video-family` a Railway (repo aparte, nunca tuvo producción).
+3. `decidirEfecto('intercalado', i)` en `video.js`: el espejo queda en TODOS los clips en vez de
+   alternar (bug preexistente, documentado hace semanas, sin arreglar).
+4. `getAngleName()` en `gemini.js` es código muerto — no se llama ni se exporta, y mapea sólo
+   1-6 cuando la app tiene 7 ángulos. Sobrevivió al refactor de código muerto (`64f2359`).
+
+**Recordatorio operativo**: tras cada deploy, recargar la pestaña con Cmd/Ctrl + Shift + R. Si no,
+el server responde 400 pidiéndolo (guarda agregada en `0d883e8` justamente porque este error costó
+una sesión entera de diagnóstico).
