@@ -1013,3 +1013,22 @@ Pendiente de confirmar en staging, en este orden:
 
 No tocado y todavía pendiente de antes: merge a `main` (producción sigue con el código previo a
 este cambio).
+
+### 2026-08-14 (Mac) — Música de fondo: -18dB → -20dB
+
+El usuario escuchó la música muy alta en el resultado. **Medido antes de tocar nada**: el `-18dB`
+sí se aplicaba (se replicó la cadena exacta de `prepararMusica()` con una pista real y dio -33.2
+LUFS), y las 13 pistas del catálogo están parejas (-12.8 a -16.6 LUFS), sin ninguna anómala. Con
+una locución real medida en -18.1 LUFS, la separación era de 15.1 dB — o sea, no había bug.
+
+El ajuste es de gusto, con una razón concreta del usuario: la voz de ElevenLabs se atenúa -3.4dB
+por venir saturada (`elevenlabs.js`), así que la música quedaba relativamente más alta de lo
+pensado cuando se eligió el -18 original. Nuevo default **-20dB** → separación de 17.1 dB
+(verificado con la misma medición).
+
+**Ojo conceptual, anotado en el comentario de `prepararMusica()`**: esta ganancia atenúa el
+ARCHIVO fuente, no se mide contra la voz — la etiqueta de la UI decía "-18dB bajo la voz", lo
+cual era falso, y se corrigió a "-20dB" a secas. Con el catálogo actual alcanza porque está
+parejo, pero una pista futura masterizada mucho más fuerte volvería a sonar alta con el mismo
+número. Si vuelve a pasar, la solución de fondo es normalizar a LUFS (`loudnorm`) antes de
+aplicar el offset, no seguir bajando el número.
