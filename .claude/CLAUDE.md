@@ -1013,3 +1013,48 @@ Pendiente de confirmar en staging, en este orden:
 
 No tocado y todavía pendiente de antes: merge a `main` (producción sigue con el código previo a
 este cambio).
+
+### 2026-08-14 (Mac) — Música de fondo: -18dB → -20dB
+
+El usuario escuchó la música muy alta en el resultado. **Medido antes de tocar nada**: el `-18dB`
+sí se aplicaba (se replicó la cadena exacta de `prepararMusica()` con una pista real y dio -33.2
+LUFS), y las 13 pistas del catálogo están parejas (-12.8 a -16.6 LUFS), sin ninguna anómala. Con
+una locución real medida en -18.1 LUFS, la separación era de 15.1 dB — o sea, no había bug.
+
+El ajuste es de gusto, con una razón concreta del usuario: la voz de ElevenLabs se atenúa -3.4dB
+por venir saturada (`elevenlabs.js`), así que la música quedaba relativamente más alta de lo
+pensado cuando se eligió el -18 original. Nuevo default **-20dB** → separación de 17.1 dB
+(verificado con la misma medición).
+
+**Ojo conceptual, anotado en el comentario de `prepararMusica()`**: esta ganancia atenúa el
+ARCHIVO fuente, no se mide contra la voz — la etiqueta de la UI decía "-18dB bajo la voz", lo
+cual era falso, y se corrigió a "-20dB" a secas. Con el catálogo actual alcanza porque está
+parejo, pero una pista futura masterizada mucho más fuerte volvería a sonar alta con el mismo
+número. Si vuelve a pasar, la solución de fondo es normalizar a LUFS (`loudnorm`) antes de
+aplicar el offset, no seguir bajando el número.
+
+**Cierre de sesión 2026-08-14 (Mac) — supersede el cierre del 2026-08-13**
+
+Los tres puntos que el "Cierre de sesión 2026-08-13" dejaba por verificar **ya están todos
+confirmados** en la entrada del 13 a la noche (Windows) — no volver a hacerlos:
+1. Previa vs. video final: coinciden. ✔
+2. Tipografía real (Anton, no de reemplazo) en el video. ✔
+3. `overlay` compilado en el ffmpeg de Railway — NO era la trampa de `geq`. ✔
+
+**Estado ahora**: `test-persistencia` en `4933cad`, todo pusheado (SHA local = remoto). Lo último
+que entró (música a -20dB) todavía **no se escuchó en un video real** — es el único pendiente de
+verificación de esta sesión, y es a oído, no medible: la medición ya se hizo (17.1 dB de
+separación contra una locución real).
+
+**Pendientes reales, en orden de peso**:
+1. **Merge `test-persistencia` → `main`.** Producción sigue sin NADA de todo esto: ni Fases 1-8,
+   ni portada, ni el fix de yt-dlp/TikTok, ni la música a -20. Es la brecha más grande abierta.
+2. Desplegar `farandula-video-family` a Railway (repo aparte, nunca tuvo producción).
+3. `decidirEfecto('intercalado', i)` en `video.js`: el espejo queda en TODOS los clips en vez de
+   alternar (bug preexistente, documentado hace semanas, sin arreglar).
+4. `getAngleName()` en `gemini.js` es código muerto — no se llama ni se exporta, y mapea sólo
+   1-6 cuando la app tiene 7 ángulos. Sobrevivió al refactor de código muerto (`64f2359`).
+
+**Recordatorio operativo**: tras cada deploy, recargar la pestaña con Cmd/Ctrl + Shift + R. Si no,
+el server responde 400 pidiéndolo (guarda agregada en `0d883e8` justamente porque este error costó
+una sesión entera de diagnóstico).

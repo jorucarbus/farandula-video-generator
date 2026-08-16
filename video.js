@@ -210,11 +210,18 @@ async function renderizarConTransiciones(segmentos, duracionesVisibles, outPath,
 // Fase 8c: prepara la pista de música elegida para mezclarla — corta su silencio inicial (una
 // sola vez, `offsetInicio` viene de la etiqueta del archivo en Drive, ver musica.js), la
 // repite en loop hasta cubrir la duración del video, y le aplica la ganancia fija que pidió el
-// usuario (-18dB por defecto, "todo el video igual" — SIN ducking dinámico: la voz es continua
+// usuario (-20dB por defecto, "todo el video igual" — SIN ducking dinámico: la voz es continua
 // con pausas menores a 150ms, medido real, así que un compresor nunca llegaría a recuperarse
 // entre palabras sin sonar a bombeo) más un fundido corto de entrada/salida para que no arranque
 // ni corte en seco.
-async function prepararMusica(localPath, offsetInicio, duracionObjetivo, jobId, gananciaDb = -18) {
+//
+// El default pasó de -18 a -20 (2026-08-14, pedido del usuario tras escuchar el resultado): la
+// voz de ElevenLabs se atenúa -3.4dB por venir saturada (ver elevenlabs.js), así que la música
+// quedaba relativamente más alta de lo que se había pensado al elegir el -18 original. Ojo: esta
+// ganancia es un ATENUADO DEL ARCHIVO fuente, no una medida contra la voz — el catálogo actual
+// está parejo (-12.8 a -16.6 LUFS, medido) así que en la práctica alcanza, pero una pista futura
+// masterizada mucho más fuerte volvería a sonar alta con este mismo número.
+async function prepararMusica(localPath, offsetInicio, duracionObjetivo, jobId, gananciaDb = -20) {
   const limpio = path.join(TEMP_DIR, `${jobId}_musica_limpia.mp3`);
   const listo = path.join(TEMP_DIR, `${jobId}_musica_lista.m4a`);
 
@@ -428,7 +435,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   let musicaPreparada = null;
   if (efectos.musicaPath) {
     try {
-      musicaPreparada = await prepararMusica(efectos.musicaPath, efectos.musicaOffset || 0, durAudio, jobId, efectos.musicaGananciaDb ?? -18);
+      musicaPreparada = await prepararMusica(efectos.musicaPath, efectos.musicaOffset || 0, durAudio, jobId, efectos.musicaGananciaDb ?? -20);
     } catch (e) {
       console.warn(`  ⚠️ [${jobId}] No se pudo preparar la música, el video sale sin ella: ${e.message}`);
     }
