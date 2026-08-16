@@ -17,7 +17,10 @@ function ffmpeg(args) {
   return new Promise((resolve, reject) => {
     execFile(FFMPEG_BIN, ['-y', ...args], { maxBuffer: 1024 * 1024 * 50, timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' }, (err, stdout, stderr) => {
       if (err) {
-        const motivo = err.killed ? `timeout de ${FFMPEG_TIMEOUT_MS / 60000} min alcanzado (proceso matado)` : (stderr || '').slice(-500);
+        // 4000 en vez de 500: un filter_complex de varias tandas es largo, y el error REAL de
+        // ffmpeg (qué pad/link falla) suele venir en la cola del stderr — con 500 se cortaba
+        // justo antes y solo quedaba el filtro repetido, sin la causa (visto real 2026-08-16).
+        const motivo = err.killed ? `timeout de ${FFMPEG_TIMEOUT_MS / 60000} min alcanzado (proceso matado)` : (stderr || '').slice(-4000);
         return reject(new Error(`ffmpeg: ${motivo}`));
       }
       resolve(stdout);
@@ -296,6 +299,26 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   const segmentos = [];
   const duracionesVisibles = []; // duración QUE VE el espectador (sin cola de mezcla), mismo orden que segmentos
 
+  // seleccion.js planifica el offset de cada clip contra `v.duracion` (metadata de Drive,
+  // videoMediaMetadata.durationMillis) — pero Drive a veces NO la reporta (undefined), y ahí
+  // seleccion.js no tiene con qué comprobar que el offset cabe. Si offset+duración se pasa del
+  // final real del archivo, `-ss`+`-t` de ffmpeg NO da error: corta silenciosamente un segmento
+  // más corto de lo pedido (probado real: pedís 2.65s, si el archivo se acaba en 0.3s desde el
+  // offset, el segmento sale de 0.3s, exit code 0). Ese segmento corto rompe después el timeline
+  // acumulado de `xfade` (el offset de la transición ya no tiene frames de este input a esa
+  // altura) — visto real en producción como "matches no streams" en el xfade Y en el fallback de
+  // concat plano (un segmento con muchos menos frames de los que su nombre en la lista promete
+  // también lo tira abajo). Acá se re-verifica contra la duración REAL del archivo ya descargado
+  // (fuente de verdad, no la metadata de Drive) y si no cabe, se corre el offset hacia atrás —
+  // mismo criterio que ya usa seleccion.js para "video muy corto", solo que con datos reales.
+  const duracionesReales = {};
+  async function duracionRealCacheada(ruta) {
+    if (!(ruta in duracionesReales)) {
+      duracionesReales[ruta] = await obtenerDuracion(ruta).catch(() => null);
+    }
+    return duracionesReales[ruta];
+  }
+
   for (let k = 0; k < clipsValidos.length; k++) {
     const { clip, i } = clipsValidos[k];
     const esUltimo = k === clipsValidos.length - 1;
@@ -305,6 +328,15 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     // del límite legal de 3s. Ver comentario largo en renderizarConTransiciones() para el resto.
     const activaTransicion = !esUltimo && transPreset !== 'ninguno' && decidirEfecto(transPreset, k).activo && !esLimiteDeTanda(k);
     const padding = activaTransicion ? transDur : 0;
+    const necesita = clip.duracion + padding;
+
+    let offsetEfectivo = clip.offset;
+    const durReal = await duracionRealCacheada(archivos[clip.videoId]);
+    if (durReal && offsetEfectivo + necesita > durReal) {
+      const offsetClamp = Math.max(0, durReal - necesita);
+      console.warn(`  ⚠️ Clip ${i}: offset ${offsetEfectivo.toFixed(2)}s + ${necesita.toFixed(2)}s se pasa de la duración real (${durReal.toFixed(2)}s) — corrigiendo offset a ${offsetClamp.toFixed(2)}s`);
+      offsetEfectivo = offsetClamp;
+    }
 
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
     const base = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30';
@@ -314,9 +346,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     if (decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
 
     const argsSegmento = (vf) => [
-      '-ss', clip.offset.toFixed(2),
+      '-ss', offsetEfectivo.toFixed(2),
       '-i', archivos[clip.videoId],
-      '-t', (clip.duracion + padding).toFixed(3),
+      '-t', necesita.toFixed(3),
       '-vf', vf,
       '-an',
       ...enc,
