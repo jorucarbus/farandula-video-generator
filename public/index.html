@@ -223,10 +223,10 @@
                 <div class="form-group">
                     <label for="efecto-zoom">Efecto zoom (activo toda la toma):</label>
                     <select id="efecto-zoom">
-                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="ninguno">Ninguno</option>
                         <option value="todos">Todos los clips</option>
                         <option value="alternado">Alternado (uno sí, uno no)</option>
-                        <option value="intercalado">Intercalado (in / out)</option>
+                        <option value="intercalado" selected>Intercalado (in / out)</option>
                     </select>
                 </div>
 
@@ -238,18 +238,18 @@
                 <div class="form-group">
                     <label for="efecto-espejo">Efecto espejo (flip horizontal):</label>
                     <select id="efecto-espejo">
-                        <option value="ninguno" selected>Ninguno</option>
+                        <option value="ninguno">Ninguno</option>
                         <option value="todos">Todos los clips</option>
                         <option value="alternado">Alternado (uno sí, uno no)</option>
-                        <option value="intercalado">Intercalado</option>
+                        <option value="intercalado" selected>Intercalado</option>
                     </select>
                 </div>
 
                 <div class="form-group" id="transicion-group">
                     <label for="efecto-transicion">Transición entre clips (solo modo Video, no Insumos):</label>
                     <select id="efecto-transicion">
-                        <option value="ninguno" selected>Ninguna (corte seco)</option>
-                        <option value="todos">Todos los cortes</option>
+                        <option value="ninguno">Ninguna (corte seco)</option>
+                        <option value="todos" selected>Todos los cortes</option>
                         <option value="alternado">Alternado (uno sí, uno no)</option>
                     </select>
                 </div>
@@ -302,8 +302,8 @@
 
                     <label for="subs-tamano" class="mt-sm">Tamaño de letra:</label>
                     <div class="tamano-row">
-                        <input type="range" id="subs-tamano" min="80" max="360" step="1" value="264">
-                        <input type="number" id="subs-tamano-num" min="80" max="360" step="1" value="264">
+                        <input type="range" id="subs-tamano" min="80" max="360" step="1" value="210">
+                        <input type="number" id="subs-tamano-num" min="80" max="360" step="1" value="210">
                         <span class="hint">pt</span>
                     </div>
 

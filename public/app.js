@@ -1828,9 +1828,9 @@ async function cargarCanales() {
 // defecto tienen que calzar con TAMANO_DEFAULT/MARGIN_V de subtitulos.js — si se cambian ahí,
 // cambiar acá también.
 const SUBS_PLAYRES_Y = 1920;
-let subsTamano = 264;
-let subsMarginV = 300;
-let subsFuente = 'anton';
+let subsTamano = 210;
+let subsMarginV = 606;
+let subsFuente = 'bangers';
 
 // Mapeo clave del catálogo (subtitulos.js) → familia/peso CSS que carga el <link> de Google
 // Fonts en index.html. Es SOLO para que el preview se vea con la tipografía real — el render

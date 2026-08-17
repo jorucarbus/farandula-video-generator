@@ -31,19 +31,23 @@ const FUENTES = {
   kanit:     { familia: 'Kanit ExtraBold',   archivo: 'Kanit-ExtraBold.ttf',       url: 'https://raw.githubusercontent.com/google/fonts/main/ofl/kanit/Kanit-ExtraBold.ttf', factorAncho: 0.58 },
   luckiest:  { familia: 'Luckiest Guy',      archivo: 'LuckiestGuy-Regular.ttf',   url: 'https://raw.githubusercontent.com/google/fonts/main/apache/luckiestguy/LuckiestGuy-Regular.ttf', factorAncho: 0.60 },
 };
-const FUENTE_DEFAULT = 'anton';
+// 'bangers' desde 2026-08-16 (pedido del usuario: que sea el default, ya no elegirla cada vez).
+// OJO: este mismo valor viaja por /api/fuentes-subtitulos y el frontend lo usa para preseleccionar
+// TANTO el select de subtítulos COMO el del cartel de portada — cambiarlo mueve los dos.
+const FUENTE_DEFAULT = 'bangers';
 
-// 3x el tamaño anterior (88pt) — pedido explícito del usuario. Con una sola palabra en pantalla
-// a la vez hay espacio; el resguardo real está en tamanoSeguro() más abajo, para palabras largas.
-const TAMANO_DEFAULT = 264;
+// 264 era 3x el tamaño original (88pt). Bajado a 210 el 2026-08-16, pedido del usuario tras verlo
+// en videos reales. El resguardo para palabras largas sigue en tamanoSeguro(), más abajo.
+const TAMANO_DEFAULT = 210;
 const MAX_CHARS_LINEA = 18; // ya casi no se usa con 1 palabra por grupo, se deja por si se sube porGrupo
 const PALABRAS_POR_GRUPO = 1; // una palabra a la vez — pedido explícito del usuario
 const COLOR_RESALTE = '&H0004C2F7&'; // amarillo #f7c204 en BGR (formato ASS)
 const COLOR_BASE = '&H00FFFFFF&';
-// Más abajo que antes (MarginV 720→300), pedido explícito: "más abajo, solo más arriba que
-// donde está lo de TikTok". TikTok tapa el 15% inferior (288px de 1920) con su propia interfaz;
-// 300 deja el borde del texto justo por encima de esa franja, sin invadirla.
-const MARGIN_V = 300;
+// TikTok tapa el 15% inferior (288px de 1920) con su propia interfaz. El 300 anterior dejaba el
+// texto pegado justo encima de esa franja; el usuario lo subió a mano en la UI y pidió que esa
+// posición quede por defecto (2026-08-16). 606 sale de medir su captura calibrando contra la
+// banda de TikTok del preview — es aproximado a propósito, ajustable arrastrando la palabra.
+const MARGIN_V = 606;
 // Ancho útil del canvas para el resguardo de palabras largas (ver tamanoSeguro): PlayResX menos
 // los márgenes laterales del Style.
 const ANCHO_UTIL = 1080 - 60 - 60;

@@ -1116,3 +1116,43 @@ family**, y si la lista de duplicados sigue creciendo, vale la pena evaluar extr
 2. Desplegar `farandula-video-family` a Railway.
 3. `decidirEfecto('intercalado', i)`: espejo en TODOS los clips en vez de alternar (preexistente).
 4. `getAngleName()` en `gemini.js`: código muerto, mapea 1-6 con 7 ángulos existentes.
+
+### 2026-08-16 (Mac) — Nuevos valores por defecto del Paso 6
+
+Pedido del usuario con dos capturas: dejar por defecto lo que venía eligiendo a mano en cada video.
+
+| Opción | Antes | Ahora |
+|---|---|---|
+| Efecto zoom | Ninguno | **Intercalado (in/out)** |
+| Intensidad zoom | 20 | 20 (sin cambio) |
+| Efecto espejo | Ninguno | **Intercalado** |
+| Transición entre clips | Ninguna (corte seco) | **Todos los cortes** |
+| Tono de música | Automático | Automático (sin cambio) |
+| Tipografía subtítulos | Anton | **Bangers** |
+| Tamaño de letra | 264 pt | **210 pt** |
+| Posición (MarginV) | 300 | **606** |
+
+Tocados los DOS lados de cada valor, porque `public/app.js` avisa en un comentario que sus
+defaults "tienen que calzar con TAMANO_DEFAULT/MARGIN_V de subtitulos.js": `public/index.html`
+(atributos `selected`/`value`), `public/app.js` (`subsTamano`/`subsMarginV`/`subsFuente`) y
+`subtitulos.js` (`TAMANO_DEFAULT`/`MARGIN_V`/`FUENTE_DEFAULT`).
+
+**Dos cosas que conviene saber:**
+
+1. **`FUENTE_DEFAULT` mueve DOS selectores.** Ese valor viaja por `/api/fuentes-subtitulos` y el
+   frontend lo usa para preseleccionar tanto el select de subtítulos COMO el del cartel de
+   portada. Ahora los dos arrancan en Bangers. Si se quisieran distintos, hay que separar el
+   default (hoy es uno solo para ambos).
+2. **MarginV 606 es una ESTIMACIÓN**, no un valor que el usuario haya dictado: se midió su
+   captura calibrando contra la banda de "interfaz de TikTok" del preview (que es exactamente el
+   15% del alto). Puede estar ±20. Se ajusta arrastrando la palabra y diciendo el valor nuevo.
+
+**Ojo con la transición por defecto**: `xfade` no escala — con 58 clips en una sola cadena llegó a
++8GB de RAM (medido 2026-08-09), y por eso existe `TANDA_MAX=10`. Ahora TODOS los renders van a
+usar transiciones, no solo cuando el usuario las pedía. Las tandas lo cubren, pero si aparecen
+renders lentos o caídas en Railway con videos de muchos clips, este cambio de default es el primer
+sospechoso.
+
+**Verificado en browser local** (no solo en el código): con la app cargada, los 8 controles
+devuelven exactamente los valores de arriba, incluido `subs-fuente` = `bangers` tras cargar el
+catálogo por API, y la posición de la palabra reconvertida a MarginV da 606 clavado.
