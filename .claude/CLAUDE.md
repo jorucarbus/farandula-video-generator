@@ -1235,3 +1235,23 @@ Todo pusheado (`c484f18`, SHA local = remoto). Lo que entró después del cierre
 
 **Recordatorio operativo**: tras cada deploy, recargar con Cmd/Ctrl + Shift + R. Si no, el server
 responde 400 pidiéndolo (guarda de `0d883e8`).
+
+### 2026-08-17 (Windows) — Nota: `farandula-video-family` ya tiene subtítulos, con Whisper en vez de ElevenLabs
+
+Sin cambios de código acá — solo referencia, porque toca directamente el riesgo de duplicación
+que quedó anotado el 16. El usuario pidió una fuente de timing por palabra para family (el audio
+lo sube el usuario, sin alineación de ningún proveedor de TTS) y se resolvió con OpenAI Whisper-1
+en vez de Google Cloud STT (comparado costo/calidad con el usuario: Whisper gana en precio y en
+simplicidad de setup). `subtitulos.js`/`seleccion.tiemposPorFragmento()` se portaron **tal
+cual** — el único módulo nuevo de verdad es `tiempos.js` de family, que reemplaza la alineación
+carácter-por-carácter de ElevenLabs por un match palabra-por-palabra contra la transcripción de
+Whisper (misma forma de salida `{ duraciones, palabras }`, así que el resto de la cadena no sabe
+ni le importa de dónde salió el timing). Detalle completo en
+`farandula-video-family/.claude/CLAUDE.md`.
+
+**Relevante acá**: al portar se encontró que `seleccion.js` de family llevaba semanas en una
+versión vieja — sin `duracionesReales`/`clipMax` en `planificarClips()` ni `tiemposPorFragmento()`
+— así que el wiring de `clipMax` para transiciones que se hizo el 16 en ESE repo nunca tuvo
+efecto real (JS ignora argumentos de más en vez de fallar). Si `seleccion.js` cambia acá de nuevo,
+vale la pena confirmar que family lo siga de cerca — es el ejemplo concreto del riesgo que ya
+estaba anotado, no uno nuevo.
