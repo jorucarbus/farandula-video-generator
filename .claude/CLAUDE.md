@@ -1201,3 +1201,37 @@ trazo exacto de cada letra puede variar un pelo. Está dicho en el `hint` de la 
 arriba/abajo/derecha y banda lateral en su sitio, zona central limpia; se exportó la imagen y se
 revisó a ojo (cuadrícula, líneas por app, palabra en Bangers con contorno); y el arrastre simulado
 al 25% de la altura dejó MarginV en 480 (esperado 480) con la lectura en pantalla sincronizada.
+
+**Cierre 2026-08-16 (Mac, segunda tanda) — supersede el cierre anterior del mismo día**
+
+Todo pusheado (`c484f18`, SHA local = remoto). Lo que entró después del cierre anterior:
+`ecc6864` (nuevos defaults del Paso 6) y `c484f18` (preview de subtítulos en canvas real).
+
+**Sin verificar todavía, en orden de importancia** — nada de esto se pudo probar acá:
+
+1. **Música a -20dB**: mergeada y desplegada, pero **nadie la escuchó todavía en un video real**.
+   Es a oído: la medición ya está hecha (17.1 dB de separación contra una locución real).
+2. **Zonas seguras del preview de subtítulos**: las medidas salen de las plantillas del usuario
+   con ±10px, y las plantillas envejecen con cada versión de las apps. Conviene contrastar un
+   video ya publicado contra el preview y, si algo no calza, ajustar `SUBS_ZONAS_APPS`.
+3. **Transiciones por defecto en "todos los cortes"** (`ecc6864`): hasta ahora eran opt-in. `xfade`
+   no escala — 58 clips en una cadena llegaron a +8GB de RAM (medido 2026-08-09), de ahí
+   `TANDA_MAX=10`. Las tandas deberían cubrirlo, pero **si aparecen renders lentos o caídas en
+   Railway con videos de muchos clips, este default es el primer sospechoso**.
+4. **MarginV 606**: era una estimación medida de una captura. Ahora la UI muestra el valor
+   numérico, así que se puede afinar y decir el número exacto.
+
+**Pendientes reales, sin cambios de fondo**:
+1. **Merge `test-persistencia` → `main`.** Producción sigue sin NADA: Fases 1-8, portada,
+   yt-dlp/TikTok, música, offset-clamp (que arregla un crash REAL de producción), defaults nuevos
+   y el preview de subtítulos. **La brecha lleva abierta desde el 25 de julio.**
+2. Desplegar `farandula-video-family` a Railway.
+3. Código duplicado entre los dos repos (ver el cierre anterior): al tocar `video.js` acá,
+   preguntarse si el cambio también va a family.
+4. `decidirEfecto('intercalado', i)`: espejo en TODOS los clips en vez de alternar (preexistente).
+   **Ojo que ahora el espejo intercalado es el DEFAULT**, así que este bug pasó de teórico a
+   afectar todos los renders.
+5. `getAngleName()` en `gemini.js`: código muerto, mapea 1-6 con 7 ángulos existentes.
+
+**Recordatorio operativo**: tras cada deploy, recargar con Cmd/Ctrl + Shift + R. Si no, el server
+responde 400 pidiéndolo (guarda de `0d883e8`).
