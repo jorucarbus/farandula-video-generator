@@ -1156,3 +1156,48 @@ sospechoso.
 **Verificado en browser local** (no solo en el código): con la app cargada, los 8 controles
 devuelven exactamente los valores de arriba, incluido `subs-fuente` = `bangers` tras cargar el
 catálogo por API, y la posición de la palabra reconvertida a MarginV da 606 clavado.
+
+### 2026-08-16 (Mac) — Preview de subtítulos: canvas real 1080x1920 con cuadrícula y zonas seguras
+
+Pedido del usuario: que el preview de subtítulos sea, como el del cartel, una estimación REAL de
+1080x1920, con cuadrícula y las zonas que tapan TikTok / YouTube Shorts / Facebook Reels, "así
+sabré exactamente dónde van a estar los subtítulos".
+
+**Qué cambió**: `#subs-preview` era un mockup CSS de 202px de ancho (un `<div>` rosa con un `<span>`
+posicionado por `bottom` en px escalados). Ahora adentro va un `<canvas>` dibujado a 1080x1920
+reales (`dibujarPreviewSubs()` en `public/app.js`), y el CSS solo decide a qué tamaño se MUESTRA
+(280px, más ancho que antes porque la cuadrícula a 202px era ilegible). Se borraron
+`#subs-preview-word` y `#subs-preview-tiktok-zone`.
+
+El canvas dibuja: cuadrícula 10x10 (tercios más marcados), el velo rojo de la UNIÓN de las tres
+apps, una línea punteada por app en su color, las bandas laterales "SE CORTARÁ", la línea amarilla
+de la posición elegida, y la palabra con su contorno negro (como el Outline 4 del Style del .ass).
+Además el arrastre ahora agarra en CUALQUIER punto del recuadro (antes solo la palabra, que a ese
+tamaño era un blanco muy chico) y la etiqueta muestra el MarginV numérico — antes no había forma
+de saber ni comunicar el valor.
+
+**Las medidas de las zonas** (`SUBS_ZONAS_APPS`, único lugar donde viven):
+
+| App | arriba | abajo | derecha |
+|---|---|---|---|
+| TikTok | 181 | 292 | 174 |
+| YouTube Shorts | 181 | 195 | 169 |
+| Facebook Reels | 191 | 302 | 164 |
+
+Más `SUBS_CORTE_LATERAL = 48` (banda "SE CORTARÁ", igual en las tres plantillas).
+
+**Origen y límite de esas medidas**: salen de las plantillas oficiales de zona segura 9:16 que
+pasó el usuario, midiendo cada imagen y calibrando su marco contra 1080x1920. La primera tanda de
+valores que se usó era de referencia general y quedó descartada. **Siguen siendo aproximadas**:
+±10px de error de medición, y las plantillas mismas cambian entre versiones de cada app y entre
+modelos de teléfono. Son guía, no garantía al píxel.
+
+**Diferencia honesta con el cartel de portada**: ese canvas ES el PNG que se superpone, así que
+previa y resultado son idénticos por construcción. Acá NO: los subtítulos los quema libass desde
+el `.ass`, con su propio motor de texto. La geometría (posición, tamaño, márgenes) es fiel; el
+trazo exacto de cada letra puede variar un pelo. Está dicho en el `hint` de la UI, no solo acá.
+
+**Verificado en browser local**: canvas interno 1080x1920, muestreo de píxeles confirma velo
+arriba/abajo/derecha y banda lateral en su sitio, zona central limpia; se exportó la imagen y se
+revisó a ojo (cuadrícula, líneas por app, palabra en Bangers con contorno); y el arrastre simulado
+al 25% de la altura dejó MarginV en 480 (esperado 480) con la lectura en pantalla sincronizada.

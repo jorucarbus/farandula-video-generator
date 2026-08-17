@@ -307,12 +307,18 @@
                         <span class="hint">pt</span>
                     </div>
 
-                    <label class="mt-sm">Posición (arrastrá la palabra de ejemplo hacia arriba/abajo):</label>
+                    <label class="mt-sm">Posición (arrastrá dentro del recuadro hacia arriba/abajo) — <strong>MarginV <span id="subs-pos-valor">606</span></strong></label>
                     <div id="subs-preview">
-                        <div id="subs-preview-tiktok-zone">interfaz de TikTok</div>
-                        <div id="subs-preview-word">PALABRA</div>
+                        <canvas id="subs-preview-canvas"></canvas>
                     </div>
-                    <p class="hint">Ejemplo a escala, no es un render real — sirve para ubicar tamaño y posición antes de generar el video (la tipografía exacta solo se ve en el resultado final).</p>
+                    <div class="subs-leyenda">
+                        <span><i style="background:#ff2d55"></i>TikTok</span>
+                        <span><i style="background:#ff4444"></i>YouTube Shorts</span>
+                        <span><i style="background:#4a9eff"></i>Facebook Reels</span>
+                        <span><i class="velo"></i>zona que tapan las apps</span>
+                        <span><i class="corte"></i>se corta en pantallas angostas</span>
+                    </div>
+                    <p class="hint">Dibujado a la resolución real (1080x1920) con la tipografía y el tamaño elegidos, así la posición que ves es la que va a salir. Las líneas punteadas marcan hasta dónde llega la interfaz de cada app — el velo rojo es la unión de las tres, o sea lo que conviene no invadir en ninguna. Medidas de las plantillas oficiales de zona segura 9:16, con un margen de error de ±10px: <strong>cambian entre versiones de cada app y entre modelos de teléfono</strong>, así que son una guía, no una garantía al píxel. Los subtítulos los quema ffmpeg con su propio motor de texto, así que la posición y el tamaño son fieles, pero el trazo exacto de cada letra puede variar un pelo.</p>
                 </div>
 
                 <div class="form-group" id="portada-diseno-group">

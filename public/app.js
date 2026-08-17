@@ -1828,9 +1828,37 @@ async function cargarCanales() {
 // defecto tienen que calzar con TAMANO_DEFAULT/MARGIN_V de subtitulos.js — si se cambian ahí,
 // cambiar acá también.
 const SUBS_PLAYRES_Y = 1920;
+const SUBS_PLAYRES_X = 1080;
+// Mismo ancho útil que ANCHO_UTIL de subtitulos.js (PlayResX menos los márgenes del Style).
+const SUBS_ANCHO_UTIL = SUBS_PLAYRES_X - 60 - 60;
 let subsTamano = 210;
 let subsMarginV = 606;
 let subsFuente = 'bangers';
+
+// Zonas que cada app tapa con su propia interfaz, en píxeles del canvas 1080x1920.
+//
+// Origen (2026-08-16): medidas de las plantillas oficiales de zona segura 9:16 que pasó el
+// usuario (TikTok, Cortos de YouTube y Reels de Facebook), calibrando el marco de cada imagen
+// contra 1080x1920. Reemplazan a la primera tanda de valores, que eran de referencia general.
+//
+// ⚠️ Siguen siendo APROXIMADAS: leídas de una imagen, con ±10px de error de medición, y las
+// plantillas mismas cambian entre versiones de cada app y entre modelos de teléfono (una pantalla
+// con notch alto come más arriba). Sirven para NO poner el subtítulo donde con seguridad hay
+// botones, no como garantía al píxel. Este es el ÚNICO lugar donde viven: para afinarlas, tocar
+// acá y nada más.
+const SUBS_ZONAS_APPS = [
+  { nombre: 'TikTok',          color: '#ff2d55', arriba: 181, abajo: 292, derecha: 174 },
+  { nombre: 'YouTube Shorts',  color: '#ff4444', arriba: 181, abajo: 195, derecha: 169 },
+  { nombre: 'Facebook Reels',  color: '#4a9eff', arriba: 191, abajo: 302, derecha: 164 },
+];
+// Bandas laterales marcadas "SE CORTARÁ" en las tres plantillas (idénticas en las tres): en
+// pantallas más angostas que 9:16 esos bordes se recortan, así que ahí no va nada importante.
+const SUBS_CORTE_LATERAL = 48;
+// La zona realmente segura es la INTERSECCIÓN: hay que respetar el límite más exigente de las
+// tres, no el de una sola.
+const SUBS_LIMITE_ARRIBA = Math.max(...SUBS_ZONAS_APPS.map(z => z.arriba));
+const SUBS_LIMITE_ABAJO = Math.max(...SUBS_ZONAS_APPS.map(z => z.abajo));
+const SUBS_LIMITE_DERECHA = Math.max(...SUBS_ZONAS_APPS.map(z => z.derecha));
 
 // Mapeo clave del catálogo (subtitulos.js) → familia/peso CSS que carga el <link> de Google
 // Fonts en index.html. Es SOLO para que el preview se vea con la tipografía real — el render
@@ -1896,33 +1924,117 @@ async function cargarFuentesEnSelect(selectId) {
     }
 }
 
+// Cuadrícula de referencia: 10 columnas x 10 filas sobre el canvas real. Las líneas de los
+// tercios van más marcadas (regla de composición) que el resto.
+function subsDibujarCuadricula(ctx) {
+    const pasoX = SUBS_PLAYRES_X / 10;
+    const pasoY = SUBS_PLAYRES_Y / 10;
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 10; i++) {
+        const tercioV = i === 3 || i === 7;   // 30% y 70% ~ tercios verticales
+        ctx.strokeStyle = tercioV ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.07)';
+        ctx.beginPath(); ctx.moveTo(i * pasoX, 0); ctx.lineTo(i * pasoX, SUBS_PLAYRES_Y); ctx.stroke();
+        ctx.strokeStyle = tercioV ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.07)';
+        ctx.beginPath(); ctx.moveTo(0, i * pasoY); ctx.lineTo(SUBS_PLAYRES_X, i * pasoY); ctx.stroke();
+    }
+}
+
+// Zonas tapadas por la interfaz de las apps: un velo rojo sobre la UNIÓN (lo que hay que evitar
+// sí o sí) más una línea por app en su propio color, para saber cuál manda cada límite. Las
+// bandas laterales "SE CORTARÁ" van con rayado propio, porque no son UI encima: es recorte, el
+// contenido de ahí directamente no se ve.
+function subsDibujarZonasSeguras(ctx) {
+    ctx.fillStyle = 'rgba(255,60,60,0.16)';
+    ctx.fillRect(0, 0, SUBS_PLAYRES_X, SUBS_LIMITE_ARRIBA);
+    ctx.fillRect(0, SUBS_PLAYRES_Y - SUBS_LIMITE_ABAJO, SUBS_PLAYRES_X, SUBS_LIMITE_ABAJO);
+    ctx.fillRect(SUBS_PLAYRES_X - SUBS_LIMITE_DERECHA, SUBS_LIMITE_ARRIBA,
+                 SUBS_LIMITE_DERECHA, SUBS_PLAYRES_Y - SUBS_LIMITE_ARRIBA - SUBS_LIMITE_ABAJO);
+
+    // Bandas de recorte lateral, a los dos lados.
+    ctx.fillStyle = 'rgba(190,20,90,0.38)';
+    ctx.fillRect(0, 0, SUBS_CORTE_LATERAL, SUBS_PLAYRES_Y);
+    ctx.fillRect(SUBS_PLAYRES_X - SUBS_CORTE_LATERAL, 0, SUBS_CORTE_LATERAL, SUBS_PLAYRES_Y);
+
+    ctx.setLineDash([18, 14]);
+    ctx.lineWidth = 4;
+    for (const z of SUBS_ZONAS_APPS) {
+        ctx.strokeStyle = z.color;
+        ctx.beginPath();
+        ctx.moveTo(0, SUBS_PLAYRES_Y - z.abajo);
+        ctx.lineTo(SUBS_PLAYRES_X - z.derecha, SUBS_PLAYRES_Y - z.abajo);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, z.arriba);
+        ctx.lineTo(SUBS_PLAYRES_X - z.derecha, z.arriba);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(SUBS_PLAYRES_X - z.derecha, z.arriba);
+        ctx.lineTo(SUBS_PLAYRES_X - z.derecha, SUBS_PLAYRES_Y - z.abajo);
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+}
+
+// Pinta el preview completo: cuadrícula + zonas + la palabra de ejemplo en su tamaño y posición
+// REALES sobre 1080x1920 (antes era una aproximación en CSS a 202px de ancho).
+//
+// Ojo, diferencia honesta con el cartel de portada: ese canvas ES el archivo que se superpone,
+// así que previa y resultado son idénticos por construcción. Acá NO — los subtítulos los quema
+// libass desde el .ass, con su propio motor de texto. La geometría (posición, tamaño, márgenes)
+// sí es fiel; el dibujo exacto de cada letra puede variar un pelo respecto del render final.
+function dibujarPreviewSubs(canvas) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = SUBS_PLAYRES_X;
+    canvas.height = SUBS_PLAYRES_Y;
+
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, SUBS_PLAYRES_X, SUBS_PLAYRES_Y);
+    subsDibujarCuadricula(ctx);
+    subsDibujarZonasSeguras(ctx);
+
+    // Mismo resguardo que tamanoSeguro() en subtitulos.js: si la palabra no entra en el ancho
+    // útil, se achica hasta que quepa — igual que pasaría en el render real con una palabra larga.
+    const f = SUBS_FUENTES_CSS[subsFuente] || SUBS_FUENTES_CSS.anton;
+    let tam = subsTamano;
+    ctx.font = `${f.weight} ${tam}px '${f.family}', sans-serif`;
+    const ancho = ctx.measureText('PALABRA').width;
+    if (ancho > SUBS_ANCHO_UTIL) {
+        tam = Math.max(20, Math.floor(tam * (SUBS_ANCHO_UTIL / ancho)));
+        ctx.font = `${f.weight} ${tam}px '${f.family}', sans-serif`;
+    }
+
+    const yTexto = SUBS_PLAYRES_Y - subsMarginV;
+    // Línea de la posición elegida, para leerla contra la cuadrícula sin depender de la palabra.
+    ctx.strokeStyle = 'rgba(247,194,4,0.75)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 10]);
+    ctx.beginPath(); ctx.moveTo(0, yTexto); ctx.lineTo(SUBS_PLAYRES_X, yTexto); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = Math.max(4, tam * 0.06);   // contorno, como el Outline 4 del Style del .ass
+    ctx.strokeText('PALABRA', SUBS_PLAYRES_X / 2, yTexto);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('PALABRA', SUBS_PLAYRES_X / 2, yTexto);
+}
+
 function initSubsPreview() {
     const slider = document.getElementById('subs-tamano');
     const numInput = document.getElementById('subs-tamano-num');
     const preview = document.getElementById('subs-preview');
-    const palabra = document.getElementById('subs-preview-word');
+    const canvas = document.getElementById('subs-preview-canvas');
     const selectFuente = document.getElementById('subs-fuente');
-    if (!slider || !preview || !palabra) return;
+    const lecturaPos = document.getElementById('subs-pos-valor');
+    if (!slider || !preview || !canvas) return;
 
-    const escala = () => preview.clientHeight / SUBS_PLAYRES_Y;
-    const pintarFuente = () => {
-        const f = SUBS_FUENTES_CSS[subsFuente] || SUBS_FUENTES_CSS.anton;
-        palabra.style.fontFamily = `'${f.family}', sans-serif`;
-        palabra.style.fontWeight = f.weight;
+    const repintar = () => {
+        dibujarPreviewSubs(canvas);
+        if (lecturaPos) lecturaPos.textContent = subsMarginV;
     };
-    // Mismo resguardo que tamanoSeguro() en subtitulos.js, pero visual: si "PALABRA" no entra a
-    // ese tamaño en el ancho del mockup, la achica hasta que quepa — es justo lo que pasaría con
-    // una palabra larga en el render real, así el ejemplo no queda cortado contra el borde.
-    const pintarTamano = () => {
-        let px = Math.max(8, subsTamano * escala());
-        palabra.style.fontSize = `${px}px`;
-        const anchoMax = preview.clientWidth * 0.92;
-        if (palabra.scrollWidth > anchoMax) {
-            px = px * (anchoMax / palabra.scrollWidth);
-            palabra.style.fontSize = `${Math.max(6, px)}px`;
-        }
-    };
-    const pintarPosicion = () => { palabra.style.bottom = `${subsMarginV * escala()}px`; };
 
     // Slider y número escriben el MISMO valor — pedido del usuario: poder tipear el tamaño
     // directo en vez de solo arrastrar. Los dos controles se mantienen sincronizados entre sí.
@@ -1931,7 +2043,7 @@ function initSubsPreview() {
         subsTamano = Math.min(360, Math.max(80, Math.round(nuevo)));
         slider.value = subsTamano;
         if (numInput) numInput.value = subsTamano;
-        pintarTamano();
+        repintar();
     };
 
     slider.addEventListener('input', () => fijarTamano(Number(slider.value)));
@@ -1942,31 +2054,33 @@ function initSubsPreview() {
     // Al salir del campo, normaliza (recorta al rango 80-360 si quedó vacío o fuera de rango).
     numInput?.addEventListener('blur', () => fijarTamano(subsTamano));
 
-    selectFuente?.addEventListener('change', () => {
+    selectFuente?.addEventListener('change', async () => {
         subsFuente = selectFuente.value;
-        pintarFuente();
-        pintarTamano(); // la fuente nueva puede medir distinto, re-chequea que "PALABRA" entre
+        await asegurarFuenteCargada(subsFuente); // sin esto el canvas mide con una letra de reemplazo
+        repintar();
     });
 
+    // Arrastrar en CUALQUIER punto del preview (antes solo agarraba la palabra, que a este tamaño
+    // es un blanco chico y difícil de pegarle).
     let arrastrando = false;
     const moverA = (clientY) => {
         const rect = preview.getBoundingClientRect();
         const desdeAbajoPx = Math.max(0, Math.min(rect.height, rect.bottom - clientY));
         subsMarginV = Math.round((desdeAbajoPx / rect.height) * SUBS_PLAYRES_Y);
-        pintarPosicion();
+        repintar();
     };
-    palabra.addEventListener('pointerdown', e => {
+    preview.addEventListener('pointerdown', e => {
         arrastrando = true;
-        palabra.setPointerCapture(e.pointerId);
+        preview.setPointerCapture(e.pointerId);
+        moverA(e.clientY);
     });
-    palabra.addEventListener('pointermove', e => { if (arrastrando) moverA(e.clientY); });
-    palabra.addEventListener('pointerup', () => { arrastrando = false; });
-    palabra.addEventListener('pointercancel', () => { arrastrando = false; });
+    preview.addEventListener('pointermove', e => { if (arrastrando) moverA(e.clientY); });
+    preview.addEventListener('pointerup', () => { arrastrando = false; });
+    preview.addEventListener('pointercancel', () => { arrastrando = false; });
 
-    pintarFuente();
     if (numInput) numInput.value = subsTamano;
-    pintarTamano();
-    pintarPosicion();
+    asegurarFuenteCargada(subsFuente).then(repintar);
+    repintar();
 }
 
 function aplicarIconos() {
