@@ -1086,3 +1086,33 @@ desde Drive). Subtítulos no se evaluaron para portar: necesitan timing por pala
 alineación de ElevenLabs, que family no tiene. Detalle completo, verificación end-to-end y
 pendientes reales en `farandula-video-family/.claude/CLAUDE.md` (archivo nuevo, ese repo no tenía
 bitácora propia hasta ahora).
+
+**Cierre 2026-08-16 (Mac) — supersede el cierre del 2026-08-14**
+
+Revisado lo que entró de Windows (`5e09c19` offset-clamp, `cc66671` portado a family). Estado y
+pendientes actualizados:
+
+- La **música a -20dB** ya está mergeada (`1d6efdd`) y desplegada en staging. Sigue **sin
+  escucharse en un video real** — es lo único de esa tanda que falta, y es a oído: la medición
+  ya está hecha (17.1 dB de separación contra una locución real de -18.1 LUFS).
+- El cierre del 14 listaba "desplegar `farandula-video-family`" como pendiente #2. Sigue
+  pendiente, pero ahora ese repo tiene mucho más adentro (transiciones, zoom ease-out,
+  offset-clamp, cartel de portada). Su bitácora propia está en
+  `farandula-video-family/.claude/CLAUDE.md`.
+
+⚠️ **Riesgo nuevo que conviene tener a la vista: código duplicado entre los dos repos.** El fix de
+offset-clamp, las transiciones, el zoom ease-out y el cartel viven ahora en `video.js`/`portada.js`
+de LOS DOS repos, copiados a mano. Es exactamente la forma del bug que costó esta semana: la
+geometría del cartel estaba escrita dos veces y se desincronizó en silencio hasta que el usuario
+notó que la previa mentía. Acá el riesgo es el mismo — el próximo fix en uno no llega al otro, y
+nadie se entera hasta que falla en producción. No hay que resolverlo ya (family ni siquiera está
+desplegado), pero **cada arreglo en `video.js` de este repo debería preguntarse si también va a
+family**, y si la lista de duplicados sigue creciendo, vale la pena evaluar extraer lo compartido.
+
+**Pendientes reales, en orden de peso** (sin cambios de fondo desde el 14):
+1. **Merge `test-persistencia` → `main`.** Producción sigue sin nada: Fases 1-8, portada,
+   yt-dlp/TikTok, música -20dB, y ahora también el offset-clamp — que es un fix de un crash REAL
+   de producción. La brecha lleva abierta desde el 25 de julio y ya acumula un arreglo urgente.
+2. Desplegar `farandula-video-family` a Railway.
+3. `decidirEfecto('intercalado', i)`: espejo en TODOS los clips en vez de alternar (preexistente).
+4. `getAngleName()` en `gemini.js`: código muerto, mapea 1-6 con 7 ángulos existentes.
