@@ -1058,3 +1058,31 @@ separación contra una locución real).
 **Recordatorio operativo**: tras cada deploy, recargar la pestaña con Cmd/Ctrl + Shift + R. Si no,
 el server responde 400 pidiéndolo (guarda agregada en `0d883e8` justamente porque este error costó
 una sesión entera de diagnóstico).
+
+### 2026-08-16 (Windows) — Fix real de producción (offset-clamp en xfade) + portado masivo a `farandula-video-family`
+
+**Fix de producción, este repo**: el usuario mandó un screenshot con "Generando video..." pegado
+en 70% y `Output file does not contain any stream`. Root-caused con `railway logs` + reproducción
+local: `seleccion.js` planifica el offset de cada clip contra `v.duracion` (metadata de Drive),
+pero esa metadata a veces viene `undefined` — si offset+duración se pasa del final real del
+archivo, `-ss`+`-t` de ffmpeg corta en SILENCIO un segmento más corto de lo pedido (sin error,
+exit 0), y ese segmento roto tira abajo el filtro `xfade` (`matches no streams`) Y su fallback de
+concat plano. Fix en `video.js` (`montarVideoPlan`): re-verificar offset+duración contra la
+duración REAL del archivo ya descargado (ffprobe, cacheado por ruta) antes de cortar, corriendo
+el offset hacia atrás si no cabe — nunca se acorta la duración pedida, solo cambia DE DÓNDE del
+video sale. De paso, el wrapper `ffmpeg()` solo guardaba los últimos 500 caracteres de stderr
+(cortaba el error real de un filter_complex largo) — subido a 4000. Verificado local reproduciendo
+el caso exacto; pusheado a `test-persistencia` (`1d6efdd`, mergeado con música a -20dB de la Mac
+sin conflictos) y confirmado en Railway con el mismo job que había fallado.
+
+**Portado masivo a `farandula-video-family`** (mismo día, pedido explícito del usuario con
+permiso abierto para las siguientes horas): ese repo estaba congelado en el estado PRE-Fase 7.
+Se portaron transiciones xfade+TANDA, zoom ease-out, EL FIX DE OFFSET-CLAMP DE ARRIBA (mismo bug,
+mismo día), y el cartel de portada completo (canvas→PNG, adaptado sin Drive-write). Música de
+fondo se evaluó y quedó BLOQUEADA: el Service Account de Drive no tiene acceso a `Musica/` (solo
+compartido con la cuenta OAuth), y compartir la carpeta con el Service Account vía API quedó
+bloqueado por el clasificador de permisos del entorno (requiere que el usuario lo haga a mano
+desde Drive). Subtítulos no se evaluaron para portar: necesitan timing por palabra que sale de la
+alineación de ElevenLabs, que family no tiene. Detalle completo, verificación end-to-end y
+pendientes reales en `farandula-video-family/.claude/CLAUDE.md` (archivo nuevo, ese repo no tenía
+bitácora propia hasta ahora).
