@@ -1255,3 +1255,39 @@ versión vieja — sin `duracionesReales`/`clipMax` en `planificarClips()` ni `t
 efecto real (JS ignora argumentos de más en vez de fallar). Si `seleccion.js` cambia acá de nuevo,
 vale la pena confirmar que family lo siga de cerca — es el ejemplo concreto del riesgo que ya
 estaba anotado, no uno nuevo.
+
+### 2026-08-18 (Windows) — Fix real de producción: `subirVideo()` tumbaba el servidor entero
+
+Reportado por el usuario con un screenshot en vivo: "Generando video..." pegado en 70%, dos
+`Error: HTTP 502` seguidos. NO era el timeout de gateway ya conocido — `railway logs` mostró un
+crash real del proceso (`node:events... throw er; // Unhandled 'error' event`).
+
+**Causa**: `drive.js: subirVideo()` crea el stream de subida con `fs.createReadStream(localPath)`.
+Si el archivo ya no existe (visto real: `portada_<token>.jpg`, borrado por la política de
+"conservar solo las 3 portadas más recientes" o por el TTL de `limpiarCache()`), el stream no
+lanza al crearse — emite el ENOENT como evento `'error'` ASÍNCRONO recién al intentar abrir el
+archivo, y `googleapis` no le pone listener a un stream que el llamador le pasa. Un `'error'` sin
+listener en Node tira TODO el proceso, no solo el request — de ahí los dos 502 seguidos (el
+contenedor se reinició dos veces, cortando a cualquiera con un request en vuelo, no solo al que
+disparó el bug). El try/catch que ya rodeaba las 4 llamadas a `subirVideo()` (video final,
+portada, insumos, locución) nunca llegaba a correr: un throw asíncrono sin listener no es lo
+mismo que una promesa rechazada.
+
+**Fix**: engancharle un listener de error al stream ANTES de dárselo a `googleapis`, corriendo la
+subida en carrera contra ese error — un stream roto ahora rechaza la promesa (el try/catch de
+cada llamador sí lo atrapa) en vez de crashear el proceso. Un solo cambio adentro de `subirVideo()`
+arregla los 4 call sites a la vez, sin tocarlos.
+
+**Verificado**: reproducido local el crash EXACTO (misma firma, byte por byte, que el log de
+Railway) con un cliente de Drive falso que nunca resuelve, para aislar la carrera contra el error
+del stream sin llamar a la API real. Con el fix, el mismo escenario rechaza limpio como promesa y
+el proceso sigue vivo (confirmado esperando 2s después sin caerse). Commit `85c0ece`, pusheado a
+`test-persistencia`, Railway redeployando.
+
+**De paso, encontrado pero NO arreglado** (no crashea, solo deja de limpiar): el mismo log mostró
+`🛑 Limpieza de insumos ABORTADA: la raíz de insumos es la misma carpeta que
+GOOGLE_DRIVE_RENDERS_FOLDER_ID` — la guarda de seguridad de `limpiezaInsumos.js` está funcionando
+como debe (aborta en vez de borrar algo que no debía), pero indica que
+`GOOGLE_DRIVE_INSUMOS_FOLDER_ID` en el `.env` de este servicio de Railway probablemente esté mal
+puesto (igual al de renders). Revisar las variables de entorno del servicio `adventurous-reflection`
+en Railway.
