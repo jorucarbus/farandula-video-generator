@@ -176,20 +176,40 @@ async function descargarVideo(fileId, destDir) {
 
 // Subir un archivo a la carpeta de destino. Usa OAuth (cuenta del usuario) si está
 // configurado — los Service Accounts no tienen cuota en Drive personal.
+//
+// Crash real de producción (2026-08-18, encontrado por un screenshot del usuario con 502
+// repetidos): si `localPath` ya no existe cuando esto corre (ej. la portada se generó pero el
+// archivo se limpió — por TTL o por la política de "conservar solo las 3 más recientes" del Map
+// en server.js — antes de que esta subida lo leyera), `fs.createReadStream` no lanza: crea el
+// stream igual y emite el ENOENT como evento 'error' ASÍNCRONO cuando intenta abrir el archivo.
+// `googleapis` no le pone un listener de error a un stream que el LLAMADOR le pasa, así que ese
+// evento queda sin nadie escuchando — y un 'error' sin listener en Node no se ignora: tira todo
+// el proceso abajo. No solo rompía ESTE request: tumbaba el servidor entero, cortando a todos los
+// usuarios con requests en vuelo (los 502 seguidos que vio el usuario son exactamente el
+// contenedor reiniciándose dos veces). El try/catch que ya rodea esta llamada en server.js nunca
+// llegaba a ejecutarse: un throw asíncrono sin listener no es lo mismo que una promesa rechazada.
+// Fix: engancharle un listener de error al stream ANTES de dárselo a googleapis, y correr la
+// subida contra ESE error en carrera — así un stream roto rechaza la promesa (el try/catch de
+// quien llama sí lo atrapa) en vez de crashear el proceso.
 async function subirVideo(localPath, fileName, destFolderId, mimeType = 'video/mp4') {
   const cliente = getDriveOAuth() || getDrive();
-  const res = await cliente.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [destFolderId],
-    },
-    media: {
-      mimeType,
-      body: fs.createReadStream(localPath),
-    },
-    fields: 'id, name, webViewLink',
-    supportsAllDrives: true,
-  });
+  const stream = fs.createReadStream(localPath);
+  const errorDeStream = new Promise((_, reject) => stream.once('error', reject));
+  const res = await Promise.race([
+    cliente.files.create({
+      requestBody: {
+        name: fileName,
+        parents: [destFolderId],
+      },
+      media: {
+        mimeType,
+        body: stream,
+      },
+      fields: 'id, name, webViewLink',
+      supportsAllDrives: true,
+    }),
+    errorDeStream,
+  ]);
   return res.data;
 }
 
