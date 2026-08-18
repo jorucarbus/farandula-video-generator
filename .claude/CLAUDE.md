@@ -1291,3 +1291,43 @@ como debe (aborta en vez de borrar algo que no debía), pero indica que
 `GOOGLE_DRIVE_INSUMOS_FOLDER_ID` en el `.env` de este servicio de Railway probablemente esté mal
 puesto (igual al de renders). Revisar las variables de entorno del servicio `adventurous-reflection`
 en Railway.
+
+### 2026-08-18 (Windows) — Investigado: subtítulos "a destiempo" — NO es código, es Gemini saturado
+
+El usuario reportó, sobre un video real recién generado: "se dañaron los subtítulos... sale a
+destiempo... como si de repente no importara la puntuación, sale de corrido, no toma pausas, la
+voz se adelanta o se atrasa". Preguntó explícitamente si algo de lo tocado hoy (fix de
+offset-clamp, fix del crash de `subirVideo`) rompió esto.
+
+**Confirmado que NO**: ni `tiempos.js`, ni `elevenlabs.js`, ni la parte de subtítulos/marcas de
+`gemini.js` se tocaron hoy ni ayer — el último cambio real en esa zona es del 8 de agosto (Fase 5).
+Lo único de ayer/hoy en subtítulos fueron los DEFAULTS visuales (Bangers/210pt/606, commit
+`ecc6864` de la Mac), que no tocan el cálculo de tiempos.
+
+**Diagnóstico con datos reales**: se ubicó el job real vía `GET /api/jobs/:jobId` contra el
+servidor de Railway (ojo: el `job_<timestamp>` que aparece en los logs de ffmpeg es el `renderId`
+efímero, NO el `jobId` persistente — el real es el UUID que aparece antes, ej. en la línea
+`♻️ Audio recuperado desde Drive: <uuid>`). El log de ESE render nunca imprime
+`⏱️ Usando tiempos reales de la locución` — confirma que cayó al reparto estimado por % de
+caracteres en vez de la alineación real de ElevenLabs (exactamente lo que describe el usuario: sin
+timing real no hay pausas de puntuación de verdad).
+
+**Por qué cae la alineación**: `agregarMarcas()` (Gemini) corre justo ANTES de mandarle el texto a
+ElevenLabs; si el texto que vuelve no calza carácter por carácter con el original, el matching
+estricto de `tiempos.alinearFragmentos()` aborta y cae al estimado (Regla de robustez: nunca
+rompe el render, solo degrada el timing). Se intentó reproducir LOCAL con el guion real de ese job
+(vía script en el scratchpad, `agregarMarcas` + `generarConTiempos` + `alinearFragmentos` reales)
+3 veces seguidas — las 3 Gemini devolvió `503 UNAVAILABLE: This model is currently experiencing
+high demand` en TODA la cadena de modelos, confirmado también con un `curl` directo a la API
+(no es un problema del código ni de la key: la MISMA key respondió bien a una llamada simple
+minutos después). `503` es la señal de Google de "mi infraestructura está saturada", distinto de
+un `429` de cuota propia — así que no parece ser "se acabó el límite de la cuenta", sino Gemini
+mismo teniendo un mal momento del lado de Google.
+
+**Conclusión**: no hay fix de código que hacer acá — es un fallback existente (desde Fase 5,
+nunca tocado) disparado por inestabilidad externa de Gemini, agravada probablemente por el
+volumen alto de llamadas de hoy (las pruebas de esta sesión + tráfico real del usuario, misma key
+compartida). Debería autoresolverse cuando baje la demanda en Gemini. **Sin verificar**: no se
+pudo confirmar el camino feliz (alineación exitosa) hoy porque Gemini no dejó de saturarse durante
+toda la investigación — pendiente reintentar cuando el usuario note que Gemini responde normal, y
+confirmar que un video nuevo sí trae `⏱️ Usando tiempos reales` en el log.
