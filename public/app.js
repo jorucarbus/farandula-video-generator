@@ -56,8 +56,9 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [] };
     renderFuentesLista();
+    renderMaterialesLista();
     sessionStorage.removeItem('farandula_job_id');
 
     document.getElementById('lectura-section').classList.add('hidden');
@@ -122,6 +123,8 @@ let state = {
     sesgo: 'neutral',
     avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
     previewToken: null, // token del preview del último video renderizado, para /api/portada
+    materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
+    materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
 };
 const MAX_FUENTES = 6;
 
@@ -360,6 +363,75 @@ function renderFuentesLista() {
     }
 }
 
+// Material adicional por fragmento (cita/foto/video de apoyo) — Paso 1, opcional e independiente
+// de las fuentes de texto. Antes de tener jobId los archivos quedan en cola
+// (state.materialesPendientes, mismo patrón que state.fuentes antes de "Procesar fuentes") y se
+// suben apenas el primer /api/read devuelve un jobId (flushMaterialesPendientes).
+function handleMaterialFile(tipo, fileList) {
+    const archivos = [...fileList];
+    if (!archivos.length) return;
+    if (!state.jobId) {
+        archivos.forEach(file => state.materialesPendientes.push({ tipo, file }));
+        log(`📎 ${archivos.length} archivo(s) de "${tipo}" en cola — se suben apenas se cree el proceso`);
+        renderMaterialesLista();
+    } else {
+        archivos.forEach(file => subirMaterial(tipo, file));
+    }
+}
+
+function flushMaterialesPendientes() {
+    if (!state.materialesPendientes.length) return;
+    const pendientes = state.materialesPendientes;
+    state.materialesPendientes = [];
+    pendientes.forEach(p => subirMaterial(p.tipo, p.file));
+}
+
+// Upload real — multipart, no puede pasar por apiCall() (siempre manda JSON.stringify). El
+// Content-Type con boundary lo pone el navegador solo si no se lo seteamos a mano.
+async function subirMaterial(tipo, file) {
+    const endpoint = { entrevista: '/materiales/entrevista', foto: '/materiales/foto', video: '/materiales/video' }[tipo];
+    const form = new FormData();
+    form.append('jobId', state.jobId);
+    form.append('archivo', file);
+    log(`⬆️ Subiendo ${tipo}: ${file.name}...`);
+    try {
+        const response = await fetch(`${apiBase()}/api${endpoint}`, { method: 'POST', headers: { 'x-api-key': API_KEY }, body: form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        state.materialesAdicionales.push({
+            id: result.materialId, tipo: result.tipo, tieneVideo: result.tieneVideo || false,
+            descripcion: null, citas: result.citas || [],
+        });
+        log(result.tipo === 'entrevista'
+            ? `✅ Entrevista subida (${(result.citas || []).length} cita(s) detectada(s)): ${file.name}`
+            : `✅ ${result.tipo === 'foto' ? 'Foto' : 'Video'} de apoyo subido: ${file.name}`);
+        renderMaterialesLista();
+    } catch (e) {
+        log(`❌ Error subiendo ${tipo} (${file.name}): ${e.message}`);
+    }
+}
+
+async function eliminarMaterial(materialId) {
+    if (state.jobId) {
+        try {
+            await fetch(`${apiBase()}/api/materiales/${state.jobId}/${materialId}`, { method: 'DELETE', headers: { 'x-api-key': API_KEY } });
+        } catch { /* si falla el borrado en server, igual lo sacamos de la UI */ }
+    }
+    state.materialesAdicionales = state.materialesAdicionales.filter(m => m.id !== materialId);
+    renderMaterialesLista();
+}
+
+function renderMaterialesLista() {
+    const ul = document.getElementById('materiales-lista');
+    if (!ul) return;
+    const subidos = state.materialesAdicionales.map(m => {
+        const etiqueta = m.tipo === 'entrevista' ? `🎙️ Entrevista (${(m.citas || []).length} cita(s))` : m.tipo === 'foto' ? '🖼️ Foto de apoyo' : '🎬 Video de apoyo';
+        return `<li>${etiqueta} <button type="button" class="btn-link" onclick="eliminarMaterial('${m.id}')">quitar</button></li>`;
+    });
+    const pendientes = state.materialesPendientes.map(p => `<li>⏳ ${p.file.name} (en cola)</li>`);
+    ul.innerHTML = [...subidos, ...pendientes].join('');
+}
+
 // Lectura reutilizable: sin jobId crea el video (requiere canal) y SIEMPRE sintetiza (el server
 // lo obliga: hace falta la crónica para nombrar la carpeta de insumos). Con jobId, solo AGREGA
 // la fuente nueva al job — no sintetiza ni avanza de paso; para eso está procesarFuentes().
@@ -396,6 +468,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
         if (result.jobId) {
             state.jobId = result.jobId;
             sessionStorage.setItem('farandula_job_id', result.jobId);
+            flushMaterialesPendientes();
         }
         updateProgress(30);
         renderFuentesLista();
@@ -585,6 +658,7 @@ async function aprobarGuion() {
         state.fragments = result[cfg().parrafosKey];
         state.carpetas = result.carpetas;
         state.avisoReconstruccion = result.avisoReconstruccion || null;
+        state.materialesAdicionales = result.materialesDisponibles || [];
         renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
         hideProgress();
@@ -621,6 +695,7 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
 
     const lista = document.getElementById('lista-asignaciones');
     lista.innerHTML = '';
+    const itemsMaterial = aplanarMaterialesCliente(state.materialesAdicionales);
     state.fragments.forEach((f, i) => {
         const div = document.createElement('div');
         div.className = 'asignacion-row';
@@ -637,8 +712,83 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
         sel.onchange = () => { state.fragments[i].famoso = sel.value; };
         div.appendChild(p);
         div.appendChild(sel);
+
+        // Material adicional (cita/foto/video de apoyo): sugerencia automática, editable acá —
+        // mismo lugar donde ya se corrige "famoso" a mano.
+        if (itemsMaterial.length) {
+            const selMat = document.createElement('select');
+            selMat.className = 'asignacion-material';
+            selMat.appendChild(new Option('— Sin material adicional —', ''));
+            itemsMaterial.forEach(it => selMat.appendChild(new Option(etiquetaMaterial(it), it.id)));
+            const actual = f.materialAdicional;
+            if (actual) selMat.value = actual.citaId ? `${actual.materialId}:${actual.citaId}` : actual.materialId;
+
+            const inputsCita = document.createElement('span');
+            inputsCita.className = 'asignacion-cita-tiempos hidden';
+            const inIni = document.createElement('input');
+            inIni.type = 'number'; inIni.step = '0.1'; inIni.className = 'input-cita-tiempo';
+            inIni.title = 'Inicio de la cita (segundos)';
+            const inFin = document.createElement('input');
+            inFin.type = 'number'; inFin.step = '0.1'; inFin.className = 'input-cita-tiempo';
+            inFin.title = 'Fin de la cita (segundos)';
+            inputsCita.append('Cita: ', inIni, ' – ', inFin, 's');
+
+            // Al elegir una cita, prellenar con lo que Gemini detectó en la entrevista
+            // (item.inicioAprox/finAprox) — SALVO que esta selección sea la ya guardada del
+            // fragmento (render inicial o vuelta atrás), en cuyo caso se respeta lo que el
+            // usuario ya haya ajustado a mano (actual.inicio/fin).
+            const sincronizarCita = () => {
+                const item = itemsMaterial.find(it => it.id === selMat.value);
+                const esCita = item?.tipo === 'cita';
+                inputsCita.classList.toggle('hidden', !esCita);
+                if (!esCita) return;
+                const esLaGuardada = actual && selMat.value === (actual.citaId ? `${actual.materialId}:${actual.citaId}` : actual.materialId);
+                inIni.value = (esLaGuardada && actual.inicio != null) ? actual.inicio : (item.inicioAprox ?? '');
+                inFin.value = (esLaGuardada && actual.fin != null) ? actual.fin : (item.finAprox ?? '');
+            };
+            sincronizarCita();
+
+            const aplicarSeleccion = () => {
+                const item = itemsMaterial.find(it => it.id === selMat.value);
+                if (!item) { state.fragments[i].materialAdicional = null; }
+                else {
+                    state.fragments[i].materialAdicional = {
+                        materialId: item.materialId, tipo: item.tipo, citaId: item.citaId || undefined,
+                        ...(item.tipo === 'cita' ? { inicio: parseFloat(inIni.value) || 0, fin: parseFloat(inFin.value) || 0 } : {}),
+                    };
+                }
+            };
+            selMat.onchange = () => { sincronizarCita(); aplicarSeleccion(); };
+            inIni.onchange = aplicarSeleccion;
+            inFin.onchange = aplicarSeleccion;
+            if (actual) aplicarSeleccion();
+
+            div.appendChild(selMat);
+            div.appendChild(inputsCita);
+        }
+
         lista.appendChild(div);
     });
+}
+
+// Espejo en JS de gemini.aplanarMateriales() (server) — cada cita de cada entrevista es su
+// propio ítem asignable, igual que cada foto/video. Mismo criterio de `id` (materialId, o
+// materialId:citaId) para que la selección viaje idéntica al server.
+function aplanarMaterialesCliente(materialesAdicionales) {
+    const items = [];
+    for (const m of materialesAdicionales || []) {
+        if (m.tipo === 'entrevista') {
+            (m.citas || []).forEach(c => items.push({ id: `${m.id}:${c.citaId}`, materialId: m.id, citaId: c.citaId, tipo: 'cita', texto: c.texto, inicioAprox: c.inicioAprox, finAprox: c.finAprox }));
+        } else {
+            items.push({ id: m.id, materialId: m.id, tipo: m.tipo, texto: m.descripcion || null });
+        }
+    }
+    return items;
+}
+function etiquetaMaterial(item) {
+    if (item.tipo === 'cita') return `🎙️ Cita: "${(item.texto || '').slice(0, 40)}${(item.texto || '').length > 40 ? '…' : ''}"`;
+    if (item.tipo === 'foto') return `🖼️ Foto de apoyo${item.texto ? ': ' + item.texto : ''}`;
+    return `🎬 Video de apoyo${item.texto ? ': ' + item.texto : ''}`;
 }
 
 // Trae la lista de carpetas viva desde Drive y repinta los desplegables del Paso 4.
@@ -1717,6 +1867,8 @@ async function recuperarJobPendiente() {
     // guardados antes de esa fase — se adapta al formato nuevo para no romper la recuperación.
     state.fuentes = job.fuentes || (job.fuente ? [job.fuente] : []);
     state.sesgo = job.sesgo || job.fuente?.sesgo || 'neutral';
+    state.materialesAdicionales = job.materialesAdicionales || [];
+    renderMaterialesLista();
     const primerLink = state.fuentes.find(f => f.type === 'link');
     state.sourceData = {
         cronica: job.cronica, titulo: job.titulo, descripcion: job.descripcion,

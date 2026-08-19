@@ -113,6 +113,19 @@
                         <span class="icon-slot" data-icon="checkCircle"></span> Ya, procesar fuentes
                     </button>
                 </div>
+
+                <div class="form-group" id="materiales-wrap">
+                    <p class="hint mt-sm"><strong>Material adicional (opcional):</strong> una cita con audio real, o una foto/video que ilustre un tema puntual del guion — el sistema sugiere solo en qué fragmento va cada uno, editable en el Paso 4.</p>
+                    <div class="btn-row">
+                        <button type="button" class="btn btn-secondary" id="btn-add-entrevista" onclick="document.getElementById('input-entrevista').click()">+ Cita de entrevista</button>
+                        <button type="button" class="btn btn-secondary" id="btn-add-foto" onclick="document.getElementById('input-foto').click()">+ Foto de apoyo</button>
+                        <button type="button" class="btn btn-secondary" id="btn-add-video-apoyo" onclick="document.getElementById('input-video-apoyo').click()">+ Video de apoyo</button>
+                    </div>
+                    <input type="file" id="input-entrevista" accept="audio/*,video/*" class="hidden" multiple onchange="handleMaterialFile('entrevista', this.files)">
+                    <input type="file" id="input-foto" accept="image/jpeg,image/png,image/webp" class="hidden" multiple onchange="handleMaterialFile('foto', this.files)">
+                    <input type="file" id="input-video-apoyo" accept="video/*" class="hidden" multiple onchange="handleMaterialFile('video', this.files)">
+                    <ul id="materiales-lista"></ul>
+                </div>
             </div>
 
             <div class="form-section" id="script-section" data-status="locked">

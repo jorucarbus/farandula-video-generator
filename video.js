@@ -338,11 +338,16 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     const necesita = clip.duracion + padding;
 
     let offsetEfectivo = clip.offset;
-    const durReal = await duracionRealCacheada(archivos[clip.videoId]);
-    if (durReal && offsetEfectivo + necesita > durReal) {
-      const offsetClamp = Math.max(0, durReal - necesita);
-      console.warn(`  ⚠️ Clip ${i}: offset ${offsetEfectivo.toFixed(2)}s + ${necesita.toFixed(2)}s se pasa de la duración real (${durReal.toFixed(2)}s) — corrigiendo offset a ${offsetClamp.toFixed(2)}s`);
-      offsetEfectivo = offsetClamp;
+    // Material adicional, foto de apoyo: es una imagen estática, no tiene "offset" ni duración
+    // real que clamear (obtenerDuracion() sobre un .jpg/.png da NaN/error) — se salta el clamp,
+    // se loopea con -loop 1 más abajo.
+    if (!clip.esImagen) {
+      const durReal = await duracionRealCacheada(archivos[clip.videoId]);
+      if (durReal && offsetEfectivo + necesita > durReal) {
+        const offsetClamp = Math.max(0, durReal - necesita);
+        console.warn(`  ⚠️ Clip ${i}: offset ${offsetEfectivo.toFixed(2)}s + ${necesita.toFixed(2)}s se pasa de la duración real (${durReal.toFixed(2)}s) — corrigiendo offset a ${offsetClamp.toFixed(2)}s`);
+        offsetEfectivo = offsetClamp;
+      }
     }
 
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
@@ -352,15 +357,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion));
     if (decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
 
-    const argsSegmento = (vf) => [
-      '-ss', offsetEfectivo.toFixed(2),
-      '-i', archivos[clip.videoId],
-      '-t', necesita.toFixed(3),
-      '-vf', vf,
-      '-an',
-      ...enc,
-      segPath,
-    ];
+    const argsSegmento = (vf) => clip.esImagen
+      ? ['-loop', '1', '-i', archivos[clip.videoId], '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath]
+      : ['-ss', offsetEfectivo.toFixed(2), '-i', archivos[clip.videoId], '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath];
 
     try {
       await ffmpeg(argsSegmento(filtros.join(',')));

@@ -284,7 +284,43 @@ function elegirPista(clave, pistas) {
   return elegida;
 }
 
+// Material adicional por fragmento (cita/foto/video de apoyo): corre DESPUÉS de
+// planificarClips(), nunca antes — así cada fragmento con material ya tiene, por construcción,
+// un clip de "famoso" válido calculado normalmente (offset/duración/CLIP_MAX ya resueltos) que
+// sirve de fallback automático si el material se descarta más tarde por cualquier motivo.
+//
+// materialesPorFragmento: Map<parrafoIdx, { archivoId, archivoPath, nombre, tipo, esImagen,
+//   offsetInicio }>. Solo reescribe videoId/offset/nombre de las entradas del plan cuyo
+//   parrafoIdx tiene material asignado — el resto del plan (famoso, duración, CLIP_MAX, padding
+//   de transición) queda intacto.
+//
+// Trade-off aceptado para MVP: el clip de "famoso" que se hubiera usado para ese fragmento ya
+// quedó marcado como consumido en historial.json (rotación) dentro de planificarClips(), aunque
+// termine sustituido y no se vea — ese famoso rota levemente más rápido de lo necesario. No
+// rompe nada, es desperdicio menor; se deja fuera del MVP optimizarlo.
+function insertarMaterialesEnPlan(plan, materialesPorFragmento) {
+  if (!materialesPorFragmento || materialesPorFragmento.size === 0) return plan;
+  const consumo = {}; // archivoId -> segundos ya usados en ESTE render (offset continuo si hay >1 sub-clip del mismo material)
+  return plan.map(clip => {
+    if (!clip) return clip;
+    const material = materialesPorFragmento.get(clip.parrafoIdx);
+    if (!material) return clip;
+    const usados = consumo[material.archivoId] || 0;
+    const offset = material.esImagen ? 0 : (material.offsetInicio || 0) + usados;
+    consumo[material.archivoId] = usados + clip.duracion;
+    return {
+      ...clip,
+      videoId: material.archivoId,
+      nombre: material.nombre,
+      offset: Math.round(offset * 100) / 100,
+      materialTipo: material.tipo,
+      esImagen: Boolean(material.esImagen),
+    };
+  });
+}
+
 module.exports = {
   planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL,
   emparejarCarpetaTono, elegirPista,
+  insertarMaterialesEnPlan,
 };

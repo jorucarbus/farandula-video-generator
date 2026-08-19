@@ -1,5 +1,75 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-19 (Windows) — Material adicional por fragmento: cita con audio real / foto / video de apoyo
+
+Feature nueva pedida por el usuario, implementada en `test-persistencia` (plan completo en
+`C:\Users\jorucarbus\.claude\plans\piped-cooking-barto.md`, aprobado en plan mode). Permite
+adjuntar al inicio del flujo (Paso 1), de forma opcional e independiente entre sí:
+
+1. **Entrevista → cita con audio real**: sube audio/video, Gemini detecta 1-4 citas textuales
+   con inicio/fin aproximados; en el fragmento donde corresponde, se reemplaza la voz sintética
+   de ElevenLabs por el audio ORIGINAL de la persona (con su propio video si lo trae).
+2. **Foto de apoyo** / 3. **Video de apoyo**: se insertan en el fragmento que corresponde
+   temáticamente, mismo tratamiento de `CLIP_MAX`/zoom/espejo que cualquier clip.
+
+La ubicación (a qué fragmento va cada material) la sugiere Gemini automáticamente
+(`gemini.asignarMateriales`, mismo patrón que `fragmentarPorGuion`) y es editable a mano en el
+Paso 4 — mismo lugar donde ya se corrige "famoso" por fragmento.
+
+**Archivos**: `materiales.js` (nuevo — 3 uploaders `multer`, primer uso real de esa dependencia,
+estaba en `package.json` desde el commit inicial sin conectar); `gemini.js` (`parteMultimodal`
+separado de `armarUserParts`, `sourceType:'imagen'`, `detectarCitas`, `aplanarMateriales`,
+`asignarMateriales`); `tiempos.js` (`empalmarCitasReales` — la pieza más invasiva: empalma en
+SERIE el audio real dentro del sintético con un solo `ffmpeg -filter_complex concat`, y propaga
+el delta de duración a los timestamps de palabra de los fragmentos posteriores); `seleccion.js`
+(`insertarMaterialesEnPlan`, corre DESPUÉS de `planificarClips` para que cada fragmento con
+material ya tenga un clip de famoso de fallback); `video.js` (`clip.esImagen` en
+`montarVideoPlan` → `-loop 1` en vez de `-ss offset`); `server.js` (endpoints
+`/api/materiales/*`, wiring en `/api/fragment` y `/api/generate-video`, fix de paso: `limpiarCache()`
+no limpiaba `materiales/<jobId>/` porque `fs.unlinkSync` sobre una carpeta tira `EISDIR`
+silencioso — ahora usa `fs.rmSync` recursivo con TTL de 6h); `public/index.html`/`app.js`/`style.css`
+(Paso 1: 3 botones + inputs file + cola de subida antes de tener `jobId`; Paso 4: select de
+material + inputs de inicio/fin editables por fragmento, con un bug real encontrado y corregido
+en la verificación: al elegir una cita por primera vez los segundos quedaban en 0/0 en vez de
+prellenar con lo que Gemini detectó).
+
+**Regla de robustez aplicada en cada capa nueva** (ninguna aborta el render): upload rechazado →
+400 claro; `detectarCitas`/`asignarMateriales` fallan → sin sugerencias, asignación manual;
+archivo del material ya no existe al renderizar (ej. redeploy entre upload y render) → se ignora
+ese fragmento; empalme de audio individual no calza (clamp <0.3s) → se descarta ESE, los demás
+siguen; `empalmarCitasReales` falla completo → voz 100% sintética, el material de video de la
+cita se saca también del plan (acoplamiento audio↔video: nunca queda el video de la entrevista en
+pantalla con la voz sintética sonando encima).
+
+**Verificado esta sesión** (sin Gemini real disponible localmente — ver nota abajo):
+- Upload/listado/borrado de materiales por HTTP real contra el server local (`curl` multipart,
+  archivo movido a `materiales/<jobId>/`, job actualizado, borrado limpia archivo+registro).
+- `gemini.asignarMateriales`/`detectarCitas` degradan a `[]` limpiamente cuando Gemini falla —
+  confirmado que es un problema de ENTORNO local (la key da "API key not valid" en TODA la
+  cadena de modelos, incluso en una llamada preexistente sin tocar como `generarNombreArchivo`),
+  no una regresión de este cambio.
+- `video.montarVideoPlan` con un plan sintético mezclando un clip de video normal y un
+  `clip.esImagen` (imagen loopeada con `-loop 1`) — render ffmpeg REAL, sin Gemini/Drive/
+  ElevenLabs de por medio: salida 1080x1920, 2 clips, duración 3s exacta (1.5+1.5), confirmado
+  con `ffprobe` y extracción de frame del tramo de imagen.
+- UI en browser real (Chrome vía preview): cola de materiales antes de `jobId`, subida real al
+  crear el job (flush), listado con botón "quitar", Paso 4 con select de material + inputs de
+  cita que se prellenan con lo que Gemini detectó al elegir por primera vez (bug encontrado y
+  corregido en el momento).
+
+**Sin verificar — pendiente para cuando el usuario retome esto**: el camino feliz COMPLETO de
+punta a punta (`/api/generate-video` real con una cita de verdad empalmada — `tiempos.
+empalmarCitasReales` nunca corrió contra un archivo de entrevista real, solo se revisó el código
+y se probó el resto del pipeline por partes) — no se pudo porque el `GEMINI_API_KEY` local está
+saturado/rechazado ahora mismo (mismo síntoma que la entrada de ayer, "Gemini saturado, no es
+código"). Antes de dar esto por terminado: subir una entrevista corta real, confirmar que
+`detectarCitas` sugiere algo razonable, generar un video real con al menos 1 cita + 1 foto + 1
+video de apoyo juntos (el caso explícito que pidió el usuario), y confirmar a oído/vista que la
+voz cambia en el fragmento correcto y que los subtítulos posteriores siguen sincronizados (eso
+confirma que el shift de `palabras[]` en `empalmarCitasReales` funciona con datos reales, no solo
+en la lectura del código).
+
+
 ## ⚠️ Protocolo de sincronización entre máquinas (leer ANTES de tocar código)
 
 Este proyecto se trabaja desde 2 máquinas (PC Windows del usuario + Mac de trabajo), cada una

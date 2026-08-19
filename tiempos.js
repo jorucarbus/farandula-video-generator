@@ -12,7 +12,9 @@
 // ElevenLabs. RunPod con alineación forzada queda para después — sirve además
 // para farandula-video-family, donde el audio lo sube el usuario y no hay
 // timestamps de ningún proveedor.
+const path = require('path');
 const elevenlabs = require('./elevenlabs');
+const video = require('./video');
 
 const FUENTES = {
   elevenlabs: (guionConMarcas, modeloPreferido) => elevenlabs.generarAudioConTiempos(guionConMarcas, modeloPreferido),
@@ -142,7 +144,112 @@ function alinearFragmentos(fragments, alineacion, duracionAudioReal) {
   return { duraciones, palabras: palabrasPorFragmento };
 }
 
+// Material adicional: reemplaza en SERIE el tramo de audio sintético de un fragmento por el
+// audio ORIGINAL de una entrevista (cita real). Es la pieza más invasiva de esa feature —
+// desplaza la duración real de ese fragmento y por lo tanto de TODO lo que sigue.
+//
+// empalmes: [{ parrafoIdx, archivoPath, inicio, fin, esVideo }, ...] — se asume YA en orden
+//   ascendente de parrafoIdx (server.js los arma recorriendo fragments en orden).
+// duracionesBase/palabrasBase: mismo par que devuelve alinearFragmentos() (tiempos reales), o
+//   duracionesBase por % de caracteres + un array de `null` del mismo largo (cuando la Fase 5 ya
+//   cayó a estimado) — funciona igual en los dos casos, palabrasBase[i]===null ya tiene su
+//   propio fallback en subtitulos.js (palabrasEstimadas).
+//
+// Devuelve { audioPath, duraciones, palabras, aplicados, descartados } o null si NINGÚN empalme
+// prosperó (el llamador sigue con el audio/tiempos originales, sin tocar nada — Regla de
+// robustez: esta capa nunca aborta el render).
+async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBase, empalmes, jobId) {
+  if (!empalmes || empalmes.length === 0) return null;
+
+  // 1. Clamp de cada empalme contra la duración REAL del archivo de entrevista (mismo criterio
+  //    que el fix de offset-clamp ya existente en video.js) — descarta el empalme individual si
+  //    queda <0.3s tras el clamp, sin tocar los demás.
+  const descartados = [];
+  const validos = [];
+  for (const e of [...empalmes].sort((a, b) => a.parrafoIdx - b.parrafoIdx)) {
+    let durArchivo = null;
+    try { durArchivo = await video.obtenerDuracion(e.archivoPath); } catch { /* archivo raro, sigue sin clamp */ }
+    const finClamp = durArchivo && Number.isFinite(durArchivo) ? Math.min(e.fin, durArchivo) : e.fin;
+    if (finClamp - e.inicio < 0.3) {
+      console.warn(`  ⚠️ Cita del fragmento ${e.parrafoIdx} descartada: duración inválida tras clamp (${(finClamp - e.inicio).toFixed(2)}s)`);
+      descartados.push(e.parrafoIdx);
+      continue;
+    }
+    validos.push({ ...e, fin: finClamp, duracionReal: finClamp - e.inicio });
+  }
+  if (validos.length === 0) return null;
+
+  // 2. Boundaries del audio ORIGINAL (acumulado de duracionesBase) — dónde empieza cada
+  //    fragmento en la locución sintética de hoy.
+  const inicios = [];
+  let acc = 0;
+  for (const d of duracionesBase) { inicios.push(acc); acc += d; }
+  const totalOriginal = acc;
+
+  // 3. Armar tramos [sintético | cita real | sintético | ...] cubriendo todo [0, totalOriginal].
+  //    Fragmentos consecutivos SIN cita se agrupan en un solo tramo sintético (menos inputs).
+  const porFragIdx = new Map(validos.map(v => [v.parrafoIdx, v]));
+  const tramos = []; // { inicio, fin, archivo, esVideo }
+  let i = 0;
+  while (i < duracionesBase.length) {
+    if (porFragIdx.has(i)) {
+      const v = porFragIdx.get(i);
+      tramos.push({ inicio: v.inicio, fin: v.fin, archivo: v.archivoPath, esVideo: v.esVideo, esCita: true, parrafoIdx: i });
+      i++;
+    } else {
+      const inicioGrupo = inicios[i];
+      let j = i;
+      while (j < duracionesBase.length && !porFragIdx.has(j)) j++;
+      const finGrupo = j < duracionesBase.length ? inicios[j] : totalOriginal;
+      tramos.push({ inicio: inicioGrupo, fin: finGrupo, archivo: audioPathOriginal, esVideo: false, esCita: false });
+      i = j;
+    }
+  }
+
+  // 4. Un solo ffmpeg -filter_complex concat=n:v=0:a=1 — cada tramo entra como su propio -i con
+  //    -ss/-t (mismo patrón de recorte ya probado en el resto del proyecto), sin necesidad de
+  //    cortar un archivo intermedio antes.
+  const args = [];
+  tramos.forEach((t) => {
+    args.push('-ss', t.inicio.toFixed(3), '-i', t.archivo, '-t', (t.fin - t.inicio).toFixed(3));
+  });
+  const refsAudio = tramos.map((_, k) => `[${k}:a]`).join('');
+  const filtro = `${refsAudio}concat=n=${tramos.length}:v=0:a=1[aout]`;
+  const audioPath = path.join(video.TEMP_DIR, `${jobId}_locucion_con_citas.mp3`);
+  args.push('-filter_complex', filtro, '-map', '[aout]', '-c:a', 'libmp3lame', '-q:a', '2', audioPath);
+
+  try {
+    await video.ffmpeg(args);
+  } catch (e) {
+    console.warn(`  ⚠️ Empalme de citas reales falló al renderizar el audio compuesto: ${e.message}`);
+    return null;
+  }
+
+  // 5. Aplicar deltas: duración real de cada fragmento-cita, y desplazar los timestamps de
+  //    palabra de TODO lo que viene después (mismo fragmento en adelante no aplica — el propio
+  //    fragmento-cita pierde su detalle por palabra, subtitulos.js ya estima dentro de la ventana
+  //    nueva cuando palabras[idx] es null).
+  const duraciones = [...duracionesBase];
+  const palabras = (palabrasBase || []).map(p => (p ? [...p] : p));
+  const aplicados = [];
+  for (const v of validos) {
+    const delta = v.duracionReal - duraciones[v.parrafoIdx];
+    duraciones[v.parrafoIdx] = v.duracionReal;
+    palabras[v.parrafoIdx] = null;
+    if (delta !== 0) {
+      for (let k = 0; k < palabras.length; k++) {
+        if (k <= v.parrafoIdx || !palabras[k]) continue;
+        palabras[k] = palabras[k].map(w => ({ ...w, inicio: w.inicio + delta, fin: w.fin + delta }));
+      }
+    }
+    aplicados.push(v.parrafoIdx);
+  }
+
+  return { audioPath, duraciones, palabras, aplicados, descartados };
+}
+
 module.exports = {
   generarConTiempos,
   alinearFragmentos,
+  empalmarCitasReales,
 };

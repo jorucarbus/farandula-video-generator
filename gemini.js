@@ -38,6 +38,10 @@ const TAREAS = {
   fragmentacion: { nombre: 'fragmentación', cadena: CADENAS.mecanico },
   marcas:        { nombre: 'marcas',        cadena: CADENAS.mecanico },
   nombreArchivo: { nombre: 'nombre',        cadena: CADENAS.mecanico },
+  // Material adicional por fragmento (cita/foto/video de apoyo): tareas pautadas, el modelo no
+  // inventa nada — mismo criterio que fragmentación/marcas.
+  citas:         { nombre: 'citas',         cadena: CADENAS.mecanico },
+  materiales:    { nombre: 'materiales',    cadena: CADENAS.mecanico },
 };
 
 // Prompts maestros
@@ -396,6 +400,31 @@ async function subirArchivoGemini(filePath) {
   return { uri: info.uri, mimeType: info.mimeType || mimeType };
 }
 
+// Solo la(s) parte(s) MULTIMODAL(ES) (fileData/inlineData), SIN ningún texto de instrucción —
+// separado de armarUserParts() para que llamadas con su propio prompt maestro (detectarCitas,
+// asignarMateriales) puedan mandar el archivo sin heredar el texto pensado para extraerActa().
+//
+// sourceType: 'audio' (ruta local, inline base64) | 'video' (ruta local, sube a File API) |
+//             'imagen' (ruta local, inline base64 — foto de apoyo).
+const MIME_IMAGEN = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+async function parteMultimodal(sourceType, content) {
+  if (sourceType === 'audio') {
+    const ext = (content.match(/\.[^.]+$/) || ['.mp3'])[0].toLowerCase();
+    const mimeType = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav' }[ext] || 'audio/mpeg';
+    const data = fs.readFileSync(content).toString('base64');
+    return [{ inlineData: { mimeType, data } }];
+  } else if (sourceType === 'video') {
+    const archivo = await subirArchivoGemini(content);
+    return [{ fileData: { fileUri: archivo.uri, mimeType: archivo.mimeType } }];
+  } else if (sourceType === 'imagen') {
+    const ext = (content.match(/\.[^.]+$/) || ['.jpg'])[0].toLowerCase();
+    const mimeType = MIME_IMAGEN[ext] || 'image/jpeg';
+    const data = fs.readFileSync(content).toString('base64');
+    return [{ inlineData: { mimeType, data } }];
+  }
+  throw new Error(`parteMultimodal: sourceType desconocido "${sourceType}"`);
+}
+
 // Arma las partes de la llamada a Gemini según el tipo de fuente. Separado de extraerActa()
 // para reusarlo tal cual — el sesgo NO entra acá: la extracción es sesgo-independiente.
 //
@@ -418,19 +447,13 @@ async function armarUserParts(sourceType, content) {
   } else if (sourceType === 'audio') {
     // Audio descargado con yt-dlp (TikTok/Instagram/YouTube), enviado inline en base64.
     // Sin imagen: ~32 tokens/s contra ~263 tokens/s de mandar el video completo.
-    const data = fs.readFileSync(content).toString('base64');
-    return [
-      { inlineData: { mimeType: 'audio/mpeg', data } },
-      { text: 'Procesa este audio de una noticia de farándula. Solo importa lo que se DICE.' },
-    ];
+    const partes = await parteMultimodal('audio', content);
+    return [...partes, { text: 'Procesa este audio de una noticia de farándula. Solo importa lo que se DICE.' }];
   } else if (sourceType === 'video') {
     // Último recurso: video completo (imagen + audio) por la File API. Se llega acá solo si
     // transcripción y audio-only fallaron los dos.
-    const archivo = await subirArchivoGemini(content);
-    return [
-      { fileData: { fileUri: archivo.uri, mimeType: archivo.mimeType } },
-      { text: 'Procesa este video de una noticia de farándula. Solo importa lo que se DICE — ignora gestos, reacciones, ropa o texto en pantalla, eso no se usa para nada acá.' },
-    ];
+    const partes = await parteMultimodal('video', content);
+    return [...partes, { text: 'Procesa este video de una noticia de farándula. Solo importa lo que se DICE — ignora gestos, reacciones, ropa o texto en pantalla, eso no se usa para nada acá.' }];
   } else {
     return [{ text: `Procesa este contenido (${sourceType}):\n\n${content}` }];
   }
@@ -688,6 +711,122 @@ async function fragmentarGuionParrafos(script, carpetas, modo = 'guion') {
   }
 }
 
+// Material adicional por fragmento (cita con audio real / foto de apoyo / video de apoyo).
+//
+// detectarCitas: analiza una entrevista subida por el usuario y sugiere 1-4 citas textuales
+// EXACTAS, con inicio/fin aproximados en segundos dentro del archivo. Regla de robustez: si
+// Gemini falla o da JSON inválido, el material queda guardado sin citas sugeridas — nunca aborta
+// el upload.
+const PROMPT_CITAS = `Rol: Editor de contenido para videos de farándula en TikTok.
+
+TAREA: Este archivo es una entrevista. Identifica entre 1 y 4 citas textuales EXACTAS (5 a 20
+palabras cada una) dichas LITERALMENTE por la persona entrevistada — frases contundentes, con
+gancho, útiles para insertar como testimonio real dentro de un video corto.
+
+REGLAS:
+1. El texto de cada cita debe ser EXACTAMENTE lo que la persona dice, palabra por palabra — no
+   resumas ni parafrasees.
+2. inicio/fin son el momento aproximado, en SEGUNDOS desde el arranque del archivo (número, con
+   decimales), donde empieza y termina esa cita al hablarse.
+3. Si el archivo no trae ninguna cita clara y aprovechable, responde un array vacío.
+4. Responde ÚNICAMENTE un array JSON válido: [{"texto": "...", "inicio": 12.4, "fin": 16.1}]`;
+
+async function detectarCitas(rutaArchivo, esVideo) {
+  try {
+    const partes = await parteMultimodal(esVideo ? 'video' : 'audio', rutaArchivo);
+    const lista = await llamarJSON(PROMPT_CITAS, partes, TAREAS.citas);
+    if (!Array.isArray(lista)) return [];
+    return lista
+      .map((c, i) => ({
+        citaId: `c${i}`,
+        texto: (c.texto || '').trim(),
+        inicioAprox: Number(c.inicio) || 0,
+        finAprox: Number(c.fin) || 0,
+      }))
+      .filter(c => c.texto && c.finAprox > c.inicioAprox);
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudieron detectar citas de la entrevista: ${e.message}`);
+    return [];
+  }
+}
+
+// Convierte job.materialesAdicionales en una lista PLANA de ítems asignables — cada cita de cada
+// entrevista es su propio ítem, igual que cada foto/video. Función pura, sin I/O.
+function aplanarMateriales(materialesAdicionales) {
+  const items = [];
+  for (const m of materialesAdicionales || []) {
+    if (m.tipo === 'entrevista') {
+      for (const c of m.citas || []) {
+        items.push({ id: `${m.id}:${c.citaId}`, materialId: m.id, citaId: c.citaId, tipo: 'cita', texto: c.texto });
+      }
+    } else {
+      items.push({ id: m.id, materialId: m.id, tipo: m.tipo, texto: m.descripcion || null, archivoPath: m.archivoPath });
+    }
+  }
+  return items;
+}
+
+// El prompt maestro de asignarMateriales va TODO dentro del primer part (junto con el bloque de
+// fragmentos), así que llamarJSON recibe igual un "prompt" system-level minimalista — mismo rol
+// que cumple PROMPTS.acta/PROMPTS.guion para las demás tareas.
+const PROMPT_MATERIALES_INSTRUCCION = 'Sigue exactamente las instrucciones y reglas del mensaje del usuario. Responde solo el array JSON pedido, sin texto adicional.';
+
+// Decide automáticamente a qué fragmento del guion va cada ítem (cita/foto/video), analizando el
+// guion fragmentado + el contenido de cada material (texto si hay, archivo real si no). Mismo
+// patrón que fragmentarPorGuion: reglas numeradas + llamarJSON, responde solo array JSON.
+// Regla de robustez: si Gemini falla, devuelve [] — el usuario asigna a mano en el Paso 4.
+async function asignarMateriales(fragments, items) {
+  if (!items || items.length === 0) return [];
+  try {
+    const bloqueFragmentos = fragments.map((f, i) => `[${i}] ${f.texto}`).join('\n');
+    const partes = [{
+      text: `Rol: Editor de contenido para videos de farándula en TikTok.
+
+TAREA: Tienes un guion ya dividido en fragmentos numerados, y una lista de "materiales" (citas
+de entrevista, fotos o videos de apoyo) que hay que ubicar en el fragmento exacto del guion al
+que corresponden temáticamente.
+
+REGLAS:
+1. Cada material va a LO SUMO un fragmento — el que habla del mismo tema/persona/hecho que el
+   material muestra o dice.
+2. Si un material no calza claramente con ningún fragmento, NO lo incluyas en la respuesta.
+3. Dos materiales no pueden ir al mismo fragmento — si compiten, elige el que calza mejor.
+4. Responde ÚNICAMENTE un array JSON válido: [{"materialId": "...", "parrafoIdx": 0}]
+
+Fragmentos del guion (uno por línea, número entre corchetes):
+${bloqueFragmentos}
+
+Materiales a ubicar:`,
+    }];
+    for (const item of items) {
+      if (item.texto) {
+        partes.push({ text: `Material "${item.id}" (${item.tipo}): "${item.texto}"` });
+      } else {
+        partes.push({ text: `Material "${item.id}" (${item.tipo}), adjunto a continuación:` });
+        partes.push(...await parteMultimodal(item.tipo === 'foto' ? 'imagen' : 'video', item.archivoPath));
+      }
+    }
+
+    const lista = await llamarJSON(PROMPT_MATERIALES_INSTRUCCION, partes, TAREAS.materiales);
+    if (!Array.isArray(lista)) return [];
+
+    const usados = new Set();
+    const resultado = [];
+    for (const r of lista) {
+      const idx = Number(r.parrafoIdx);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= fragments.length || usados.has(idx)) continue;
+      const item = items.find(it => it.id === r.materialId);
+      if (!item) continue;
+      usados.add(idx);
+      resultado.push({ materialId: item.materialId, tipo: item.tipo, citaId: item.citaId, parrafoIdx: idx });
+    }
+    return resultado;
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudieron asignar materiales adicionales a fragmentos: ${e.message}`);
+    return [];
+  }
+}
+
 // ETAPA 4: Agregar Marcas ElevenLabs
 // Quita "Nombre_Famoso: " si se coló en la respuesta de Gemini, pese a la regla 5 del prompt.
 // Nunca se probó en vacío: en la primera corrida real Gemini SÍ dejó pasar el label
@@ -760,4 +899,7 @@ module.exports = {
   agregarMarcas,
   generarNombreArchivo,
   TONOS,
+  detectarCitas,
+  aplanarMateriales,
+  asignarMateriales,
 };

@@ -20,6 +20,7 @@ const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
 const exportar = require('./exportar');
 const portada = require('./portada');
+const materiales = require('./materiales');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -230,6 +231,106 @@ app.get('/api/portada-file/:token', (req, res) => {
     return res.status(404).json({ error: 'Portada no disponible' });
   }
   res.sendFile(ruta);
+});
+
+// Material adicional por fragmento: entrevista (cita con audio real), foto de apoyo, video de
+// apoyo. Los 3 son opcionales e independientes — el job puede tener 0, 1 o varios de cada uno.
+// El upload multipart necesita su propio manejo de error (multer llama al callback con `err` en
+// vez de rechazar una promesa) — de ahí el wrapper manual en vez de un simple `async (req,res)`.
+function manejarErrorUpload(uploader) {
+  return (req, res, next) => {
+    uploader.single('archivo')(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  };
+}
+
+app.post('/api/materiales/entrevista', manejarErrorUpload(materiales.uploadEntrevista), async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+    if (!req.file) return res.status(400).json({ error: 'Falta el archivo de entrevista' });
+
+    const rutaFinal = materiales.moverAJob(req.file, jobId);
+    const tieneVideo = req.file.mimetype.startsWith('video/');
+    const citas = await gemini.detectarCitas(rutaFinal, tieneVideo);
+
+    const material = {
+      id: crypto.randomBytes(6).toString('hex'),
+      tipo: 'entrevista',
+      archivoPath: rutaFinal,
+      mimeType: req.file.mimetype,
+      tieneVideo,
+      descripcion: null,
+      citas,
+    };
+    const job = jobStore.obtenerJob(jobId);
+    const lista = [...(job?.materialesAdicionales || []), material];
+    jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
+
+    res.json({ status: 'success', materialId: material.id, tipo: 'entrevista', tieneVideo, citas });
+  } catch (error) {
+    console.error('Error subiendo entrevista:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+function endpointMaterialSimple(tipo) {
+  return async (req, res) => {
+    try {
+      const { jobId, descripcion } = req.body;
+      if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+      if (!req.file) return res.status(400).json({ error: `Falta el archivo de ${tipo}` });
+
+      const rutaFinal = materiales.moverAJob(req.file, jobId);
+      const material = {
+        id: crypto.randomBytes(6).toString('hex'),
+        tipo,
+        archivoPath: rutaFinal,
+        mimeType: req.file.mimetype,
+        tieneVideo: tipo === 'video',
+        descripcion: descripcion || null,
+        citas: [],
+      };
+      const job = jobStore.obtenerJob(jobId);
+      const lista = [...(job?.materialesAdicionales || []), material];
+      jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
+
+      res.json({ status: 'success', materialId: material.id, tipo });
+    } catch (error) {
+      console.error(`Error subiendo ${tipo}:`, error);
+      res.status(500).json({ error: error.message });
+    }
+  };
+}
+
+app.post('/api/materiales/foto', manejarErrorUpload(materiales.uploadFoto), endpointMaterialSimple('foto'));
+app.post('/api/materiales/video', manejarErrorUpload(materiales.uploadVideoApoyo), endpointMaterialSimple('video'));
+
+app.patch('/api/materiales/:jobId/:materialId', (req, res) => {
+  const { jobId, materialId } = req.params;
+  const job = jobStore.obtenerJob(jobId);
+  if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+  const lista = (job.materialesAdicionales || []).map(m => m.id === materialId ? { ...m, descripcion: req.body.descripcion ?? m.descripcion } : m);
+  jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
+  res.json({ status: 'success' });
+});
+
+app.delete('/api/materiales/:jobId/:materialId', (req, res) => {
+  const { jobId, materialId } = req.params;
+  const job = jobStore.obtenerJob(jobId);
+  if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+  const material = (job.materialesAdicionales || []).find(m => m.id === materialId);
+  if (material) { try { fs.unlinkSync(material.archivoPath); } catch {} }
+  const lista = (job.materialesAdicionales || []).filter(m => m.id !== materialId);
+  jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
+  res.json({ status: 'success' });
+});
+
+app.get('/api/materiales/:jobId', (req, res) => {
+  const job = jobStore.obtenerJob(req.params.jobId);
+  res.json({ materialesAdicionales: job?.materialesAdicionales || [] });
 });
 
 // Inicializar Google Drive
@@ -658,12 +759,33 @@ app.post('/api/fragment', async (req, res) => {
     const p = norm(protagonista);
     const protagonistaSinCarpeta = Boolean(p) && !carpetas.some(c => norm(c).includes(p) || p.includes(norm(c)));
 
+    let materialesDisponibles = [];
     if (jobId) {
       try {
         const job = jobStore.actualizarJob(jobId, { paso: 'fragmentacion', fragments: conPorcentaje, carpetas });
         if (job.carpetaInsumoId) {
           driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'fragments.json', JSON.stringify(conPorcentaje, null, 2))
             .catch(e => console.warn(`⚠️ No se pudo respaldar fragments.json en Drive: ${e.message}`));
+        }
+
+        // Material adicional (cita/foto/video de apoyo): sugerencia automática de a qué
+        // fragmento va cada uno. Regla de robustez: si falla, sigue sin sugerencias — el
+        // usuario asigna a mano en el Paso 4.
+        materialesDisponibles = job.materialesAdicionales || [];
+        if (materialesDisponibles.length) {
+          try {
+            const items = gemini.aplanarMateriales(materialesDisponibles);
+            const sugerencias = await gemini.asignarMateriales(conPorcentaje, items);
+            for (const s of sugerencias) {
+              const material = materialesDisponibles.find(m => m.id === s.materialId);
+              const cita = s.tipo === 'cita' ? material?.citas.find(c => c.citaId === s.citaId) : null;
+              conPorcentaje[s.parrafoIdx].materialAdicional = {
+                materialId: s.materialId, tipo: s.tipo, citaId: s.citaId,
+                ...(cita ? { inicio: cita.inicioAprox, fin: cita.finAprox } : {}),
+              };
+            }
+            if (sugerencias.length) jobStore.actualizarJob(jobId, { fragments: conPorcentaje });
+          } catch (e) { console.warn(`⚠️ Asignación de materiales falló, sigue sin sugerencias: ${e.message}`); }
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
@@ -681,6 +803,7 @@ app.post('/api/fragment', async (req, res) => {
       protagonista,
       protagonistaSinCarpeta,
       avisoReconstruccion,
+      materialesDisponibles,
     });
   } catch (error) {
     console.error('Error fragmentación:', error);
@@ -879,8 +1002,58 @@ app.post('/api/generate-video', async (req, res) => {
     }
 
     // 1. Duración real de la locución: define el tiempo total del video
-    const durAudio = await video.obtenerDuracion(audioPath);
+    let durAudio = await video.obtenerDuracion(audioPath);
     console.log(`🎬 [${renderId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
+
+    // 1b. Material adicional por fragmento (cita con audio real / foto de apoyo / video de
+    // apoyo) — opcional, degrada sin abortar el render (Regla de robustez). `materialesPorFragmento`
+    // alimenta seleccion.insertarMaterialesEnPlan() más abajo; `empalmesAudio` dispara el empalme
+    // de audio real cuando corresponde.
+    const jobParaMateriales = jobId ? jobStore.obtenerJob(jobId) : null;
+    const materialesPorFragmento = new Map(); // parrafoIdx -> {archivoId, archivoPath, nombre, tipo, esImagen, offsetInicio}
+    const empalmesAudio = [];
+    for (let fi = 0; fi < fragments.length; fi++) {
+      const ma = fragments[fi].materialAdicional;
+      if (!ma) continue;
+      const material = jobParaMateriales?.materialesAdicionales?.find(m => m.id === ma.materialId);
+      if (!material || !fs.existsSync(material.archivoPath)) {
+        console.warn(`  ⚠️ [${renderId}] Material adicional del fragmento ${fi} ya no existe en disco, se ignora`);
+        continue;
+      }
+      if (ma.tipo === 'cita') {
+        empalmesAudio.push({ parrafoIdx: fi, archivoPath: material.archivoPath, inicio: ma.inicio, fin: ma.fin, esVideo: material.tieneVideo });
+        // Si la entrevista no trae video propio, se deja el clip de famoso normal para lo
+        // visual (pedido explícito del usuario) — solo cambia el audio de ese tramo.
+        if (material.tieneVideo) {
+          materialesPorFragmento.set(fi, { archivoId: `mat_${material.id}`, archivoPath: material.archivoPath, nombre: 'Entrevista', tipo: 'cita', esImagen: false, offsetInicio: ma.inicio });
+        }
+      } else {
+        materialesPorFragmento.set(fi, { archivoId: `mat_${material.id}`, archivoPath: material.archivoPath, nombre: material.tipo === 'foto' ? 'Foto de apoyo' : 'Video de apoyo', tipo: material.tipo, esImagen: material.tipo === 'foto', offsetInicio: 0 });
+      }
+    }
+
+    let duracionesParaPlan = audioAprobado?.duracionesReales;
+    let palabrasParaSubs = audioAprobado?.palabrasAlineadas;
+    if (empalmesAudio.length > 0) {
+      try {
+        const baseDur = duracionesParaPlan || seleccion.tiemposPorFragmento(fragments, durAudio, null);
+        const basePal = palabrasParaSubs || fragments.map(() => null);
+        const empalmado = await tiempos.empalmarCitasReales(audioPath, baseDur, basePal, empalmesAudio, renderId);
+        if (empalmado) {
+          audioPath = empalmado.audioPath;
+          duracionesParaPlan = empalmado.duraciones;
+          palabrasParaSubs = empalmado.palabras;
+          // Acoplamiento audio↔video: un empalme descartado (clamp inválido) no puede dejar el
+          // video de la entrevista en pantalla con la voz sintética sonando encima.
+          for (const idx of empalmado.descartados) materialesPorFragmento.delete(idx);
+          durAudio = await video.obtenerDuracion(audioPath);
+          console.log(`  🎙️ [${renderId}] ${empalmado.aplicados.length} cita(s) con audio real empalmada(s)${empalmado.descartados.length ? `, ${empalmado.descartados.length} descartada(s)` : ''} — duración final ${durAudio.toFixed(1)}s`);
+        }
+      } catch (e) {
+        console.warn(`  ⚠️ [${renderId}] Empalme de citas reales falló por completo, el video sale con voz 100% sintética: ${e.message}`);
+        for (const emp of empalmesAudio) materialesPorFragmento.delete(emp.parrafoIdx);
+      }
+    }
 
     // 2. Inventario de videos por famoso (con duración de cada video)
     const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
@@ -907,14 +1080,18 @@ app.post('/api/generate-video', async (req, res) => {
     const transicionActiva = (efectos?.transicion || 'ninguno') !== 'ninguno';
     const transicionDur = Math.min(0.6, Math.max(0.1, Number.isFinite(efectos?.transicionDur) ? efectos.transicionDur : 0.35));
     const clipMaxEfectivo = transicionActiva ? Math.max(0.8, seleccion.CLIP_MAX - transicionDur) : seleccion.CLIP_MAX;
-    const plan = seleccion.planificarClips(fragments, durAudio, inventario, audioAprobado?.duracionesReales, clipMaxEfectivo);
+    const planBase = seleccion.planificarClips(fragments, durAudio, inventario, duracionesParaPlan, clipMaxEfectivo);
+    const plan = seleccion.insertarMaterialesEnPlan(planBase, materialesPorFragmento);
     const clipsValidos = plan.filter(Boolean);
-    console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)${transicionActiva ? `, CLIP_MAX efectivo ${clipMaxEfectivo.toFixed(2)}s (transiciones activas)` : ''}`);
+    console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)${transicionActiva ? `, CLIP_MAX efectivo ${clipMaxEfectivo.toFixed(2)}s (transiciones activas)` : ''}${materialesPorFragmento.size ? `, ${materialesPorFragmento.size} con material adicional` : ''}`);
 
-    // 4. Descargar los videos únicos del plan
+    // 4. Descargar los videos únicos del plan — los materiales adicionales ya están en disco
+    // local (subidos por el usuario), se saltan de la descarga de Drive.
     console.log(`⬇️ [${renderId}] Descargando clips...`);
     const archivos = {};
+    for (const m of materialesPorFragmento.values()) archivos[m.archivoId] = m.archivoPath;
     for (const videoId of [...new Set(clipsValidos.map(c => c.videoId))]) {
+      if (archivos[videoId]) continue;
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
     }
 
@@ -925,9 +1102,9 @@ app.post('/api/generate-video', async (req, res) => {
     let fuentesDir = null;
     if (efectos?.subtitulos !== false) {
       try {
-        const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, audioAprobado?.duracionesReales);
+        const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, duracionesParaPlan);
         const fuenteElegida = efectos?.subtitulosFuente || subtitulos.FUENTE_DEFAULT;
-        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, audioAprobado?.palabrasAlineadas, {
+        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, palabrasParaSubs, {
           jobId: renderId,
           tempDir: video.TEMP_DIR,
           fuente: fuenteElegida,
@@ -1274,6 +1451,20 @@ function limpiarCache() {
       if (activos.has(f)) continue; // no tocar previews/carteles/audios en uso
       if (/^yt-dlp-legacy/.test(f)) continue; // binario de fallback (fuentes.js) — cachear, no volver a descargar cada hora
       const ruta = path.join(video.TEMP_DIR, f);
+      // materiales/<jobId>/ es una CARPETA — fs.unlinkSync tira EISDIR (silenciado por el catch
+      // de abajo, así que nunca se limpiaba sola). TTL más generoso que el resto (6h en vez de
+      // 1h): el usuario puede tardar en pasar del Paso 1 al render con el material ya subido.
+      if (f === 'materiales') {
+        try {
+          for (const jobDir of fs.readdirSync(ruta)) {
+            const jobRuta = path.join(ruta, jobDir);
+            try {
+              if (ahora - fs.statSync(jobRuta).mtimeMs > 6 * UNA_HORA) fs.rmSync(jobRuta, { recursive: true, force: true });
+            } catch {}
+          }
+        } catch {}
+        continue;
+      }
       try {
         if (ahora - fs.statSync(ruta).mtimeMs > UNA_HORA) fs.unlinkSync(ruta);
       } catch {}
