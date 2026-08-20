@@ -355,7 +355,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     const filtros = [base];
     const zoomInfo = decidirEfecto(zoomPreset, i);
     if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion));
-    if (decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
+    // Espejo NUNCA en una imagen: una foto de apoyo puede ser una captura de texto/pantallazo,
+    // y espejarla la vuelve ilegible. El zoom (Ken Burns) sí es seguro, no altera el texto.
+    if (!clip.esImagen && decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
 
     const argsSegmento = (vf) => clip.esImagen
       ? ['-loop', '1', '-i', archivos[clip.videoId], '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath]

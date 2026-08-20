@@ -57,4 +57,11 @@ function moverAJob(file, jobId) {
   return destPath;
 }
 
-module.exports = { uploadEntrevista, uploadFoto, uploadVideoApoyo, moverAJob, MATERIALES_DIR };
+// Nombre del respaldo en Drive (driveCache) para un archivo de material — namespaced por jobId
+// para que sea legible/trazable a mano en la carpeta cache-estado, y único (el nombre local ya
+// es un hex aleatorio de multer).
+function nombreDriveMaterial(jobId, archivoPath) {
+  return `material_${jobId}_${path.basename(archivoPath)}`;
+}
+
+module.exports = { uploadEntrevista, uploadFoto, uploadVideoApoyo, moverAJob, MATERIALES_DIR, nombreDriveMaterial };

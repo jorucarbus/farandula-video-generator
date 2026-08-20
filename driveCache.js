@@ -56,10 +56,12 @@ async function restaurar(localPath, nombreDrive) {
 
 // Respalda (crea o actualiza) un archivo local en la carpeta caché de Drive.
 // Fire-and-forget: nunca debe tumbar el flujo principal si Drive falla.
-async function respaldar(localPath, nombreDrive) {
+// mimeType: 'application/json' por defecto (jobs.json/historial.json, los 2 usos originales);
+// los archivos binarios (material adicional: audio/video/imagen) pasan el suyo real.
+async function respaldar(localPath, nombreDrive, mimeType = 'application/json') {
   try {
     if (!fs.existsSync(localPath)) return;
-    const media = { mimeType: 'application/json', body: fs.createReadStream(localPath) };
+    const media = { mimeType, body: fs.createReadStream(localPath) };
     const archivo = await buscarArchivo(nombreDrive);
     if (archivo) {
       await cliente().files.update({ fileId: archivo.id, media, supportsAllDrives: true });
@@ -76,4 +78,15 @@ async function respaldar(localPath, nombreDrive) {
   }
 }
 
-module.exports = { restaurar, respaldar, CACHE_FOLDER_ID };
+// Borra el respaldo de Drive de un archivo (ej. al eliminar un material adicional a mano —
+// evita que la carpeta caché acumule archivos huérfanos para siempre). Fire-and-forget.
+async function borrar(nombreDrive) {
+  try {
+    const archivo = await buscarArchivo(nombreDrive);
+    if (archivo) await cliente().files.delete({ fileId: archivo.id, supportsAllDrives: true });
+  } catch (e) {
+    console.warn(`⚠️ No se pudo borrar el respaldo de ${nombreDrive} en Drive: ${e.message}`);
+  }
+}
+
+module.exports = { restaurar, respaldar, borrar, CACHE_FOLDER_ID };

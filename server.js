@@ -253,6 +253,12 @@ app.post('/api/materiales/entrevista', manejarErrorUpload(materiales.uploadEntre
     if (!req.file) return res.status(400).json({ error: 'Falta el archivo de entrevista' });
 
     const rutaFinal = materiales.moverAJob(req.file, jobId);
+    // Respaldo a Drive (driveCache, fire-and-forget): el disco de Railway es efímero, un
+    // redeploy entre "subir la entrevista" y "generar el video" lo borra (bug real de
+    // producción, 2026-08-20 — el usuario subió una entrevista, hubo un redeploy de por medio,
+    // y el render la ignoró por completo). Se restaura de vuelta al vuelo si hace falta, ver el
+    // bloque de resolución de materiales en /api/generate-video.
+    driveCache.respaldar(rutaFinal, materiales.nombreDriveMaterial(jobId, rutaFinal), req.file.mimetype);
     const tieneVideo = req.file.mimetype.startsWith('video/');
     const citas = await gemini.detectarCitas(rutaFinal, tieneVideo);
 
@@ -284,6 +290,7 @@ function endpointMaterialSimple(tipo) {
       if (!req.file) return res.status(400).json({ error: `Falta el archivo de ${tipo}` });
 
       const rutaFinal = materiales.moverAJob(req.file, jobId);
+      driveCache.respaldar(rutaFinal, materiales.nombreDriveMaterial(jobId, rutaFinal), req.file.mimetype);
       const material = {
         id: crypto.randomBytes(6).toString('hex'),
         tipo,
@@ -322,7 +329,10 @@ app.delete('/api/materiales/:jobId/:materialId', (req, res) => {
   const job = jobStore.obtenerJob(jobId);
   if (!job) return res.status(404).json({ error: 'Job no encontrado' });
   const material = (job.materialesAdicionales || []).find(m => m.id === materialId);
-  if (material) { try { fs.unlinkSync(material.archivoPath); } catch {} }
+  if (material) {
+    try { fs.unlinkSync(material.archivoPath); } catch {}
+    driveCache.borrar(materiales.nombreDriveMaterial(jobId, material.archivoPath));
+  }
   const lista = (job.materialesAdicionales || []).filter(m => m.id !== materialId);
   jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
   res.json({ status: 'success' });
@@ -1016,9 +1026,18 @@ app.post('/api/generate-video', async (req, res) => {
       const ma = fragments[fi].materialAdicional;
       if (!ma) continue;
       const material = jobParaMateriales?.materialesAdicionales?.find(m => m.id === ma.materialId);
-      if (!material || !fs.existsSync(material.archivoPath)) {
-        console.warn(`  ⚠️ [${renderId}] Material adicional del fragmento ${fi} ya no existe en disco, se ignora`);
-        continue;
+      if (!material) continue;
+      if (!fs.existsSync(material.archivoPath)) {
+        // Restauración perezosa: el disco de Railway es efímero, un redeploy entre "subir la
+        // entrevista/foto/video" y "generar el video" lo borra (bug real de producción,
+        // 2026-08-20) — antes de rendirse, intentar traerlo de vuelta del respaldo en Drive
+        // (driveCache, mismo archivo que se respaldó al subirlo).
+        const restaurado = await driveCache.restaurar(material.archivoPath, materiales.nombreDriveMaterial(jobId, material.archivoPath));
+        if (!restaurado) {
+          console.warn(`  ⚠️ [${renderId}] Material adicional del fragmento ${fi} ya no existe en disco ni en el respaldo de Drive, se ignora`);
+          continue;
+        }
+        console.log(`  ♻️ [${renderId}] Material adicional del fragmento ${fi} restaurado desde Drive`);
       }
       if (ma.tipo === 'cita') {
         empalmesAudio.push({ parrafoIdx: fi, archivoPath: material.archivoPath, inicio: ma.inicio, fin: ma.fin, esVideo: material.tieneVideo });
