@@ -207,11 +207,23 @@ async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBa
   }
 
   // 4. Un solo ffmpeg -filter_complex concat=n:v=0:a=1 — cada tramo entra como su propio -i con
-  //    -ss/-t (mismo patrón de recorte ya probado en el resto del proyecto), sin necesidad de
-  //    cortar un archivo intermedio antes.
+  //    -ss/-t, sin necesidad de cortar un archivo intermedio antes.
+  //
+  // BUG real encontrado en producción (2026-08-20, usuario reportó "no funcionó la cita" — el
+  // video salió 25s más corto de lo esperado con solo 1-2 citas insertadas): `-ss`/`-t` son
+  // opciones de INPUT y tienen que ir ANTES del `-i` al que aplican. El resto de este proyecto
+  // (video.js, cortes de clip) SIEMPRE hace un `-i` por llamada a ffmpeg, así que un `-t` puesto
+  // DESPUÉS del único `-i` nunca causó problema (no había ambigüedad posible). Acá, por primera
+  // vez en el repo, un solo comando de ffmpeg lleva VARIOS `-i` (uno por tramo) — con `-t`
+  // DESPUÉS de cada `-i`, ffmpeg no lo asocia a ESE input: lo trata como opción de OUTPUT
+  // (duración total del output), y como se repite una vez por tramo, gana la ÚLTIMA — el output
+  // terminaba truncado a la duración del ÚLTIMO tramo nada más, ignorando el resto. Reproducido
+  // exacto: con 1 cita de 5.4s en el fragmento 9 de 32, el audio esperado eran ~77.6s y el
+  // archivo real salía en ~51.3s — coincide con la duración del tramo final solo. Fix: `-ss`/`-t`
+  // ANTES del `-i` de cada tramo, como corresponde.
   const args = [];
   tramos.forEach((t) => {
-    args.push('-ss', t.inicio.toFixed(3), '-i', t.archivo, '-t', (t.fin - t.inicio).toFixed(3));
+    args.push('-ss', t.inicio.toFixed(3), '-t', (t.fin - t.inicio).toFixed(3), '-i', t.archivo);
   });
   const refsAudio = tramos.map((_, k) => `[${k}:a]`).join('');
   const filtro = `${refsAudio}concat=n=${tramos.length}:v=0:a=1[aout]`;
