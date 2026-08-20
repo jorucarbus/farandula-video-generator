@@ -57,6 +57,20 @@ pantalla con la voz sintética sonando encima).
   cita que se prellenan con lo que Gemini detectó al elegir por primera vez (bug encontrado y
   corregido en el momento).
 
+**Actualización 2026-08-20 — el usuario lo probó real y encontró un bug real, ya arreglado**:
+usuario reportó "no funcionó lo de la cita" tras probar en staging. Confirmado con el job real
+(`670777a5-2c0a-49ac-8c51-f2234883eda6`): el log mostraba "2 cita(s) empalmada(s)" pero la
+duración caía de 74.5s a 49.8s — 25s de contenido desaparecidos. Reproducido local (sin
+Gemini, solo ffmpeg con assets sintéticos) y encontrada la causa: `empalmarCitasReales()` es el
+PRIMER lugar del repo con varios `-i` en un solo comando ffmpeg, y `-ss`/`-t` iban DESPUÉS de
+cada `-i` en vez de antes — son opciones de INPUT, tienen que precederlo. Con un solo `-i` (como
+hace el resto del proyecto, un `-i` por llamada) nunca importó el orden; con varios, ffmpeg
+tomaba el `-t` repetido como opción de OUTPUT y ganaba el último, truncando todo a la duración
+del último tramo. Fix de una línea (mover `-ss`/`-t` antes del `-i`), verificado con el mismo
+repro (duración esperada = duración real del archivo, con 1 y con 2 citas no adyacentes).
+Commit `7799694`, pusheado. **Sin confirmar todavía en un render real de punta a punta** — el
+usuario debería reintentar con la misma entrevista para confirmar visualmente/al oído.
+
 **Sin verificar — pendiente para cuando el usuario retome esto**: el camino feliz COMPLETO de
 punta a punta (`/api/generate-video` real con una cita de verdad empalmada — `tiempos.
 empalmarCitasReales` nunca corrió contra un archivo de entrevista real, solo se revisó el código
