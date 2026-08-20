@@ -1,5 +1,108 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-20 (madrugada, autónomo) — Material adicional: durabilidad + espejo + verificación real completa
+
+Sesión nocturna autónoma, sin supervisión (el usuario pidió dejarlo trabajando y contarle por
+bitácora). Punto de partida: tras el fix de la cita (commit `7799694`, sección de arriba), el
+usuario reportó que en la práctica **el video de la cita nunca se mostraba** — solo el audio
+llegó a sonar una vez, y hasta ahí. Pidió además reforzar el concepto de las 3 variantes y avisó
+"mucho cuidado con los subtítulos, los videos salen descuadrados".
+
+### 1) Bug real encontrado: el archivo de material se perdía entre subir y renderizar
+
+Root-caused con los logs reales de Railway (`railway logs`, job `670777a5`): el log decía
+literal `Material adicional del fragmento X ya no existe en disco, se ignora`. Causa: el archivo
+subido vive SOLO en `temp-videos/materiales/<jobId>/`, disco efímero de Railway — cada redeploy
+lo borra, y esa noche hubo 2 redeploys míos entre que el usuario subió la entrevista y generó el
+video. `historial.json`/`jobs.json` sobreviven un redeploy (Bloque D, `driveCache.js`); el
+archivo de material no tenía ese respaldo.
+
+**Fix**: mismo patrón que `jobs.json`/`historial.json`. `driveCache.respaldar()` ahora acepta
+`mimeType` (antes fijo a `application/json`); `driveCache.borrar()` nuevo. Al subir un material
+(3 endpoints en `server.js`) se respalda fire-and-forget a la carpeta `cache-estado` de Drive con
+nombre `material_<jobId>_<archivo>`; al renderizar, si el archivo ya no está en disco, se
+intenta restaurar desde ese respaldo ANTES de rendirse (`materiales.nombreDriveMaterial()` arma
+el mismo nombre en los dos lados). Al borrar un material a mano, se borra también su respaldo.
+Verificado con round-trip real: subir, borrar el archivo local (simula el redeploy), restaurar,
+bytes idénticos al original.
+
+### 2) Fix: espejo NUNCA en una foto de apoyo
+
+Encontrado revisando el pedido del usuario (punto 3 de su mensaje: "aquí no se puede hacer
+efecto espejo porque la imagen puede ser una captura de texto"). El código aplicaba espejo a
+CUALQUIER clip por igual, incluida una foto. Fix de una línea en `video.js`:
+`if (!clip.esImagen && decidirEfecto(...))`.
+
+### 3) Investigación de "los subtítulos salen descuadrados" — pista falsa descartada con evidencia
+
+Antes de tocar nada de subtítulos, auditoría matemática pura de
+`tiempos.empalmarCitasReales()` (sin ffmpeg): array de palabras con timestamps conocidos, cita
+insertada en el medio, verificado a mano que los timestamps de las palabras POSTERIORES a la
+cita quedan desplazados EXACTAMENTE por el delta de duración, y que ese desplazamiento coincide
+con dónde esas palabras realmente caen en el audio compuesto nuevo. Matemática correcta,
+confirmado antes de sospechar de esa función.
+
+Durante la verificación en vivo (ver sección 4) apareció un `⚠️ Tiempos reales: "pÃ¡nico" no
+calza con el audio, cae a % de caracteres` que parecía un bug real de codificación de texto.
+**Investigado a fondo y descartado**: el archivo `frag_result.json` guardado directo de la
+respuesta HTTP (sin tocar) tenía los bytes UTF-8 correctos (`0xc3 0xb3` = "ó", verificado en
+hexadecimal). La corrupción aparecía recién en MIS PROPIOS scripts de prueba de esta sesión:
+`json.load(open(archivo))` sin `encoding='utf-8'` explícito usa en este Windows el codepage por
+defecto en vez de UTF-8, y al re-guardar con `json.dump(..., ensure_ascii=True)` (default de
+Python) esos caracteres ya mal leídos quedaban escapados como `Ã³` — JSON válido, pero
+representando el carácter equivocado. Repetí el mismo render con los scripts corregidos
+(`encoding='utf-8'` explícito en cada `open()`) y el subtítulo salió perfecto ("JURÓ", tilde
+correcta) y la alineación real de ElevenLabs funcionó sin caer al estimado. **Conclusión: no hay
+bug de codificación en la app** — el navegador real (`fetch`+`JSON.stringify`) nunca pasa por
+`open()` de Python, así que este modo de falla no puede ocurrir en uso real. Ninguna causa
+propia de la app quedó identificada para "subtítulos descuadrados" — el precedente del
+2026-08-18 (Gemini saturado, ver sección de arriba) sigue siendo la explicación más creíble para
+lo que el usuario venía viendo, no algo introducido esta noche.
+
+### 4) Verificación real completa contra staging (no solo local, no solo lectura de código)
+
+Con las 2 fixes desplegadas (`1dbd7d1`), armé un pipeline de punta a punta contra
+`adventurous-reflection` real: fuente de texto → guion → fragmentación → asignación automática de
+material → audio real (ElevenLabs) → render real (ffmpeg) → descarga del MP4 de Drive →
+extracción de frames → inspección visual.
+
+- **Entrevista de prueba con voz real**: sin `ELEVENLABS_API_KEY` local, usé el TTS de Windows
+  (`System.Speech`, sin costo ni API key) para grabar una frase real en inglés, la mezclé con
+  video de fondo por ffmpeg. Subida a staging: `gemini.detectarCitas()` la transcribió y sacó una
+  cita real de 2.4s. `gemini.asignarMateriales()` la asignó sola al fragmento correcto del guion
+  ("Aunque ella juró...").
+- **Cita — confirmado con evidencia visual, no solo logs**: descargué el MP4 real de Drive,
+  extraje 1 frame/segundo, y por tamaño de archivo (una imagen plana comprime mucho más chico)
+  ubiqué el frame exacto de la cita — el fondo gris de mi "entrevista" de prueba, con el
+  subtítulo "JURÓ" bien tildado quemado encima. El frame siguiente ya muestra al famoso real de
+  vuelta, con el subtítulo "FUE" continuando en sincronía. Audio real: el log confirmó
+  `⏱️ Usando tiempos reales de la locución` (alineación exacta, no el estimado) y
+  `1 cita(s) con audio real empalmada(s)`.
+- **Foto de apoyo — asignación automática confirmada**: subí una foto con una descripción
+  temáticamente relacionada al guion, `asignarMateriales` la asignó sola al fragmento correcto
+  (antes, con una descripción genérica sin relación, correctamente NO la asignó a nada — la
+  selectividad funciona en los dos sentidos).
+- **Espejo en foto — confirmado que NO se aplica**: imagen de prueba asimétrica (banda roja a la
+  IZQUIERDA + texto "IZQUIERDA"), forzando `efectos.espejo:'todos'` en el render. El frame 0 del
+  video real salió con la banda roja y el texto en el lugar correcto — sin espejar.
+- **Video de apoyo**: no se hizo un render dedicado aparte (mismo costo que el de cita) — usa
+  exactamente la misma rama de código que ya se probó con la cita cuando `tieneVideo=true`
+  (`clip.esImagen=false`, mismo `-ss/-i` en `video.js`), así que queda cubierto por la misma
+  evidencia.
+
+**Limpieza**: los 3 videos de prueba (`TEST-cita-verificacion-nocturna.mp4`,
+`TEST-cita-limpio.mp4`, `TEST-espejo-foto.mp4`) quedaron en la carpeta de Drive "Embajadores del
+Chisme" — mi Service Account local no tuvo permiso para mandarlos a la papelera desde acá
+(`insufficient permissions`, distinto del OAuth que usa el server). **Pendiente**: borrarlos a
+mano desde Drive (y sus 3 filas correspondientes en Sheets) si molestan — no son contenido real.
+Los materiales de prueba (fotos/entrevista subidas) sí se limpiaron solos vía
+`DELETE /api/materiales/...` (borra local + respaldo de Drive).
+
+**Estado final**: las 3 variantes (cita, foto de apoyo, video de apoyo) funcionan de punta a
+punta en `test-persistencia`, con la durabilidad resuelta. Commits de la noche: `d4ad694` (feature
+original), `7799694` (fix del bug de los 25s), `574a005`+`e3eecde` (bitácora), `1dbd7d1`
+(durabilidad + espejo). Todo pusheado y verificado (SHA local = remoto en cada push).
+
 ## 2026-08-19 (Windows) — Material adicional por fragmento: cita con audio real / foto / video de apoyo
 
 Feature nueva pedida por el usuario, implementada en `test-persistencia` (plan completo en
