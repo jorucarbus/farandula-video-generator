@@ -68,8 +68,8 @@ hace el resto del proyecto, un `-i` por llamada) nunca importó el orden; con va
 tomaba el `-t` repetido como opción de OUTPUT y ganaba el último, truncando todo a la duración
 del último tramo. Fix de una línea (mover `-ss`/`-t` antes del `-i`), verificado con el mismo
 repro (duración esperada = duración real del archivo, con 1 y con 2 citas no adyacentes).
-Commit `7799694`, pusheado. **Sin confirmar todavía en un render real de punta a punta** — el
-usuario debería reintentar con la misma entrevista para confirmar visualmente/al oído.
+Commit `7799694`, pusheado. **Confirmado por el usuario el mismo día**: reintentó y "salió el
+video con cita" — la feature funciona de punta a punta en staging.
 
 **Sin verificar — pendiente para cuando el usuario retome esto**: el camino feliz COMPLETO de
 punta a punta (`/api/generate-video` real con una cita de verdad empalmada — `tiempos.
