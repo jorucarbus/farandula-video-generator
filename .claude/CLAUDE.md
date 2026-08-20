@@ -1518,3 +1518,49 @@ compartida). Debería autoresolverse cuando baje la demanda en Gemini. **Sin ver
 pudo confirmar el camino feliz (alineación exitosa) hoy porque Gemini no dejó de saturarse durante
 toda la investigación — pendiente reintentar cuando el usuario note que Gemini responde normal, y
 confirmar que un video nuevo sí trae `⏱️ Usando tiempos reales` en el log.
+
+**Cierre 2026-08-18 (Mac) — supersede los dos cierres del 2026-08-16**
+
+Bajado y revisado todo lo que entró de Windows desde entonces: el crash de `subirVideo`
+(`85c0ece`), la feature de **material adicional** (`d4ad694`) y sus dos fixes de producción
+(`7799694` cita truncada, `1dbd7d1` durabilidad + espejo en fotos), más la investigación de los
+subtítulos desfasados (`624a24a`). Nada nuevo de la Mac desde `c484f18`.
+
+**Cómo cambió el cuadro** (importa para decidir el merge a `main`):
+
+- **Van CUATRO fixes de crashes/bugs reales de producción en tres días**, todos encontrados por el
+  usuario usando la app, ninguno por tests: offset-clamp (xfade), `subirVideo()` (tumbaba el
+  proceso entero, no solo el request), cita truncada 25s, y material que se perdía entre subir y
+  renderizar.
+- **Feature nueva grande**: material adicional por fragmento (cita con audio real / foto / video
+  de apoyo), con `materiales.js` nuevo y cambios en gemini/tiempos/seleccion/video/server.
+- **Los subtítulos "a destiempo" NO eran un bug**: Gemini devolviendo 503 por saturación hace caer
+  `alinearFragmentos()` al reparto estimado por caracteres. Degrada, no rompe. **Si vuelve a
+  pasar, no buscarlo en el código.**
+
+**Sin verificar todavía** (nada de esto se pudo probar en la Mac):
+
+1. **Música a -20dB** (`4933cad`): desplegada, nadie la escuchó aún en un video real. Es a oído;
+   la medición ya está hecha (17.1 dB de separación contra una locución real).
+2. **Zonas seguras del preview de subtítulos** (`c484f18`): ±10px, medidas de las plantillas del
+   usuario. Contrastar contra un video publicado y ajustar `SUBS_ZONAS_APPS` si no calza.
+3. **Transiciones por defecto en "todos los cortes"** (`ecc6864`): eran opt-in hasta el 16.
+   `xfade` no escala (58 clips = +8GB RAM, medido 2026-08-09; de ahí `TANDA_MAX=10`). Si aparecen
+   renders lentos o caídas con videos de muchos clips, es el primer sospechoso.
+
+**Pendientes reales**:
+
+1. **Merge `test-persistencia` → `main`.** Producción sigue sin NADA de lo acumulado — y eso ya
+   incluye **cuatro fixes de bugs reales que el usuario sufrió en vivo**. Cada día que pasa, la
+   versión que usa a diario es la que los tiene todos. **Abierta desde el 25 de julio; es el
+   riesgo más grande del proyecto, por encima de cualquier feature nueva.**
+2. Desplegar `farandula-video-family` a Railway.
+3. Código duplicado entre los dos repos: al tocar `video.js`/`drive.js` acá, preguntarse si el
+   cambio también va a family. **El fix de `subirVideo` es justo de los que aplican a los dos.**
+4. `decidirEfecto('intercalado', i)`: espejo en TODOS los clips en vez de alternar. **Ya no es
+   teórico: "intercalado" es el default del espejo desde `ecc6864`.**
+5. `getAngleName()` en `gemini.js`: código muerto, mapea 1-6 con 7 ángulos existentes.
+
+**Recordatorio operativo**: tras cada deploy, recargar con Cmd/Ctrl + Shift + R (guarda de
+`0d883e8`). Y ojo con los redeploys mientras el usuario tiene material subido — ese fue justo el
+caso de `1dbd7d1`.
