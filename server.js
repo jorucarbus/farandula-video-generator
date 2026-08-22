@@ -1354,6 +1354,7 @@ async function renderizarVideo(params, renderId) {
     // esto: cualquier fallo acá deja musicaPath en null y sigue.
     let musicaPath = null;
     let musicaOffset = 0;
+    let musicaGananciaDb = -20; // se recalcula por pista según su loudness medido
     if (efectos?.musica !== false) {
       try {
         const jobActual = jobId ? jobStore.obtenerJob(jobId) : null;
@@ -1371,7 +1372,23 @@ async function renderizarVideo(params, renderId) {
           const ext = (elegida.name.match(/\.[^.]+$/) || ['.mp3'])[0];
           musicaPath = await driveHelper.descargarMusica(elegida.id, video.TEMP_DIR, ext);
           musicaOffset = musica.offsetDeNombre(elegida.name);
-          console.log(`  🎵 [${renderId}] Música (${tono}): "${elegida.name}" (offset ${musicaOffset}s)`);
+
+          // Emparejar el volumen: cada pista se atenúa lo que ELLA necesita para quedar al mismo
+          // nivel que todas las demás, en vez de bajarles a todas el mismo número (que conserva
+          // las diferencias de origen — ver OBJETIVO_LUFS en musica.js).
+          let lufs = musica.lufsDeNombre(elegida.name);
+          if (lufs === null) {
+            // Pista nueva sin medir: se mide ahora, que el archivo ya está en disco, y se etiqueta
+            // en Drive para que el próximo render la lea del nombre y no vuelva a analizarla.
+            lufs = await musica.medirLoudness(musicaPath, musicaOffset);
+            if (Number.isFinite(lufs)) {
+              const base = elegida.name.replace(/\.[^.]+$/, '');
+              driveHelper.renombrarArchivo(elegida.id, `${base} [lufs=${lufs.toFixed(1)}]${ext}`)
+                .catch(e => console.warn(`  ⚠️ No se pudo etiquetar el loudness de "${elegida.name}": ${e.message}`));
+            }
+          }
+          musicaGananciaDb = musica.gananciaPara(lufs);
+          console.log(`  🎵 [${renderId}] Música (${tono}): "${elegida.name}" (offset ${musicaOffset}s, ${Number.isFinite(lufs) ? `${lufs.toFixed(1)} LUFS → ` : 'sin medir → '}${musicaGananciaDb}dB)`);
         } else {
           console.warn(`  ⚠️ [${renderId}] Sin pistas de música disponibles (tono "${tono}" y neutral vacíos), el video sale sin música`);
         }
@@ -1402,7 +1419,7 @@ async function renderizarVideo(params, renderId) {
     // en video.js (montarVideoHyper) y en el historial de git por si se retoma.
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
     const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, {
-      ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset,
+      ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset, musicaGananciaDb,
       cartelPath,
     });
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);

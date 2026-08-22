@@ -554,5 +554,9 @@ module.exports = {
   argsEncoder,
   decidirEfecto,
   filtroZoom,
+  // Exportada para poder medir el resultado real de la cadena de música (corte de silencio +
+  // loop + ganancia + fades) sin replicarla en el test — replicar es justo lo que desincronizó
+  // la geometría del cartel en su momento.
+  prepararMusica,
   TRANSICIONES_DISPONIBLES,
 };

@@ -13,6 +13,23 @@ const { execFile } = require('child_process');
 const FFMPEG_BIN = require('ffmpeg-static');
 
 const TAG_REGEX = /\[inicio=([\d.]+)s\]/i;
+const TAG_LUFS = /\[lufs=(-?[\d.]+)\]/i;
+
+// Volumen final al que queda la música dentro del video, medido en LUFS.
+//
+// Antes se le bajaba a TODAS las pistas el mismo número (-20dB sobre el archivo), y eso conserva
+// las diferencias de origen: el catálogo real va de -16.7 a -12.8 LUFS, así que unas canciones
+// entraban casi 4 dB más fuerte que otras — el usuario lo notó de oído ("algunas están con el
+// volumen más alto desde origen"). Bajar más el número no lo arregla: mueve las dos parejo.
+//
+// -35 LUFS no es un valor nuevo: es exactamente donde queda hoy la pista PROMEDIO del catálogo
+// (-15.0 LUFS de promedio, menos los 20 dB que se aplicaban). O sea que el volumen general de la
+// música NO cambia respecto de lo que el usuario ya aprobó — lo único que desaparece es la
+// dispersión entre unas pistas y otras.
+const OBJETIVO_LUFS = -35;
+// Nunca subir una pista más que esto. Con un objetivo tan bajo siempre se atenúa, pero una pista
+// futura grabada muy floja podría pedir ganancia positiva y saturar al mezclarla con la voz.
+const SUBIDA_MAX_DB = 6;
 
 function estaEtiquetada(nombre) {
   return TAG_REGEX.test(nombre);
@@ -22,6 +39,51 @@ function estaEtiquetada(nombre) {
 function offsetDeNombre(nombre) {
   const m = nombre.match(TAG_REGEX);
   return m ? parseFloat(m[1]) : 0;
+}
+
+// Loudness ya etiquetado en el nombre, en LUFS (null si la pista todavía no se midió).
+function lufsDeNombre(nombre) {
+  const m = nombre.match(TAG_LUFS);
+  return m ? parseFloat(m[1]) : null;
+}
+
+// Cuánto del track se mide. Un video dura ~70s, así que la música que de verdad suena son los
+// primeros ~70-90s a partir del offset de inicio — no el track entero. Medir el archivo completo
+// deja un residuo: si el final de la canción es más suave que el principio, la medición sale más
+// baja que lo que el espectador escucha. Medido: con el track completo quedaba 0.9 dB de
+// diferencia entre las pistas extremas; acotando la ventana, baja más.
+const VENTANA_MEDICION_S = 90;
+
+// Mide el loudness integrado del archivo con `loudnorm` en modo análisis (no toca el audio, solo
+// imprime el JSON con la medición). Devuelve null si no se pudo leer — el llamador cae entonces a
+// la ganancia fija de siempre.
+// `offsetInicio`: se saltea el silencio inicial igual que hace prepararMusica(), para medir
+// exactamente el tramo que va a sonar.
+function medirLoudness(localPath, offsetInicio = 0) {
+  return new Promise((resolve) => {
+    const args = [];
+    if (offsetInicio > 0) args.push('-ss', offsetInicio.toFixed(2));
+    args.push('-t', String(VENTANA_MEDICION_S), '-i', localPath, '-af', 'loudnorm=print_format=json', '-f', 'null', '-');
+    execFile(FFMPEG_BIN, args,
+      { maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+        const m = (stderr || '').match(/\{[\s\S]*?"input_i"[\s\S]*?\}/);
+        if (!m) return resolve(null);
+        try {
+          const j = JSON.parse(m[0]);
+          const lufs = parseFloat(j.input_i);
+          resolve(Number.isFinite(lufs) ? lufs : null);
+        } catch { resolve(null); }
+      });
+  });
+}
+
+// Cuántos dB hay que mover ESTA pista para que quede al mismo volumen que todas las demás.
+// Sin medición (pista nueva sin etiquetar y con el análisis fallado) cae al -20 de siempre: el
+// video sale igual, solo sin emparejar.
+function gananciaPara(lufsMedido) {
+  if (!Number.isFinite(lufsMedido)) return -20;
+  const bruta = OBJETIVO_LUFS - lufsMedido;
+  return Math.round(Math.min(bruta, SUBIDA_MAX_DB) * 10) / 10;
 }
 
 // Analiza un archivo de audio local y devuelve desde qué segundo arranca el contenido real.
@@ -54,20 +116,30 @@ async function etiquetarTodo() {
   for (const [carpetaNombre, folderId] of Object.entries(carpetas)) {
     const pistas = await drive.listarMusica(folderId);
     for (const pista of pistas) {
-      if (estaEtiquetada(pista.name)) {
-        resultado.push({ carpeta: carpetaNombre, nombre: pista.name, offset: offsetDeNombre(pista.name), yaEstaba: true });
+      const faltaInicio = !estaEtiquetada(pista.name);
+      const faltaLufs = lufsDeNombre(pista.name) === null;
+      if (!faltaInicio && !faltaLufs) {
+        resultado.push({
+          carpeta: carpetaNombre, nombre: pista.name, yaEstaba: true,
+          offset: offsetDeNombre(pista.name), lufs: lufsDeNombre(pista.name),
+        });
         continue;
       }
       let tmp;
       try {
         const ext = (pista.name.match(/\.[^.]+$/) || ['.mp3'])[0];
         tmp = await drive.descargarMusica(pista.id, video.TEMP_DIR, ext);
-        const offset = await detectarInicio(tmp);
+        // Solo se calcula lo que falta: una pista ya etiquetada con su inicio no se vuelve a analizar
+        const offset = faltaInicio ? await detectarInicio(tmp) : offsetDeNombre(pista.name);
+        const lufs = faltaLufs ? await medirLoudness(tmp, offset) : lufsDeNombre(pista.name);
 
-        const base = pista.name.replace(/\.[^.]+$/, '');
-        const nuevoNombre = `${base} [inicio=${offset.toFixed(2)}s]${ext}`;
+        // El nombre se reconstruye desde cero (sin etiquetas viejas) para no acumularlas al
+        // re-correr esto sobre una pista que ya tenía una de las dos.
+        const base = pista.name.replace(/\.[^.]+$/, '').replace(TAG_REGEX, '').replace(TAG_LUFS, '').trim();
+        const etiquetaLufs = Number.isFinite(lufs) ? ` [lufs=${lufs.toFixed(1)}]` : '';
+        const nuevoNombre = `${base} [inicio=${offset.toFixed(2)}s]${etiquetaLufs}${ext}`;
         await drive.renombrarArchivo(pista.id, nuevoNombre);
-        resultado.push({ carpeta: carpetaNombre, nombre: nuevoNombre, offset, yaEstaba: false });
+        resultado.push({ carpeta: carpetaNombre, nombre: nuevoNombre, offset, lufs, yaEstaba: false });
       } catch (e) {
         console.warn(`  ⚠️ No se pudo etiquetar "${pista.name}" (${carpetaNombre}): ${e.message}`);
         resultado.push({ carpeta: carpetaNombre, nombre: pista.name, offset: 0, error: e.message });
@@ -79,4 +151,7 @@ async function etiquetarTodo() {
   return resultado;
 }
 
-module.exports = { estaEtiquetada, offsetDeNombre, detectarInicio, etiquetarTodo, TAG_REGEX };
+module.exports = {
+  estaEtiquetada, offsetDeNombre, detectarInicio, etiquetarTodo, TAG_REGEX,
+  lufsDeNombre, medirLoudness, gananciaPara, TAG_LUFS, OBJETIVO_LUFS,
+};
