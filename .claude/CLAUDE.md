@@ -1,5 +1,142 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-22 — Videos gemelos (dos videos por noticia) + cola de renderizado
+
+Pedido del usuario: de los 4 canales solo usa dos a diario (**Chismex Picante** y **Embajadores
+del Chisme**); los otros dos son sus gemelos abandonados (*Supe Lupe* y *La Naple*). Quiere que al
+elegir noticia, fuentes y citas UNA vez salgan **dos videos hermanos** — mismos hechos, pero
+distintos de verdad en guion, orden y fragmentos de tomas — y poder **abrir varias ventanas** para
+trabajar noticias distintas en paralelo sin que los renders se atropellen.
+
+Plan aprobado en modo plan (`C:\Users\jorucarbus\.claude\plans\piped-cooking-barto.md`).
+
+### La cola de renderizado no es una optimización: es lo que hace posible la feature
+
+`seleccion.planificarClips()` y `elegirPista()` leen y escriben `historial.json` para rotar clips y
+música sin repetir. **Dos renders en paralelo leen el mismo historial antes de que ninguno lo haya
+actualizado, y eligen lo mismo** — justo lo contrario de dos videos distintos. `colaRender.js`
+(nuevo) serializa: un render a la vez, FIFO.
+
+De paso resuelve dos cosas viejas: el render deja de vivir dentro de un pedido HTTP largo (el
+límite de tiempo del gateway de Railway deja de ser un riesgo — `/api/generate-video` encola y
+responde al instante, el navegador sondea `/api/render/:id`), y `GET /api/cola` le da el panorama
+a TODAS las ventanas abiertas.
+
+Detalles que costaron una vuelta cada uno:
+- **Respaldo agrupado a Drive**: `guardar()` corre en cada cambio de estado (encolar, empezar,
+  terminar). Medido: 12 subidas a Drive para 3 tareas. Ahora el disco se escribe siempre (local y
+  gratis) y el respaldo va coalescido cada 15s.
+- **Los `renderId` tienen largo fijo** (`render_<ts13>_<nnn>`). `video.limpiarTemporales(renderId)`
+  borra por PREFIJO: si un id pudiera ser prefijo de otro, un render borraría los temporales del
+  otro. Prefijo `render_` y no `job_` para no chocar con `/api/exportar`, que sigue usando
+  `job_<timestamp>`.
+- **Rehidratación al arrancar**: lo que estaba `renderizando` cuando el proceso murió perdió sus
+  temporales, así que se marca como **error visible** en vez de desaparecer en silencio; lo que
+  estaba `en_cola` vuelve a la fila.
+- `limpiarCache()` respeta ahora los archivos de tareas pendientes: con la cola larga, un render
+  podía llegar a su turno con el cartel ya barrido por el TTL de 1h.
+
+### Fix real de producción encontrado probando (no leyendo código)
+
+La prueba de punta a punta con dos renders reales dio: **video A bien, video B con "No se encontró
+la locución aprobada"**. Causa: al terminar, `renderizarVideo()` hacía `unlinkSync(audioPath)`
+SIEMPRE. Con la cola, eso borra el mp3 que otro render ya encolado todavía necesita. Además
+contradecía a `limpiarCache()`, que justamente protege los audios de `audiosPendientes`.
+
+**Fix**: `audioSigueEnUso()` — el mp3 se borra solo si no lo referencia ninguna locución aprobada
+ni ninguna tarea pendiente (`colaRender.audioTokensPendientes()`). Arregla de paso el **reintento
+de un render fallido**, que hasta ahora se quedaba sin audio en el segundo intento.
+
+### Hallazgo contraintuitivo: los dos videos comparten archivos pero NO metraje
+
+Medido con `planificarClips` real sobre cuatro escenarios de inventario:
+
+| Inventario | Archivos fuente compartidos | **Segundos de metraje repetidos** |
+|---|---|---|
+| 12 clips de 40s | 90% | **0%** |
+| 30 clips de 40s | 33% | **0%** |
+| 12 clips de 12s | 90% | **0%** |
+| 60 clips de 40s | 0% | **0%** |
+
+Con 12 clips por carpeta y ~28 tomas por video, el primer video agota el ciclo y el segundo no
+tiene archivos "frescos" — por eso el 90%. **Pero `historial.offsets` guarda dónde quedó cada
+video y el segundo render continúa desde ahí**: el A muestra los segundos 1-4 de `a3.mp4` y el B
+los 12-15. Ni un segundo repetido.
+
+⚠️ **Esto importa para el futuro**: alguien que mire el plan de clips y vea los mismos `videoId` en
+los dos videos va a pensar que hay un bug y va a "arreglarlo". No lo hay — lo que hay que mirar es
+el par (videoId, offset), no el videoId solo. El plan original decía "solapamiento bajo o nulo de
+videoIds", y eso era **incorrecto**; la garantía real es otra y es más fuerte.
+
+### Gemelos
+
+- `gemini.escribirGuion` + `MOTORES_GUION` — router calcado de `FRAGMENTADORES`. **Es la costura
+  por donde va a entrar el motor de guion con graphify** (repo `generador-guion-graphify`), pedido
+  explícito del usuario: entra como otra entrada del objeto, sin tocar `server.js`.
+- `generarGuion(..., guionEvitar)`: mismos hechos y mismo ángulo, otro arranque, otro orden, otro
+  vocabulario, sin reciclar tiras de más de 4 palabras.
+- `gemini.variarMetadatos`: título/descripción/hashtags propios del segundo video. Los hashtags de
+  NOMBRE PROPIO sí se pueden repetir — sacarlos por no repetir costaría alcance.
+- **Reparto de citas**: alternadas por orden de detección (0→A, 1→B, 2→A…); con una sola, la
+  comparten. Las fotos y videos de apoyo van a los DOS. Hay un log por variante (`🎞️ Variante A:
+  N material(es)…`) porque es lo único que permite confirmar en producción que el reparto anda.
+- **Dónde vive cada uno**: el video A se queda en los campos de siempre del job y el B cuelga de
+  `job.gemela`. Asimetría a propósito: el historial, "continuar donde quedó" y los jobs viejos no
+  se tocan. Mismo criterio en el frontend (`state` y `state.B`).
+- `audiosPendientes` de 4 → 8: con 2 locuciones por noticia y varias ventanas, 4 expulsaba
+  locuciones YA APROBADAS (el bug de "No se encontró la locución aprobada" que ya estaba anotado).
+
+### UI: pestañas A/B, sin duplicar el DOM
+
+El usuario pidió primero "lado a lado" y después lo corrigió: *"capaz las dos versiones para que no
+sean tan amontonado podría funcionar como pestañas"*. Acertado — pero además **no se duplicó nada
+del HTML**: los mismos controles se repintan con los datos de la variante activa (`V()`,
+`volcarVista()`, `pintarVista()`). Duplicar habría significado dos editores, dos listas, dos
+reproductores y dos canvas de cartel: el doble de superficie para desincronizarse, que es
+exactamente el bug que costó una semana con la geometría del cartel.
+
+Guarda incorporada: el botón de continuar de cada paso **no avanza hasta que las dos versiones
+fueron atendidas**; si falta una, salta a su pestaña. Sin eso es fácil aprobar el Paso 5 sin haber
+escuchado el audio B.
+
+**El cartel se rellena ahora con el TÍTULO de la lectura**, no con `nombreCorto` (que es la base
+del nombre de archivo, corto y seco). Cada variante con el suyo. Pedido explícito del usuario.
+
+### Verificación
+
+1. **Cola, en node contra el módulo real**: orden A→B→C, **máximo 1 render simultáneo**, un fallo
+   no arrastra a los demás, y tras un "reinicio" la rehidratación devuelve lo pendiente y marca lo
+   interrumpido como error.
+2. **Endpoints por HTTP**: los tres 400 (sin fragments, sin destFolder, front viejo), encolado con
+   posición, estado, y 404 de render inexistente.
+3. **Guiones contra Gemini real**: arranques distintos, **1 sola tira de 5 palabras compartida** en
+   206 vs 209 palabras, 46% de vocabulario común (comparten los hechos, no la redacción). Títulos
+   distintos y 3 de 5 hashtags distintos.
+4. **Reparto de citas por HTTP** con 3 citas + foto + video: A se llevó las citas 0 y 2, B la 1, y
+   la foto y el video fueron a las dos.
+5. **Punta a punta REAL** (dos renders con clips de Drive y ffmpeg, sin gastar ElevenLabs — audio
+   generado con ffmpeg — y sin escribir en la hoja, con `GOOGLE_SHEET_ID` vacío en esa corrida):
+   los dos MP4 salieron; el log confirma `Plan A → Montaje A → Guardado A → Plan B → Montaje B →
+   Guardado B` **sin solaparse nunca**; y el job quedó con el A en la raíz y el B en `job.gemela`.
+   La carpeta de prueba en Drive se mandó a la papelera al terminar.
+6. **Browser real**: pestañas con nombre de canal y punto de estado, el volcado de ediciones al
+   cambiar de pestaña (editar B y volver a A no pierde la edición), el autocompletado del canal
+   hermano (Chismex Picante → Supe Lupe), la guarda contra aprobar a ciegas, el prefill del cartel
+   con el título, el panel de cola en sus tres estados, y **el flujo de generación encolando 2
+   tareas con el canal correcto en cada una**.
+7. **Regresión con gemelos apagado**: `V()` devuelve `state`, pestañas ocultas, no autocompleta
+   nada, encola UNA sola tarea. Encontró y arregló un bug real: `state.B === null` reventaba
+   `actualizarTabs()` — por eso `V()` crea la estructura del B al primer uso aunque el modo esté
+   apagado.
+
+### Pendiente
+
+- Un video gemelo **completo por la UI, con locución real de ElevenLabs**, no se hizo: gastaría dos
+  locuciones del usuario. El pipeline está probado por partes y de punta a punta con audio
+  sintético; lo que falta es la corrida real del usuario.
+- `/api/exportar` (modo Insumos) sigue sin cola y sin gemelos — no es una regresión, ya era así.
+
+
 ## 2026-08-21 — La cita ahora DESPLAZA la voz en off, no la reemplaza (+ el guion le hace lugar)
 
 Reporte del usuario: *"la cita no está funcionando bien, preferiría que desplace la voz en off
