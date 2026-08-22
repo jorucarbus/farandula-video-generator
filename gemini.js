@@ -526,7 +526,12 @@ async function procesarLectura(sourceType, content, sesgo = 'neutral') {
 }
 
 // ETAPA 2: Generar Guion (7 ángulos)
-async function generarGuion(cronica, angle, angleContent = null) {
+// `citas`: [{texto}] de las entrevistas que el usuario adjuntó al inicio del flujo. No son
+// contenido del guion — son audio real que se va a INSERTAR en la locución (ver
+// tiempos.empalmarCitasReales). Se le pasan al guionista para que les haga lugar: una frase que
+// entrega la cita antes, y otra que retoma después. Sin esto, la cita cae en medio de una idea a
+// medio terminar y suena como un corte, no como un reportaje (pedido del usuario, 2026-08-21).
+async function generarGuion(cronica, angle, angleContent = null, citas = []) {
   try {
     let descripcionEnfoque;
 
@@ -538,6 +543,28 @@ async function generarGuion(cronica, angle, angleContent = null) {
       descripcionEnfoque = getAngleDescription(angle);
     }
 
+    // Bloque opcional: las citas de entrevista que se van a escuchar con su voz original.
+    const listaCitas = (citas || []).map(c => (c && c.texto ? String(c.texto).trim() : '')).filter(Boolean);
+    const bloqueCitas = listaCitas.length === 0 ? '' : `
+
+=== CITAS REALES QUE SE VAN A ESCUCHAR EN EL VIDEO ===
+${listaCitas.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
+=== FIN DE LAS CITAS ===
+
+REGLAS OBLIGATORIAS PARA LAS CITAS:
+- Cada una de esas frases se va a OÍR en el video con la voz real de quien la dijo, insertada
+  entre medio de tu guion. Mientras suena, la voz en off se calla.
+- PROHIBIDO escribir el texto de la cita dentro del guion: se escucharía dos veces, una en tu voz
+  y otra en la de la persona. Tampoco la parafrasees palabra por palabra.
+- Antes de cada cita escribe UNA frase que se la entregue y deje la puerta abierta ("y ella misma
+  lo dijo sin filtro", "sus palabras fueron exactas", "escúchalo de su propia boca"). Esa frase
+  cierra apuntando a la cita, no explicándola ni adelantando lo que dice.
+- Justo después escribe UNA frase que retome como si acabáramos de escucharla ("ahí se le cayó
+  todo", "esa frase le costó carísimo"). Nunca arranques de cero como si la cita no hubiera
+  pasado, y nunca repitas lo que ya dijo.
+- Las citas entran en el MISMO ORDEN en que están numeradas arriba.
+- El resto del guion sigue igual: mismo largo, mismo ritmo, mismo tono.`;
+
     const userMessage = `A continuación tienes dos bloques claramente separados.
 
 === MATERIAL BASE (la crónica con los HECHOS de la noticia; de aquí sale TODO el contenido del guion) ===
@@ -548,7 +575,7 @@ ${cronica}
 ${descripcionEnfoque}
 === FIN DEL ENFOQUE ===
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.`;
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}`;
 
     const { texto: response } = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
     return response.trim();
@@ -789,9 +816,13 @@ que corresponden temáticamente.
 REGLAS:
 1. Cada material va a LO SUMO un fragmento — el que habla del mismo tema/persona/hecho que el
    material muestra o dice.
-2. Si un material no calza claramente con ningún fragmento, NO lo incluyas en la respuesta.
-3. Dos materiales no pueden ir al mismo fragmento — si compiten, elige el que calza mejor.
-4. Responde ÚNICAMENTE un array JSON válido: [{"materialId": "...", "parrafoIdx": 0}]
+2. OJO con los materiales de tipo "cita": la cita se ESCUCHA (voz real de quien la dijo) JUSTO
+   DESPUÉS de que termina de narrarse el fragmento que elijas, no encima de él. Así que elige el
+   fragmento que la PRESENTA o la anuncia ("y ella misma lo dijo", "sus palabras fueron claras"),
+   nunca el que ya la comenta como si el espectador la hubiera oído.
+3. Si un material no calza claramente con ningún fragmento, NO lo incluyas en la respuesta.
+4. Dos materiales no pueden ir al mismo fragmento — si compiten, elige el que calza mejor.
+5. Responde ÚNICAMENTE un array JSON válido: [{"materialId": "...", "parrafoIdx": 0}]
 
 Fragmentos del guion (uno por línea, número entre corchetes):
 ${bloqueFragmentos}

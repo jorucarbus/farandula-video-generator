@@ -1,5 +1,91 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-21 — La cita ahora DESPLAZA la voz en off, no la reemplaza (+ el guion le hace lugar)
+
+Reporte del usuario: *"la cita no está funcionando bien, preferiría que desplace la voz en off
+que está en ese lugar en vez de solo silenciarla, porque al continuar la voz en off es como que
+vuelve a tener sonido, cuando la idea es que continúe donde se quedó… de hecho creo que sería
+bueno que el guion acompañe más a esa cita, le dé espacio"*.
+
+### El problema de diseño (no era un bug, era la semántica)
+
+`tiempos.empalmarCitasReales()` **reemplazaba** el tramo sintético del fragmento con cita por el
+audio de la entrevista. Consecuencia: ese pedazo del guion aprobado NUNCA se escuchaba — la voz en
+off se cortaba, sonaba la cita, y volvía en el fragmento siguiente, saltándose una idea entera.
+Por eso al usuario le sonaba como si el audio "volviera a tener sonido" en vez de continuar.
+
+### Rediseño: insertar en vez de sustituir
+
+Ahora la narración del fragmento se escucha **completa**, y la cita entra **después** de ella:
+
+```
+… voz en off (fragmento i, completo) → [CITA con audio original, sin voz en off] → voz en off (fragmento i+1) …
+```
+
+Costo real del cambio: la línea de tiempo gana un hueco que no pertenece a ningún fragmento del
+guion. Como `seleccion.js` y `subtitulos.js` reconstruyen el tiempo **sumando duraciones en
+orden**, la solución es que ese hueco SEA un fragmento: `empalmarCitasReales` devuelve ahora
+`duraciones`/`palabras` **más largos** que los de entrada, más `inserciones:
+[{indice, parrafoOrigen, duracion, empalme}]`, y `server.js` mete el pseudo-fragmento equivalente
+(`{texto: '', famoso: <el del fragmento origen>, esCita: true, noFusionar: true}`) en una copia
+local de `fragments` — el guion aprobado y la UI no se tocan.
+
+Que el pseudo-fragmento vaya **sin texto** resuelve gratis el subtítulo: `subtitulos.generarASS`
+ya salta los fragmentos sin texto (`if (!ventana || !f.texto) return`), así que durante la cita no
+aparece ni una palabra en pantalla — que es justo lo correcto, ahí no habla la voz en off.
+
+Y los timestamps de palabra de **su propio** fragmento ya no se mueven (su narración suena antes
+de la cita); solo se corre lo que viene después. Con el diseño viejo ese fragmento perdía su
+detalle por palabra entero (`palabras[idx] = null`).
+
+Piezas de apoyo del cambio:
+- `seleccion.agruparParaClips`: respeta `noFusionar`. Sin esto, una cita corta pegada a un
+  fragmento del mismo famoso se fusionaba con el vecino y perdía su `parrafoIdx` propio — que es
+  justamente la llave con la que `insertarMaterialesEnPlan` sabe qué clips reemplazar por el video
+  de la entrevista. El material habría terminado pintado también sobre la narración de al lado.
+- `server.js`: los materiales se **reindexan** al espacio de índices nuevo después del empalme
+  (`+ inserciones con parrafoOrigen < idxViejo`), y el video de la entrevista recién ahí se cuelga
+  de SU pseudo-fragmento (antes se colgaba del fragmento que la presenta, o sea encima de la
+  narración). El `citasConVideo` intermedio existe por eso.
+- Red de seguridad nueva: si `duraciones.length !== fragments.length` al llegar al plan, se
+  ignoran los tiempos reales y se cae al reparto por caracteres. Renderizar con una línea de
+  tiempo corrida es exactamente como salen los subtítulos "descuadrados" que el usuario ya
+  reportó; mejor tiempos aproximados que corridos.
+- El pseudo-fragmento lleva `caracteres` equivalentes a su duración, para que hasta ese fallback
+  por caracteres le reserve su tiempo en vez de darle 0s.
+
+### El guion ahora le hace lugar a la cita
+
+Segundo pedido del usuario. Las citas se detectan al subir la entrevista (Paso 1), o sea **antes**
+de escribir el guion — pero el guionista no se enteraba de que existían.
+
+- `gemini.generarGuion(cronica, angle, angleContent, citas)`: cuarto parámetro nuevo. Con citas
+  presentes, el user message suma un bloque con las frases textuales y reglas obligatorias: no
+  escribir la cita en el guion (se oiría dos veces), una frase de **entrada** que se la entregue
+  ("y ella misma lo dijo sin filtro"), una de **retoma** justo después ("ahí se le cayó todo"), y
+  respetar el orden de las citas.
+- `server.js /api/generate-script` junta las citas del job y se las pasa. Solo texto: no toca el
+  archivo, no cuesta nada.
+- `gemini.asignarMateriales`: regla nueva #2 — para una cita hay que elegir el fragmento que la
+  **presenta**, no el que ya la comenta, porque ahora la cita suena DESPUÉS de ese fragmento.
+
+### Verificación (offline, sin gastar API ni Drive)
+
+1. **Empalme real con ffmpeg**: locución de 30s (6 fragmentos de 5s) + entrevista de 20s, dos
+   citas (4s y 3.5s). Esperado 37.541s, real **37.538s** (3ms de redondeo de frame mp3).
+   `duraciones` pasó de 6 a 8 entradas, inserciones en los índices 2 y 6, y **todas** las palabras
+   quedaron dentro de la ventana de su fragmento en la línea de tiempo nueva.
+2. **Pipeline** (plan de clips + subtítulos, inventario falso): el pseudo-fragmento se llevó
+   exactamente sus 4s, partidos en 2 clips de 2s del material con offsets continuos (12 → 14),
+   ningún otro clip tocó el material, y **0 eventos de subtítulo** dentro de la ventana de la cita.
+   Último subtítulo termina en 24.00s con audio de 24.00s: sin corrimiento.
+
+### Pendiente conocido
+
+`/api/exportar` (el ZIP de insumos) sigue armando su plan sin materiales adicionales — ya era así
+antes de este cambio, no es una regresión.
+
+
 ## 2026-08-20 (madrugada, autónomo) — Material adicional: durabilidad + espejo + verificación real completa
 
 Sesión nocturna autónoma, sin supervisión (el usuario pidió dejarlo trabajando y contarle por

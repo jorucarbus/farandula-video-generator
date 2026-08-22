@@ -144,9 +144,21 @@ function alinearFragmentos(fragments, alineacion, duracionAudioReal) {
   return { duraciones, palabras: palabrasPorFragmento };
 }
 
-// Material adicional: reemplaza en SERIE el tramo de audio sintético de un fragmento por el
-// audio ORIGINAL de una entrevista (cita real). Es la pieza más invasiva de esa feature —
-// desplaza la duración real de ese fragmento y por lo tanto de TODO lo que sigue.
+// Material adicional: INSERTA el audio ORIGINAL de una entrevista (cita real) dentro de la
+// locución, justo DESPUÉS de que la voz en off termina de narrar el fragmento al que la cita
+// acompaña. Es la pieza más invasiva de esa feature — corre en el tiempo TODO lo que viene
+// después.
+//
+// Por qué insertar y no reemplazar (cambio de diseño pedido por el usuario, 2026-08-21): la
+// versión anterior SUSTITUÍA el tramo sintético de ese fragmento por la cita, así que la voz en
+// off se comía esa parte del guion — "es como que vuelve a tener sonido" al terminar la cita, en
+// vez de continuar donde se quedó. Ahora la narración del fragmento se escucha COMPLETA, después
+// entra la cita con su audio original (sin voz en off encima), y la voz en off sigue exactamente
+// donde iba. Cuesta que la línea de tiempo gane un hueco que no pertenece a ningún fragmento del
+// guion: por eso esta función devuelve arrays de duraciones/palabras MÁS LARGOS que los de
+// entrada, más `inserciones` para que el llamador meta el pseudo-fragmento equivalente en su copia
+// de `fragments` (ver server.js) — de esa forma seleccion.js y subtitulos.js, que reconstruyen la
+// línea de tiempo sumando duraciones en orden, siguen funcionando sin enterarse de nada.
 //
 // empalmes: [{ parrafoIdx, archivoPath, inicio, fin, esVideo }, ...] — se asume YA en orden
 //   ascendente de parrafoIdx (server.js los arma recorriendo fragments en orden).
@@ -155,9 +167,11 @@ function alinearFragmentos(fragments, alineacion, duracionAudioReal) {
 //   cayó a estimado) — funciona igual en los dos casos, palabrasBase[i]===null ya tiene su
 //   propio fallback en subtitulos.js (palabrasEstimadas).
 //
-// Devuelve { audioPath, duraciones, palabras, aplicados, descartados } o null si NINGÚN empalme
-// prosperó (el llamador sigue con el audio/tiempos originales, sin tocar nada — Regla de
-// robustez: esta capa nunca aborta el render).
+// Devuelve { audioPath, duraciones, palabras, inserciones, aplicados, descartados } o null si
+// NINGÚN empalme prosperó (el llamador sigue con el audio/tiempos originales, sin tocar nada —
+// Regla de robustez: esta capa nunca aborta el render).
+//   inserciones: [{ indice, parrafoOrigen, duracion, empalme }] — `indice` ya está en el espacio
+//   de índices NUEVO (el de los arrays devueltos), listo para hacerle splice a `fragments`.
 async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBase, empalmes, jobId) {
   if (!empalmes || empalmes.length === 0) return null;
 
@@ -179,31 +193,32 @@ async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBa
   }
   if (validos.length === 0) return null;
 
-  // 2. Boundaries del audio ORIGINAL (acumulado de duracionesBase) — dónde empieza cada
+  // 2. Boundaries del audio ORIGINAL (acumulado de duracionesBase) — dónde empieza y termina cada
   //    fragmento en la locución sintética de hoy.
   const inicios = [];
   let acc = 0;
   for (const d of duracionesBase) { inicios.push(acc); acc += d; }
   const totalOriginal = acc;
 
-  // 3. Armar tramos [sintético | cita real | sintético | ...] cubriendo todo [0, totalOriginal].
-  //    Fragmentos consecutivos SIN cita se agrupan en un solo tramo sintético (menos inputs).
+  // 3. Armar tramos cubriendo TODO [0, totalOriginal] sin quitar nada, intercalando las citas.
+  //    A diferencia del diseño viejo, el tramo sintético del fragmento con cita NO se saca: la
+  //    cita se agrega DESPUÉS de él. Los fragmentos consecutivos se agrupan en un solo tramo
+  //    sintético (menos inputs de ffmpeg); el corte de grupo cae DESPUÉS del fragmento con cita.
   const porFragIdx = new Map(validos.map(v => [v.parrafoIdx, v]));
-  const tramos = []; // { inicio, fin, archivo, esVideo }
-  let i = 0;
-  while (i < duracionesBase.length) {
-    if (porFragIdx.has(i)) {
-      const v = porFragIdx.get(i);
-      tramos.push({ inicio: v.inicio, fin: v.fin, archivo: v.archivoPath, esVideo: v.esVideo, esCita: true, parrafoIdx: i });
-      i++;
-    } else {
-      const inicioGrupo = inicios[i];
-      let j = i;
-      while (j < duracionesBase.length && !porFragIdx.has(j)) j++;
-      const finGrupo = j < duracionesBase.length ? inicios[j] : totalOriginal;
-      tramos.push({ inicio: inicioGrupo, fin: finGrupo, archivo: audioPathOriginal, esVideo: false, esCita: false });
-      i = j;
+  const tramos = []; // { inicio, fin, archivo }
+  let grupoInicio = 0;
+  for (let i = 0; i < duracionesBase.length; i++) {
+    const v = porFragIdx.get(i);
+    if (!v) continue;
+    const finNarracion = inicios[i] + duracionesBase[i];
+    if (finNarracion > grupoInicio) {
+      tramos.push({ inicio: grupoInicio, fin: finNarracion, archivo: audioPathOriginal });
     }
+    tramos.push({ inicio: v.inicio, fin: v.fin, archivo: v.archivoPath });
+    grupoInicio = finNarracion;
+  }
+  if (totalOriginal > grupoInicio) {
+    tramos.push({ inicio: grupoInicio, fin: totalOriginal, archivo: audioPathOriginal });
   }
 
   // 4. Un solo ffmpeg -filter_complex concat=n:v=0:a=1 — cada tramo entra como su propio -i con
@@ -217,10 +232,8 @@ async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBa
   // vez en el repo, un solo comando de ffmpeg lleva VARIOS `-i` (uno por tramo) — con `-t`
   // DESPUÉS de cada `-i`, ffmpeg no lo asocia a ESE input: lo trata como opción de OUTPUT
   // (duración total del output), y como se repite una vez por tramo, gana la ÚLTIMA — el output
-  // terminaba truncado a la duración del ÚLTIMO tramo nada más, ignorando el resto. Reproducido
-  // exacto: con 1 cita de 5.4s en el fragmento 9 de 32, el audio esperado eran ~77.6s y el
-  // archivo real salía en ~51.3s — coincide con la duración del tramo final solo. Fix: `-ss`/`-t`
-  // ANTES del `-i` de cada tramo, como corresponde.
+  // terminaba truncado a la duración del ÚLTIMO tramo nada más, ignorando el resto. Fix:
+  // `-ss`/`-t` ANTES del `-i` de cada tramo, como corresponde.
   const args = [];
   tramos.forEach((t) => {
     args.push('-ss', t.inicio.toFixed(3), '-t', (t.fin - t.inicio).toFixed(3), '-i', t.archivo);
@@ -237,27 +250,29 @@ async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBa
     return null;
   }
 
-  // 5. Aplicar deltas: duración real de cada fragmento-cita, y desplazar los timestamps de
-  //    palabra de TODO lo que viene después (mismo fragmento en adelante no aplica — el propio
-  //    fragmento-cita pierde su detalle por palabra, subtitulos.js ya estima dentro de la ventana
-  //    nueva cuando palabras[idx] es null).
-  const duraciones = [...duracionesBase];
-  const palabras = (palabrasBase || []).map(p => (p ? [...p] : p));
+  // 5. Reconstruir duraciones/palabras con el hueco de cada cita YA insertado, y correr los
+  //    timestamps de palabra de todo lo que queda después. Las palabras del PROPIO fragmento con
+  //    cita no se mueven: su narración suena antes de la cita, no después — esa es justamente la
+  //    diferencia con el diseño viejo, donde ese fragmento perdía su narración entera.
+  const duraciones = [];
+  const palabras = [];
+  const inserciones = [];
   const aplicados = [];
-  for (const v of validos) {
-    const delta = v.duracionReal - duraciones[v.parrafoIdx];
-    duraciones[v.parrafoIdx] = v.duracionReal;
-    palabras[v.parrafoIdx] = null;
-    if (delta !== 0) {
-      for (let k = 0; k < palabras.length; k++) {
-        if (k <= v.parrafoIdx || !palabras[k]) continue;
-        palabras[k] = palabras[k].map(w => ({ ...w, inicio: w.inicio + delta, fin: w.fin + delta }));
-      }
-    }
-    aplicados.push(v.parrafoIdx);
+  let corrimiento = 0;
+  for (let i = 0; i < duracionesBase.length; i++) {
+    duraciones.push(duracionesBase[i]);
+    const base = palabrasBase && palabrasBase[i];
+    palabras.push(base ? base.map(w => ({ ...w, inicio: w.inicio + corrimiento, fin: w.fin + corrimiento })) : (base ?? null));
+    const v = porFragIdx.get(i);
+    if (!v) continue;
+    inserciones.push({ indice: duraciones.length, parrafoOrigen: i, duracion: v.duracionReal, empalme: v });
+    duraciones.push(v.duracionReal);
+    palabras.push([]); // la cita no lleva subtítulos: es la voz real de la entrevista, no la voz en off
+    corrimiento += v.duracionReal;
+    aplicados.push(i);
   }
 
-  return { audioPath, duraciones, palabras, aplicados, descartados };
+  return { audioPath, duraciones, palabras, inserciones, aplicados, descartados };
 }
 
 module.exports = {

@@ -72,12 +72,17 @@ function agruparParaClips(parrafos, tiempos) {
     // Fusionar si el nuevo es muy corto, o si el bloque previo se quedó corto y este lo puede
     // completar. Sin la segunda condición, un fragmento corto que abre bloque (porque su
     // anterior era de otro famoso) se quedaría corto para siempre.
-    const hayQueFusionar = mismoFamoso && (tiempos[idx] < CLIP_MIN || previo.tiempo < CLIP_MIN);
+    // `noFusionar` lo trae el pseudo-fragmento de una cita con audio real (server.js): ese tramo
+    // tiene que quedarse con su propio parrafoIdx, porque es la llave con la que
+    // insertarMaterialesEnPlan sabe qué clips reemplazar por el video de la entrevista. Si se
+    // fusiona con el vecino, el material terminaría pintado también sobre la narración de al lado.
+    const hayQueFusionar = mismoFamoso && !p.noFusionar && !previo.noFusionar
+      && (tiempos[idx] < CLIP_MIN || previo.tiempo < CLIP_MIN);
     if (hayQueFusionar) {
       previo.tiempo += tiempos[idx];
       previo.indices.push(idx);
     } else {
-      bloques.push({ famoso: p.famoso, tiempo: tiempos[idx], indices: [idx] });
+      bloques.push({ famoso: p.famoso, tiempo: tiempos[idx], indices: [idx], noFusionar: Boolean(p.noFusionar) });
     }
   });
   return bloques;

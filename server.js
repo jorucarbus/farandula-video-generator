@@ -709,8 +709,21 @@ app.post('/api/generate-script', async (req, res) => {
       return res.status(400).json({ error: 'Faltan cronica o angle' });
     }
 
-    console.log(`✍️ Generando guion (ángulo ${angle})...`);
-    const script = await gemini.generarGuion(cronica, angle, angleContent);
+    // Si el usuario adjuntó entrevistas al inicio, el guionista tiene que saber qué frases se van
+    // a escuchar con voz real para dejarles lugar (entrada + retoma) en vez de que la cita caiga
+    // en mitad de una idea. Solo texto: barato, no toca el archivo.
+    const citasDisponibles = [];
+    if (jobId) {
+      try {
+        const job = jobStore.obtenerJob(jobId);
+        for (const m of job?.materialesAdicionales || []) {
+          if (m.tipo === 'entrevista') citasDisponibles.push(...(m.citas || []));
+        }
+      } catch { /* sin citas, el guion sale igual que siempre */ }
+    }
+
+    console.log(`✍️ Generando guion (ángulo ${angle})${citasDisponibles.length ? `, con espacio para ${citasDisponibles.length} cita(s)` : ''}...`);
+    const script = await gemini.generarGuion(cronica, angle, angleContent, citasDisponibles);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
@@ -1021,6 +1034,7 @@ app.post('/api/generate-video', async (req, res) => {
     // de audio real cuando corresponde.
     const jobParaMateriales = jobId ? jobStore.obtenerJob(jobId) : null;
     const materialesPorFragmento = new Map(); // parrafoIdx -> {archivoId, archivoPath, nombre, tipo, esImagen, offsetInicio}
+    const citasConVideo = new Map(); // parrafoIdx ORIGINAL -> material de la entrevista (se remapea tras el empalme)
     const empalmesAudio = [];
     for (let fi = 0; fi < fragments.length; fi++) {
       const ma = fragments[fi].materialAdicional;
@@ -1041,10 +1055,13 @@ app.post('/api/generate-video', async (req, res) => {
       }
       if (ma.tipo === 'cita') {
         empalmesAudio.push({ parrafoIdx: fi, archivoPath: material.archivoPath, inicio: ma.inicio, fin: ma.fin, esVideo: material.tieneVideo });
-        // Si la entrevista no trae video propio, se deja el clip de famoso normal para lo
-        // visual (pedido explícito del usuario) — solo cambia el audio de ese tramo.
+        // La cita ya NO pinta sobre el fragmento que la presenta: desde el rediseño de
+        // 2026-08-21 vive en su propio pseudo-fragmento, que recién existe después del empalme
+        // de audio (más abajo). Acá solo se guarda a qué fragmento acompaña; si la entrevista no
+        // trae video propio se deja el clip de famoso normal para lo visual (pedido explícito del
+        // usuario) — solo cambia el audio de ese tramo.
         if (material.tieneVideo) {
-          materialesPorFragmento.set(fi, { archivoId: `mat_${material.id}`, archivoPath: material.archivoPath, nombre: 'Entrevista', tipo: 'cita', esImagen: false, offsetInicio: ma.inicio });
+          citasConVideo.set(fi, { archivoId: `mat_${material.id}`, archivoPath: material.archivoPath, nombre: 'Entrevista', tipo: 'cita', esImagen: false, offsetInicio: ma.inicio });
         }
       } else {
         materialesPorFragmento.set(fi, { archivoId: `mat_${material.id}`, archivoPath: material.archivoPath, nombre: material.tipo === 'foto' ? 'Foto de apoyo' : 'Video de apoyo', tipo: material.tipo, esImagen: material.tipo === 'foto', offsetInicio: 0 });
@@ -1053,6 +1070,10 @@ app.post('/api/generate-video', async (req, res) => {
 
     let duracionesParaPlan = audioAprobado?.duracionesReales;
     let palabrasParaSubs = audioAprobado?.palabrasAlineadas;
+    // Copia local de los fragmentos SOLO para este render: cada cita con audio real agrega un
+    // pseudo-fragmento sin texto (ver tiempos.empalmarCitasReales). Nada de esto vuelve al job ni
+    // a la UI — el guion que el usuario aprobó no se toca.
+    let fragmentsRender = fragments;
     if (empalmesAudio.length > 0) {
       try {
         const baseDur = duracionesParaPlan || seleccion.tiemposPorFragmento(fragments, durAudio, null);
@@ -1062,21 +1083,67 @@ app.post('/api/generate-video', async (req, res) => {
           audioPath = empalmado.audioPath;
           duracionesParaPlan = empalmado.duraciones;
           palabrasParaSubs = empalmado.palabras;
-          // Acoplamiento audio↔video: un empalme descartado (clamp inválido) no puede dejar el
-          // video de la entrevista en pantalla con la voz sintética sonando encima.
-          for (const idx of empalmado.descartados) materialesPorFragmento.delete(idx);
+
+          // La línea de tiempo ganó un hueco por cita: `fragments` tiene que crecer igual para
+          // seguir siendo paralelo a duraciones/palabras (seleccion.js y subtitulos.js suman
+          // duraciones en orden y confían en que los tres arrays midan lo mismo). El
+          // pseudo-fragmento va sin texto — subtitulos.js salta los fragmentos sin texto, así que
+          // durante la cita no sale ni un subtítulo, que es justamente lo que se quiere: ahí no
+          // habla la voz en off.
+          const nuevos = [...fragments];
+          // `caracteres` equivalentes al tiempo que ocupa la cita: el pseudo-fragmento no tiene
+          // texto, pero si algo hiciera caer el reparto al modo "% de caracteres", con 0 el hueco
+          // de la cita valdría 0 segundos de video y todo lo posterior saldría corrido.
+          const charsPorSegundo = (fragments.reduce((n, f) => n + (f.caracteres || 0), 0) / Math.max(durAudio, 0.001)) || 15;
+          for (const ins of empalmado.inserciones) {
+            const origen = fragments[ins.parrafoOrigen] || fragments[0];
+            nuevos.splice(ins.indice, 0, {
+              texto: '',
+              famoso: origen.famoso, // fallback visual si la entrevista no trae video propio
+              caracteres: Math.max(1, Math.round(ins.duracion * charsPorSegundo)),
+              esCita: true,
+              noFusionar: true, // no se puede fusionar con el vecino: perdería su parrafoIdx propio
+            });
+          }
+          fragmentsRender = nuevos;
+
+          // Reindexar los materiales al espacio de índices NUEVO, y recién ahora colgar cada
+          // video de entrevista de SU pseudo-fragmento.
+          const corridos = new Map();
+          for (const [idxViejo, mat] of materialesPorFragmento) {
+            const desplazo = empalmado.inserciones.filter(ins => ins.parrafoOrigen < idxViejo).length;
+            corridos.set(idxViejo + desplazo, mat);
+          }
+          materialesPorFragmento.clear();
+          for (const [k, v] of corridos) materialesPorFragmento.set(k, v);
+          for (const ins of empalmado.inserciones) {
+            const mat = citasConVideo.get(ins.parrafoOrigen);
+            if (mat) materialesPorFragmento.set(ins.indice, mat);
+          }
+
           durAudio = await video.obtenerDuracion(audioPath);
-          console.log(`  🎙️ [${renderId}] ${empalmado.aplicados.length} cita(s) con audio real empalmada(s)${empalmado.descartados.length ? `, ${empalmado.descartados.length} descartada(s)` : ''} — duración final ${durAudio.toFixed(1)}s`);
+          console.log(`  🎙️ [${renderId}] ${empalmado.aplicados.length} cita(s) con audio real insertada(s)${empalmado.descartados.length ? `, ${empalmado.descartados.length} descartada(s)` : ''} — duración final ${durAudio.toFixed(1)}s`);
         }
       } catch (e) {
         console.warn(`  ⚠️ [${renderId}] Empalme de citas reales falló por completo, el video sale con voz 100% sintética: ${e.message}`);
-        for (const emp of empalmesAudio) materialesPorFragmento.delete(emp.parrafoIdx);
+        fragmentsRender = fragments;
+        duracionesParaPlan = audioAprobado?.duracionesReales;
+        palabrasParaSubs = audioAprobado?.palabrasAlineadas;
       }
+    }
+
+    // Red de seguridad: si por lo que sea los arrays quedaron desalineados, es preferible caer al
+    // reparto por % de caracteres (video con tiempos aproximados) que renderizar con una línea de
+    // tiempo corrida — que es exactamente como salen los subtítulos "descuadrados".
+    if (duracionesParaPlan && duracionesParaPlan.length !== fragmentsRender.length) {
+      console.warn(`  ⚠️ [${renderId}] duraciones(${duracionesParaPlan.length}) != fragmentos(${fragmentsRender.length}), se ignoran los tiempos reales`);
+      duracionesParaPlan = null;
+      palabrasParaSubs = null;
     }
 
     // 2. Inventario de videos por famoso (con duración de cada video)
     const mapaCarpetas = await driveHelper.obtenerCarpetasFamosos();
-    const nombresNecesarios = [...new Set(fragments.map(f => f.famoso))];
+    const nombresNecesarios = [...new Set(fragmentsRender.map(f => f.famoso))];
 
     const inventario = {};
     for (const nombre of nombresNecesarios) {
@@ -1099,7 +1166,7 @@ app.post('/api/generate-video', async (req, res) => {
     const transicionActiva = (efectos?.transicion || 'ninguno') !== 'ninguno';
     const transicionDur = Math.min(0.6, Math.max(0.1, Number.isFinite(efectos?.transicionDur) ? efectos.transicionDur : 0.35));
     const clipMaxEfectivo = transicionActiva ? Math.max(0.8, seleccion.CLIP_MAX - transicionDur) : seleccion.CLIP_MAX;
-    const planBase = seleccion.planificarClips(fragments, durAudio, inventario, duracionesParaPlan, clipMaxEfectivo);
+    const planBase = seleccion.planificarClips(fragmentsRender, durAudio, inventario, duracionesParaPlan, clipMaxEfectivo);
     const plan = seleccion.insertarMaterialesEnPlan(planBase, materialesPorFragmento);
     const clipsValidos = plan.filter(Boolean);
     console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)${transicionActiva ? `, CLIP_MAX efectivo ${clipMaxEfectivo.toFixed(2)}s (transiciones activas)` : ''}${materialesPorFragmento.size ? `, ${materialesPorFragmento.size} con material adicional` : ''}`);
@@ -1121,9 +1188,9 @@ app.post('/api/generate-video', async (req, res) => {
     let fuentesDir = null;
     if (efectos?.subtitulos !== false) {
       try {
-        const tiemposFragmentos = seleccion.tiemposPorFragmento(fragments, durAudio, duracionesParaPlan);
+        const tiemposFragmentos = seleccion.tiemposPorFragmento(fragmentsRender, durAudio, duracionesParaPlan);
         const fuenteElegida = efectos?.subtitulosFuente || subtitulos.FUENTE_DEFAULT;
-        subsPath = subtitulos.generarASS(fragments, tiemposFragmentos, palabrasParaSubs, {
+        subsPath = subtitulos.generarASS(fragmentsRender, tiemposFragmentos, palabrasParaSubs, {
           jobId: renderId,
           tempDir: video.TEMP_DIR,
           fuente: fuenteElegida,
