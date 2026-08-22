@@ -27,6 +27,16 @@ let corriendo = false;
 let ejecutor = null;
 let secuencia = 0;
 
+// Quién creó cada tarea. `cola.json` se respalda a la MISMA carpeta de Drive desde local, staging
+// y producción (igual que jobs.json e historial.json), así que al arrancar cualquiera de los tres
+// se trae el archivo del otro. Con jobs.json eso es inofensivo — son datos. Con la cola NO: una
+// tarea que quedó `en_cola` en la máquina de casa se reencolaría en Railway y **renderizaría un
+// video que nadie pidió ahí**. Pasó de verdad en la primera corrida (el cola.json local llegó a
+// staging; se salvó porque todas sus tareas ya estaban en error).
+const ENTORNO = process.env.RAILWAY_ENVIRONMENT_NAME
+  || process.env.RAILWAY_SERVICE_NAME
+  || 'local';
+
 // El respaldo a Drive va AGRUPADO, no en cada cambio de estado. La cola cambia varias veces por
 // tarea (encolar, empezar, terminar) y con varias ventanas trabajando en paralelo eso eran una
 // docena de subidas a Drive por minuto — cuota tirada a la basura para un archivo que solo hace
@@ -72,7 +82,11 @@ function rehidratar() {
     if (!fs.existsSync(COLA_FILE)) return;
     const guardadas = JSON.parse(fs.readFileSync(COLA_FILE, 'utf8'));
     if (!Array.isArray(guardadas)) return;
-    tareas = guardadas;
+    // Solo las tareas de ESTE entorno: las que vienen de otro se descartan enteras (ni se
+    // ejecutan ni se muestran). Ver el comentario de ENTORNO.
+    const ajenas = guardadas.filter(t => (t.entorno || 'local') !== ENTORNO).length;
+    tareas = guardadas.filter(t => (t.entorno || 'local') === ENTORNO);
+    if (ajenas) console.log(`ℹ️ Cola: ${ajenas} tarea(s) de otro entorno descartada(s) del respaldo compartido`);
     let interrumpidas = 0;
     let pendientes = 0;
     for (const t of tareas) {
@@ -116,6 +130,7 @@ function nuevoRenderId() {
 function encolar({ renderId = null, jobId = null, variante = 'A', etiqueta = '', canal = '', params }) {
   const tarea = {
     renderId: renderId || nuevoRenderId(),
+    entorno: ENTORNO,
     jobId,
     variante,
     etiqueta,
