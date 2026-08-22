@@ -1,5 +1,111 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-22 — Estructura nueva de Drive: "para publicar" e "insumos edicion" + hoja para el publicador
+
+### El bug de configuración, que NO era el que decía la bitácora
+
+La entrada del 2026-08-18 anotó que `GOOGLE_DRIVE_INSUMOS_FOLDER_ID` estaba mal puesto en staging.
+Al ir a arreglarlo, los valores reales mostraron lo contrario: **el mal puesto era
+`GOOGLE_DRIVE_RENDERS_FOLDER_ID`**, que apuntaba al id de insumos. Producción los tenía bien.
+
+Consecuencia real, mucho peor que el aviso del log: **todos los renders de staging desde principios
+de agosto se guardaron en "insumos para edicion"**, no en "renders". Como los cuatro canales existen
+con el mismo nombre en las dos raíces, no se notaba — el video aparecía en una carpeta "Chismex
+Picante", solo que la del árbol equivocado.
+
+⚠️ **Y de acá sale un dato que cambia el panorama del proyecto: el usuario trabaja contra STAGING,
+no contra producción.** Se deduce del formato: las carpetas `AAAA-MM-DD - Título` las genera código
+posterior al 25 de julio, que producción no tiene. Por eso `renders/` está casi vacía desde mayo y
+producción, con la variable bien puesta, no recibe nada. Tenerlo presente antes de sacar
+conclusiones sobre "qué versión usa el usuario".
+
+### Qué se hizo (decisión del usuario: empezar limpio, no migrar)
+
+Había 103 MP4 sueltos y 8 carpetas de render mal ubicados. El usuario aclaró que **los MP4 los puso
+él exportando desde CapCut** (no son del bug) y pidió **no mover nada**: los revisa a mano. En su
+lugar, dos carpetas nuevas dentro de `Redes_Canales`:
+
+```
+para publicar/     4 subcarpetas de canal — archivos SUELTOS
+insumos edicion/   4 subcarpetas de canal — y adentro la carpeta del proceso
+```
+
+| Carpeta | ID |
+|---|---|
+| `para publicar` | `1Zni4Algee1RJTO7qt7BvGV7TwJfTZt1t` |
+| `insumos edicion` | `1HHwbzZKNGlhvwzxEVQ0n4A-lEB1UB4zd` |
+| Hoja `Publicaciones - farandula` | `1G-FUAwaKPbyppZDhoWJHIU3r8nXKPZFSt5JoYDKKjaE` |
+
+Las tres puestas en staging (`adventurous-reflection`). **Producción sigue apuntando a las viejas
+a propósito**: no se usa, y cambiarla sin desplegar el código nuevo la dejaría inconsistente.
+
+### El video ya no va en una subcarpeta por render
+
+Antes cada render creaba `AAAA-MM-DD - Título/` para que el video y su portada quedaran juntos.
+Ahora el MP4 va **suelto** a la carpeta del canal y el JPG al lado con el **mismo nombre base**.
+
+El motivo es el publicador automático (proyecto aparte que el usuario ya tiene en mente): con
+archivos sueltos, la regla es de una línea — *"todo archivo nuevo en la carpeta de este canal se
+publica en este canal"* — y las **imágenes que el usuario suba a mano** entran en la misma lógica
+sin ninguna excepción. Con subcarpetas habría que recorrer niveles y distinguir carpeta de archivo.
+
+⚠️ `RENDERS_LOCAL_PATH` (la ruta de Google Drive Desktop, solo local) también hubo que reapuntarla
+a `para publicar`. Si apunta a la carpeta vieja, el render local escribe ahí y **Railway y local se
+comportan distinto sin que nada falle** — pasó durante la verificación.
+
+### La hoja es la cola del publicador
+
+Hoja nueva, con las 11 columnas de siempre más 6:
+
+| Columna | Para qué |
+|---|---|
+| Tipo | video / imagen |
+| Destino | feed / historia |
+| **ID noticia** | el `jobId`: **los dos gemelos lo comparten**, así el publicador sabe que son la misma historia en canales hermanos |
+| Archivo en Drive | el id, para encontrar el archivo sin buscar por nombre |
+| Publicado el / Link del post | los llena el publicador |
+
+`Status` con `pendiente_publicar`/`publicado` ya existía desde el principio — la hoja ya estaba
+insinuando esta forma. Los rangos de `sheets.js` dejaron de estar cableados a 11 columnas
+(`NUM_COLS`/`ULTIMA_COL`), y `asegurarEncabezados` reescribe la fila si la hoja tiene menos
+columnas de las que el código espera.
+
+### Insumos con gemelos: cada variante en la carpeta de SU canal
+
+`carpetaInsumoDeVariante(job, variante)` resuelve el canal hermano **por nombre** (mismo pareo que
+el mapa `GEMELAS` del frontend) y crea la carpeta del gemelo perezosamente, la primera vez que hay
+algo que guardar. Si no se identifica el hermano, todo cae en la carpeta del primero con sufijo
+`-b` — degrada, no rompe.
+
+Efecto secundario que había que resolver: **recuperar el audio tras un reinicio tiene que respetar
+la variante**. Sin eso, el video B habría bajado la locución del A y salido con otra voz.
+`jobStore.buscarVariantePorAudioToken()` distingue de quién es cada token.
+
+### Verificación (contra Drive real)
+
+1. Dos gemelos renderizados por la cola: quedaron **sueltos**, uno en cada canal de `para publicar`,
+   sin subcarpetas, con su id de Drive registrado en la hoja nueva y `idNoticia` compartido.
+2. Insumos del gemelo: la carpeta del primero quedó en `Chismex Picante` y la del hermano en
+   `Supe Lupe`, con su propio `fragments.json` (sin sufijo, porque tiene carpeta propia).
+3. `/api/folders` y `/api/canales` de staging devuelven los 4 canales nuevos, con los ids correctos
+   (4, ya no 5 — la carpeta vieja incluía `transicion`).
+4. **La limpieza automática de insumos volvió a funcionar**: el log pasó de
+   `🛑 Limpieza de insumos ABORTADA` a `🧹 Insumos: nada que limpiar (retención 48h)`. Llevaba
+   abortada desde el 2026-08-18.
+
+Todo lo de prueba se mandó a la papelera al terminar. Panel de historial vaciado a pedido del
+usuario (`jobs.json` en cero, con su respaldo actualizado para que Railway no lo restaure viejo).
+
+### Ojo para la próxima sesión
+
+- Un `.env.backup-*` se coló en un commit (con credenciales). Se sacó con `--amend` **antes del
+  push**, nunca salió de la máquina, y `.gitignore` ahora lleva `.env.backup*`. Al hacer copias de
+  seguridad del `.env`, guardarlas fuera del repo.
+- La publicación automática a Facebook (feed + historias, videos e imágenes) es un **proyecto
+  aparte** que el usuario ya anticipó. Acá solo quedó preparada la forma: carpeta plana por canal,
+  y la hoja como cola con Status/Tipo/Destino.
+
+
 ## 2026-08-22 — Videos gemelos (dos videos por noticia) + cola de renderizado
 
 Pedido del usuario: de los 4 canales solo usa dos a diario (**Chismex Picante** y **Embajadores
