@@ -1,5 +1,70 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-22 — Música: emparejar el volumen entre pistas (LUFS), no bajarles el mismo número
+
+El usuario: *"algunas canciones desde origen están con el volumen más alto"*. Tenía razón, y con
+números: el catálogo de **26 pistas va de -16.7 a -12.8 LUFS — 3.9 dB de dispersión**, claramente
+audible (a partir de ~1 dB se percibe).
+
+**Esto ya estaba anticipado** en la entrada del 2026-08-14, cuando se bajó la música de -18 a
+-20dB: *"esta ganancia atenúa el ARCHIVO fuente… una pista futura masterizada mucho más fuerte
+volvería a sonar alta con el mismo número. Si vuelve a pasar, la solución de fondo es normalizar a
+LUFS, no seguir bajando el número"*. Es exactamente lo que pasó.
+
+### El cambio
+
+`volume=-20dB` para todas → **ganancia por pista**: cada una se atenúa lo que ELLA necesita para
+quedar en el mismo objetivo (`musica.gananciaPara()`).
+
+**-35 LUFS no es un valor inventado**: es donde queda hoy la pista PROMEDIO (-15.0 de promedio del
+catálogo, menos los 20 dB que se aplicaban). O sea que **el volumen general de la música no cambia**
+respecto de lo que el usuario ya había aprobado a oído — lo único que desaparece es la dispersión.
+Eso importa: el objetivo era arreglar lo que le molestaba sin tocar lo que le gustaba.
+
+### Dónde vive la medición: en el nombre del archivo
+
+`[lufs=-14.4]`, al lado del `[inicio=0.00s]` que ya existía. Mismo patrón **y por la misma razón
+que el usuario eligió en su momento**: un JSON aparte se desincroniza si se agregan o borran pistas
+a mano en Drive. Una pista nueva sin etiquetar **se mide al vuelo durante el render** (el archivo
+ya está descargado) y se etiqueta sola para la próxima — no hace falta correr nada manual.
+
+`etiquetarTodo()` ahora completa las dos etiquetas y reconstruye el nombre desde cero, así
+re-correrlo sobre una pista que ya tiene una de las dos no acumula duplicados.
+
+### La ventana de medición importa
+
+Se mide **desde el offset de inicio y solo los primeros 90s**, no el track entero: un video dura
+~70s, así que la música que de verdad suena es ese tramo. Medido: con el track completo quedaban
+**0.9 dB** de residuo entre las pistas extremas; acotando la ventana baja a **0.6 dB**.
+
+### Verificación
+
+Las dos pistas extremas del catálogo pasadas por la cadena REAL (`video.prepararMusica`: corte de
+silencio + loop + ganancia + fades) y medido el resultado:
+
+| Método | Diferencia entre la más fuerte y la más suave |
+|---|---|
+| Viejo (-20 fijo) | **3.2 dB** |
+| Nuevo (por pista) | **0.6 dB** |
+
+Más dos renders reales de punta a punta: uno leyendo la etiqueta del nombre
+(`-14.4 LUFS → -20.6dB` en el log), y otro con una pista a la que se le quitó la etiqueta a
+propósito — la midió al vuelo, obtuvo **el mismo valor** que tenía antes y la etiquetó sola en
+Drive. Las 26 pistas quedaron medidas y etiquetadas.
+
+`video.prepararMusica` se exportó para poder medir el resultado real de la cadena sin replicarla en
+el test — replicar es justo lo que desincronizó la geometría del cartel en su momento.
+
+**Degradación**: si el análisis falla, `gananciaPara(null)` devuelve el -20 de siempre. El video
+sale igual, solo sin emparejar.
+
+### Nota al pasar
+
+El catálogo tiene pistas duplicadas (`Melocotón Mural` en .wav y .mp3, `Güira Noticiero` y `(1)`,
+`Sour Sawdust` y `(1)`). No molesta —la rotación las trata como pistas distintas— pero si el
+usuario quiere limpiar, ahí están.
+
+
 ## 2026-08-22 — Estructura nueva de Drive: "para publicar" e "insumos edicion" + hoja para el publicador
 
 ### El bug de configuración, que NO era el que decía la bitácora
