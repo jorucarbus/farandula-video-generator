@@ -425,6 +425,10 @@
             <div class="form-section hidden" id="lectura-section">
                 <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
 
+                <!-- Solo visible en modo gemelos: sin esto, con dos juegos de título/descripción en
+                     pantalla no se sabría cuál es de cuál canal. -->
+                <h3 id="lectura-propia-titulo" class="hidden">Para el canal principal</h3>
+
                 <div class="copy-block">
                     <div class="copy-header">
                         <label>Título</label>
@@ -439,6 +443,34 @@
                         <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
                     </div>
                     <p class="copy-content" id="res-descripcion"></p>
+                </div>
+
+                <!-- Videos gemelos: el segundo video tiene título y descripción PROPIOS (los genera
+                     gemini.variarMetadatos para que los dos canales no publiquen el mismo texto).
+                     Se muestran acá, junto a los del primero y no en una pestaña, porque a la hora
+                     de publicar hacen falta los dos a mano. La crónica no se repite: es compartida. -->
+                <div id="lectura-gemela" class="lectura-gemela hidden">
+                    <h3 id="lectura-gemela-titulo">Para el canal hermano</h3>
+                    <p id="aviso-meta-gemela" class="banner-warning hidden">
+                        ⚠️ Salió el mismo título y descripción que el otro canal: no se pudo generar una
+                        versión distinta. Editalos a mano antes de publicar, o volvé a generar el guion.
+                    </p>
+
+                    <div class="copy-block">
+                        <div class="copy-header">
+                            <label>Título</label>
+                            <button class="btn-copy" onclick="copyText('res-titulo-b')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                        </div>
+                        <p class="copy-content" id="res-titulo-b"></p>
+                    </div>
+
+                    <div class="copy-block">
+                        <div class="copy-header">
+                            <label>Descripción + Hashtags (para redes)</label>
+                            <button class="btn-copy" onclick="copyText('res-descripcion-b')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                        </div>
+                        <p class="copy-content" id="res-descripcion-b"></p>
+                    </div>
                 </div>
 
                 <details class="cronica-details">

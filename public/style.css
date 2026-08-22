@@ -1115,3 +1115,19 @@ footer {
     color: var(--text-dim);
     font-size: 0.78rem;
 }
+
+/* Bloque de título/descripción del segundo video (modo gemelos). Va debajo del primero y no en una
+   pestaña: al publicar hacen falta los dos textos a mano, no uno u otro. */
+.lectura-gemela {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 2px dashed var(--border-strong);
+}
+#lectura-propia-titulo,
+.lectura-gemela h3 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    margin: 0 0 10px;
+}

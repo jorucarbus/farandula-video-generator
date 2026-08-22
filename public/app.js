@@ -222,6 +222,7 @@ function toggleGemelos(activo) {
     if (state.gemelos && !state.B) state.B = nuevaVarianteB();
     document.querySelectorAll('[data-tabs]').forEach(t => t.classList.toggle('hidden', !state.gemelos));
     actualizarTabs();
+    pintarLecturaGemela();
     log(state.gemelos
         ? '👯 Modo gemelos activado: se van a generar DOS videos, uno por canal hermano'
         : '🎬 Modo gemelos desactivado: un solo video');
@@ -306,6 +307,39 @@ function pintarVista() {
     }
 
     actualizarTabs();
+}
+
+// El video B tiene título y descripción PROPIOS (los genera gemini.variarMetadatos para que los
+// dos canales no publiquen el mismo texto). Sin esto no había forma de copiarlos: el panel de
+// "Resultado de la lectura" mostraba siempre los del primero y el usuario se quedaba sin el texto
+// para publicar el segundo video.
+//
+// Se muestran los DOS a la vez, no en pestañas: a la hora de publicar hacen falta ambos a mano.
+function pintarLecturaGemela() {
+    const caja = document.getElementById('lectura-gemela');
+    const rotuloPropio = document.getElementById('lectura-propia-titulo');
+    if (!caja) return;
+
+    const meta = state.gemelos ? (state.B?.metadatos || null) : null;
+    const hay = Boolean(meta && (meta.titulo || meta.descripcion));
+    caja.classList.toggle('hidden', !hay);
+    if (rotuloPropio) {
+        rotuloPropio.classList.toggle('hidden', !hay);
+        rotuloPropio.textContent = hay ? `Para ${etiquetaVariante('A')}` : '';
+    }
+    if (!hay) return;
+
+    document.getElementById('lectura-gemela-titulo').textContent = `Para ${etiquetaVariante('B')}`;
+    document.getElementById('res-titulo-b').textContent = meta.titulo || '';
+    document.getElementById('res-descripcion-b').textContent = meta.descripcion || '';
+
+    // `variarMetadatos` degrada devolviendo los del primero cuando falla. Sin avisarlo, el usuario
+    // vería el mismo texto dos veces y no sabría si es un error de la app o que Gemini no encontró
+    // otra manera de titularlo — y publicaría el mismo copy en los dos canales sin darse cuenta.
+    const aviso = document.getElementById('aviso-meta-gemela');
+    const repetido = (meta.titulo || '') === (state.sourceData?.titulo || '')
+        && (meta.descripcion || '') === (state.sourceData?.descripcion || '');
+    if (aviso) aviso.classList.toggle('hidden', !repetido);
 }
 
 function cambiarVariante(v) {
@@ -884,6 +918,7 @@ async function handleGenerateScript() {
             if (result.gemela) {
                 state.B = { ...nuevaVarianteB(), guion: result.gemela.script, metadatos: result.gemela.metadatos };
                 log(`✅ Guion del gemelo: ${result.gemela.palabras} palabras — "${result.gemela.metadatos?.titulo || ''}"`);
+                pintarLecturaGemela();
             } else {
                 // El A ya está listo: se sigue con uno solo en vez de tirar abajo todo el paso.
                 state.gemelos = false;
@@ -1325,6 +1360,7 @@ function elegirDestino(valor) {
         }
     }
     actualizarTabs();
+    pintarLecturaGemela();   // el rótulo de cada bloque lleva el nombre del canal ya elegido
 }
 
 // PASO 3: Generar el resultado final (video o insumos según el modo)
@@ -2328,6 +2364,7 @@ async function recuperarJobPendiente() {
         document.querySelectorAll('[data-tabs]').forEach(t => t.classList.remove('hidden'));
         state.varianteActiva = 'A';
         actualizarTabs();
+        pintarLecturaGemela();
         log('👯 Este proceso tiene video gemelo: usá las pestañas para pasar de uno al otro');
     }
     const primerLink = state.fuentes.find(f => f.type === 'link');

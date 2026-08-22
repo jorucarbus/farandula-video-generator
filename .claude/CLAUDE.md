@@ -1,5 +1,38 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-22 — Faltaba el título y la descripción del segundo video en la UI
+
+Reporte del usuario: *"noté que no tengo acceso al título de la lectura y descripción para redes del
+canal B"*. Real, y era un agujero de la feature de gemelos: `gemini.variarMetadatos` **sí generaba**
+título y descripción propios para el segundo video, se **guardaban** en `job.gemela.metadatos` y
+**viajaban** al render (la fila de Sheets del video B sale con su título correcto)… pero el panel
+"Resultado de la lectura", que es de donde el usuario copia el texto para publicar, mostraba siempre
+los del primero. O sea: el texto existía y no había forma de llegar a él desde la interfaz.
+
+**Fix**: bloque nuevo debajo del de siempre, con el título y la descripción del canal hermano y sus
+propios botones de copiar (`pintarLecturaGemela()`).
+
+Dos decisiones de diseño:
+
+- **Los dos a la vez, no en pestañas** — a diferencia de los pasos 3 a 6. A la hora de publicar hacen
+  falta ambos textos a mano; obligar a cambiar de pestaña para copiar uno y después el otro sería
+  peor que verlos juntos.
+- **Cada bloque rotulado con el nombre del canal** (`Para Chismex Picante` / `Para Supe Lupe`, en
+  cuanto se elige el destino). Con dos juegos de título y descripción en pantalla, sin rótulo no se
+  sabe cuál es de cuál. El rótulo del bloque de arriba solo aparece en modo gemelos.
+- La **crónica no se duplica**: es compartida por los dos videos.
+
+**Aviso de degradación**: `variarMetadatos` devuelve los del primero cuando falla (Regla de
+robustez). Sin decirlo, el usuario vería el mismo texto dos veces sin saber si es un error de la app
+o que Gemini no encontró otra manera de titularlo — y publicaría el mismo copy en los dos canales
+sin darse cuenta. Ahora, si salen idénticos, aparece un aviso pidiendo editarlos a mano o regenerar.
+
+**Verificado en browser real**: sin gemelos el bloque no existe (nada cambia del flujo de un solo
+video); con gemelos aparece con el texto correcto; los botones de copiar copian el del hermano
+(interceptando el portapapeles); los rótulos pasan a los nombres de canal al elegir destino; apagar
+y volver a prender el modo oculta y restaura sin tocar el bloque del primero; y el aviso de texto
+repetido aparece solo cuando de verdad son idénticos.
+
 ## 2026-08-22 — Música: emparejar el volumen entre pistas (LUFS), no bajarles el mismo número
 
 El usuario: *"algunas canciones desde origen están con el volumen más alto"*. Tenía razón, y con
