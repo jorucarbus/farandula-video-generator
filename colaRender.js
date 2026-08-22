@@ -213,4 +213,13 @@ function rutasProtegidas() {
   return rutas;
 }
 
-module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, nuevoRenderId };
+// Los audioToken de las tareas que todavía no corrieron. El servidor los resuelve contra su propio
+// mapa de locuciones aprobadas para no borrar un mp3 que otro render de la fila todavía necesita
+// (ver `audioSigueEnUso` en server.js — bug real de los gemelos, 2026-08-22).
+function audioTokensPendientes() {
+  return tareas
+    .filter(t => (t.estado === 'en_cola' || t.estado === 'renderizando') && t.params?.audioToken)
+    .map(t => t.params.audioToken);
+}
+
+module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, audioTokensPendientes, nuevoRenderId };

@@ -99,6 +99,21 @@ function guardarEnVariante(jobId, variante, cambios, comunes = {}) {
   return jobStore.actualizarJob(jobId, { gemela: { ...actual, ...cambios }, ...comunes });
 }
 
+// ¿Este mp3 lo sigue necesitando alguien? Lo referencia una locución aprobada (el usuario puede
+// reintentar el render, o generar el gemelo después) o un render que todavía espera turno.
+function audioSigueEnUso(audioPath) {
+  if (!audioPath) return false;
+  const base = path.basename(audioPath);
+  for (const a of audiosPendientes.values()) {
+    if (a?.path && path.basename(a.path) === base) return true;
+  }
+  for (const token of colaRender.audioTokensPendientes()) {
+    const a = audiosPendientes.get(token);
+    if (a?.path && path.basename(a.path) === base) return true;
+  }
+  return colaRender.rutasProtegidas().some(r => path.basename(r) === base);
+}
+
 // Reparto de citas entre gemelos: alternadas por orden de detección (0→A, 1→B, 2→A…). Con una
 // sola cita los dos la comparten: es mejor repetir el testimonio real que dejar un video sin él.
 function citasDeVariante(materialesAdicionales, variante) {
@@ -858,6 +873,11 @@ app.post('/api/fragment', async (req, res) => {
         if (materialesDisponibles.length) {
           try {
             const items = itemsDeVariante(materialesDisponibles, variante);
+            // Deja rastro de QUÉ cita le tocó a cada video: es lo único que permite confirmar en
+            // producción que el reparto entre gemelos está funcionando (dos videos que salen con
+            // la misma cita se ven como copias, y sin este log no habría cómo saber por qué).
+            const citas = items.filter(it => it.tipo === 'cita');
+            console.log(`  🎞️ Variante ${variante}: ${items.length} material(es) candidato(s)${citas.length ? ` — cita(s): ${citas.map(c => `"${(c.texto || '').slice(0, 40)}"`).join(', ')}` : ' (sin citas)'}`);
             const sugerencias = await gemini.asignarMateriales(conPorcentaje, items);
             for (const s of sugerencias) {
               const material = materialesDisponibles.find(m => m.id === s.materialId);
@@ -1406,9 +1426,17 @@ async function renderizarVideo(params, renderId) {
       console.warn(`⚠️ [${renderId}] No se pudo crear el preview: ${e.message}`);
     }
 
-    // 11. Limpiar temporales (incluido el video final y el audio)
+    // 11. Limpiar temporales (incluido el video final)
     video.limpiarTemporales(renderId);
-    try { fs.unlinkSync(audioPath); } catch {}
+    // El audio NO se borra si todavía lo referencia una locución aprobada o un render que espera
+    // turno en la cola. Bug real encontrado probando gemelos de punta a punta (2026-08-22): el
+    // render del primer video borraba el mp3 y el segundo, que ya estaba encolado, fallaba con
+    // "No se encontró la locución aprobada". Además el borrado a mano contradecía a
+    // `limpiarCache()`, que justamente protege los audios de `audiosPendientes` — el TTL de esa
+    // limpieza ya se encarga de los que quedan sueltos.
+    if (!audioSigueEnUso(audioPath)) {
+      try { fs.unlinkSync(audioPath); } catch {}
+    }
 
     if (jobId) {
       try {

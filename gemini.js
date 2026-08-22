@@ -633,8 +633,9 @@ REGLAS:
    hecho. Nunca reusar una tira de más de 3 palabras del título anterior.
 2. El título es corto, viral y contundente.
 3. La descripción es UNA SOLA, adictiva, y termina en exactamente 5 hashtags estratégicos, todo en
-   un mismo bloque. Los hashtags también tienen que ser distintos de los del otro video (podés
-   repetir a lo sumo uno, el del nombre del protagonista si hace falta).
+   un mismo bloque. Los hashtags de TEMA tienen que ser distintos de los del otro video; los de
+   NOMBRE PROPIO (el protagonista, el secundario) sí se pueden repetir — sacarlos por no repetir
+   le costaría alcance al video, que es lo contrario de lo que se busca.
 4. Mismos hechos: no inventes nada que no esté en la crónica o el guion.
 5. Responde ÚNICAMENTE un objeto JSON válido: {"titulo": "...", "descripcion": "..."}`;
 
