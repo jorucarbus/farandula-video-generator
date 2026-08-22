@@ -531,7 +531,11 @@ async function procesarLectura(sourceType, content, sesgo = 'neutral') {
 // tiempos.empalmarCitasReales). Se le pasan al guionista para que les haga lugar: una frase que
 // entrega la cita antes, y otra que retoma después. Sin esto, la cita cae en medio de una idea a
 // medio terminar y suena como un corte, no como un reportaje (pedido del usuario, 2026-08-21).
-async function generarGuion(cronica, angle, angleContent = null, citas = []) {
+// `guionEvitar` (videos gemelos): el guion que YA se escribió para el canal hermano. Con él
+// presente, este guion tiene que contar los MISMOS hechos con el MISMO ángulo pero sin parecerse —
+// otro arranque, otro orden, otro vocabulario. No es un capricho de estilo: los dos videos se
+// publican el mismo día en canales gemelos, y dos guiones parecidos leen como contenido duplicado.
+async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null) {
   try {
     let descripcionEnfoque;
 
@@ -565,6 +569,24 @@ REGLAS OBLIGATORIAS PARA LAS CITAS:
 - Las citas entran en el MISMO ORDEN en que están numeradas arriba.
 - El resto del guion sigue igual: mismo largo, mismo ritmo, mismo tono.`;
 
+    // Bloque opcional: el guion hermano que este NO puede parecerse.
+    const bloqueEvitar = !guionEvitar ? '' : `
+
+=== GUION YA ESCRITO PARA EL CANAL HERMANO (NO es material, es lo que TENÉS QUE EVITAR) ===
+${guionEvitar}
+=== FIN DEL GUION A EVITAR ===
+
+REGLAS OBLIGATORIAS PARA NO REPETIRLO:
+- Los HECHOS son los mismos y el ÁNGULO es el mismo. Lo que cambia es CÓMO se cuenta.
+- Arranque distinto: prohibido abrir con la misma frase, con la misma idea de apertura, o con el
+  mismo dato. Si ese guion abre con la traición, este abre por otro lado del mismo escándalo.
+- Orden de revelación distinto: lo que allá se guarda para el final, acá puede ir antes, y al revés.
+- Vocabulario distinto: prohibido reusar sus expresiones de farándula. Buscá otras.
+- PROHIBIDO copiar cualquier tira de más de 4 palabras seguidas de ese guion.
+- Cierre distinto, con otra pregunta o tensión abierta.
+- Mismo largo, mismo ritmo, misma calidad. No es una versión resumida ni una segunda parte: es el
+  mismo escándalo contado por otra boca.`;
+
     const userMessage = `A continuación tienes dos bloques claramente separados.
 
 === MATERIAL BASE (la crónica con los HECHOS de la noticia; de aquí sale TODO el contenido del guion) ===
@@ -575,12 +597,74 @@ ${cronica}
 ${descripcionEnfoque}
 === FIN DEL ENFOQUE ===
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}`;
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}${bloqueEvitar}`;
 
     const { texto: response } = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
     return response.trim();
   } catch (error) {
     throw new Error(`Error generando guion: ${error.message}`);
+  }
+}
+
+// Motor de guion enchufable — MISMA forma que FRAGMENTADORES (más abajo), que ya es el patrón del
+// repo para dejar una pieza intercambiable sin que el llamador se entere.
+// Hoy hay uno solo: Gemini a partir de la crónica. La puerta está abierta a propósito para el
+// generador de guion con graphify (repo `generador-guion-graphify`), que va a entrar acá como otra
+// entrada de este objeto sin tocar una línea de server.js.
+const MOTORES_GUION = {
+  gemini: generarGuion,
+  // graphify: generarGuionGraphify,  // futuro
+};
+
+async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini') {
+  const fn = MOTORES_GUION[motor];
+  if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
+  return fn(cronica, angle, angleContent, citas, guionEvitar);
+}
+
+const PROMPT_VARIAR_META = `Rol: Community manager de un canal de farándula en TikTok.
+
+TAREA: Te doy la crónica de una noticia, el guion de un video sobre ella, y el título y la
+descripción que YA se usaron para OTRO video sobre la MISMA noticia en un canal hermano. Escribí un
+título y una descripción NUEVOS para este video.
+
+REGLAS:
+1. Prohibido parecerse a los que ya se usaron: otras palabras, otro gancho, otro enfoque del mismo
+   hecho. Nunca reusar una tira de más de 3 palabras del título anterior.
+2. El título es corto, viral y contundente.
+3. La descripción es UNA SOLA, adictiva, y termina en exactamente 5 hashtags estratégicos, todo en
+   un mismo bloque. Los hashtags también tienen que ser distintos de los del otro video (podés
+   repetir a lo sumo uno, el del nombre del protagonista si hace falta).
+4. Mismos hechos: no inventes nada que no esté en la crónica o el guion.
+5. Responde ÚNICAMENTE un objeto JSON válido: {"titulo": "...", "descripcion": "..."}`;
+
+// Videos gemelos: título/descripción/hashtags propios para el segundo video. Cadena `mecanico`
+// (tarea pautada, sin creatividad de largo aliento) — es de las llamadas más baratas del pipeline.
+// Regla de robustez: si falla, devuelve los metadatos del primero. El video sale igual; lo único
+// que se pierde es la variación del texto del post.
+async function variarMetadatos(cronica, guion, metadatosA) {
+  const base = { titulo: metadatosA?.titulo || '', descripcion: metadatosA?.descripcion || '' };
+  try {
+    const userMessage = `=== CRÓNICA ===
+${cronica}
+=== FIN DE LA CRÓNICA ===
+
+=== GUION DE ESTE VIDEO ===
+${guion}
+=== FIN DEL GUION ===
+
+=== YA USADOS EN EL CANAL HERMANO (evitarlos) ===
+Título: ${base.titulo}
+Descripción: ${base.descripcion}
+=== FIN ===`;
+    const r = await llamarJSON(PROMPT_VARIAR_META, userMessage, TAREAS.materiales);
+    const titulo = (r?.titulo || '').trim();
+    const descripcion = (r?.descripcion || '').trim();
+    if (!titulo || !descripcion) return base;
+    return { titulo, descripcion };
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudieron variar título/descripción del video gemelo (usa los del primero): ${e.message}`);
+    return base;
   }
 }
 
@@ -919,6 +1003,7 @@ function getAngleName(angle) {
 }
 
 module.exports = {
+  escribirGuion, MOTORES_GUION, variarMetadatos,
   procesarLectura,
   extraerActa,
   sintetizarCronica,

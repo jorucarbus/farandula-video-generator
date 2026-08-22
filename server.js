@@ -21,6 +21,7 @@ const limpiezaInsumos = require('./limpiezaInsumos');
 const exportar = require('./exportar');
 const portada = require('./portada');
 const materiales = require('./materiales');
+const colaRender = require('./colaRender');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -82,6 +83,42 @@ function guardarCartelPNG(dataUrl, renderId) {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Videos gemelos: una misma noticia produce DOS videos, uno por canal hermano (Chismex Picante /
+// Supe Lupe, Embajadores del Chisme / La Naple). Comparten fuentes, crónica y material adicional;
+// se diferencian en guion, título/descripción, cita, cartel, tomas y música.
+//
+// Dónde vive cada uno: el video A se queda en los campos de SIEMPRE del job (`script`,
+// `fragments`, `audioToken`, …) y el B cuelga de `job.gemela`. Esa asimetría es a propósito: el
+// historial, el banner de "continuar donde quedó" y los jobs viejos siguen funcionando sin tocar
+// una línea, y solo lo nuevo es nuevo.
+function guardarEnVariante(jobId, variante, cambios, comunes = {}) {
+  if (variante !== 'B') return jobStore.actualizarJob(jobId, { ...cambios, ...comunes });
+  const actual = jobStore.obtenerJob(jobId)?.gemela || {};
+  return jobStore.actualizarJob(jobId, { gemela: { ...actual, ...cambios }, ...comunes });
+}
+
+// Reparto de citas entre gemelos: alternadas por orden de detección (0→A, 1→B, 2→A…). Con una
+// sola cita los dos la comparten: es mejor repetir el testimonio real que dejar un video sin él.
+function citasDeVariante(materialesAdicionales, variante) {
+  const todas = [];
+  for (const m of materialesAdicionales || []) {
+    if (m.tipo === 'entrevista') for (const c of m.citas || []) todas.push({ materialId: m.id, ...c });
+  }
+  if (todas.length <= 1) return todas;
+  const resto = variante === 'B' ? 1 : 0;
+  return todas.filter((_, i) => i % 2 === resto);
+}
+
+// Los ítems que puede usar una variante: SUS citas, más TODAS las fotos y videos de apoyo (esos
+// ilustran la noticia y no compiten entre sí — los dos videos los quieren).
+function itemsDeVariante(materialesAdicionales, variante) {
+  const items = gemini.aplanarMateriales(materialesAdicionales);
+  const permitidas = new Set(citasDeVariante(materialesAdicionales, variante).map(c => `${c.materialId}:${c.citaId}`));
+  return items.filter(it => it.tipo !== 'cita' || permitidas.has(it.id));
+}
+// ---------------------------------------------------------------------------------------------
 
 // Portadas en memoria: token aleatorio -> ruta del JPG generado (fotograma + titular)
 const portadas = new Map();
@@ -703,36 +740,56 @@ app.post('/api/resintetizar', async (req, res) => {
 // ETAPA 2: Generar Guion
 app.post('/api/generate-script', async (req, res) => {
   try {
-    const { cronica, angle, angleContent, jobId } = req.body;
+    const { cronica, angle, angleContent, jobId, gemela, metadatos } = req.body;
 
     if (!cronica || !angle) {
       return res.status(400).json({ error: 'Faltan cronica o angle' });
     }
 
+    const job = jobId ? jobStore.obtenerJob(jobId) : null;
+    const materiales = job?.materialesAdicionales || [];
+
     // Si el usuario adjuntó entrevistas al inicio, el guionista tiene que saber qué frases se van
     // a escuchar con voz real para dejarles lugar (entrada + retoma) en vez de que la cita caiga
     // en mitad de una idea. Solo texto: barato, no toca el archivo.
-    const citasDisponibles = [];
-    if (jobId) {
-      try {
-        const job = jobStore.obtenerJob(jobId);
-        for (const m of job?.materialesAdicionales || []) {
-          if (m.tipo === 'entrevista') citasDisponibles.push(...(m.citas || []));
-        }
-      } catch { /* sin citas, el guion sale igual que siempre */ }
-    }
+    // En modo gemelo cada video recibe SUS citas (repartidas), no todas.
+    const citasA = citasDeVariante(materiales, 'A');
 
-    console.log(`✍️ Generando guion (ángulo ${angle})${citasDisponibles.length ? `, con espacio para ${citasDisponibles.length} cita(s)` : ''}...`);
-    const script = await gemini.generarGuion(cronica, angle, angleContent, citasDisponibles);
+    console.log(`✍️ Generando guion (ángulo ${angle})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
+    const script = await gemini.escribirGuion(cronica, angle, angleContent, citasA);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
+    // Video gemelo: mismo ángulo y mismos hechos, redacción distinta. Se le pasa el guion A como
+    // "esto es lo que NO podés parecerte", y después se le buscan título y descripción propios
+    // para que los dos posts no salgan con el mismo texto.
+    let gemelaResultado = null;
+    if (gemela) {
+      try {
+        const citasB = citasDeVariante(materiales, 'B');
+        const scriptB = await gemini.escribirGuion(cronica, angle, angleContent, citasB, script);
+        const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
+        const metadatosB = await gemini.variarMetadatos(cronica, scriptB, metadatos || {});
+        gemelaResultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
+        console.log(`  📝 Guion gemelo: ${palabrasB} palabras — "${metadatosB.titulo}"`);
+      } catch (e) {
+        // Regla de robustez: el video A ya está listo. El usuario sigue con uno solo o reintenta.
+        console.warn(`⚠️ No se pudo generar el guion gemelo: ${e.message}`);
+      }
+    }
+
     if (jobId) {
       try {
-        const job = jobStore.actualizarJob(jobId, { paso: 'guion', script, palabras });
-        if (job.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'guion.json', JSON.stringify({ script, palabras }, null, 2))
+        const cambios = { paso: 'guion', script, palabras };
+        if (gemelaResultado) cambios.gemela = { ...(job?.gemela || {}), ...gemelaResultado };
+        const actualizado = jobStore.actualizarJob(jobId, cambios);
+        if (actualizado.carpetaInsumoId) {
+          driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'guion.json', JSON.stringify({ script, palabras }, null, 2))
             .catch(e => console.warn(`⚠️ No se pudo respaldar guion.json en Drive: ${e.message}`));
+          if (gemelaResultado) {
+            driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'guion-b.json', JSON.stringify(gemelaResultado, null, 2))
+              .catch(e => console.warn(`⚠️ No se pudo respaldar guion-b.json en Drive: ${e.message}`));
+          }
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
@@ -741,6 +798,7 @@ app.post('/api/generate-script', async (req, res) => {
       status: 'success',
       script: script,
       palabras: palabras,
+      gemela: gemelaResultado,   // null si no se pidió o si falló
     });
   } catch (error) {
     console.error('Error guion:', error);
@@ -751,7 +809,7 @@ app.post('/api/generate-script', async (req, res) => {
 // ETAPA 3: Fragmentación + Carpetas
 app.post('/api/fragment', async (req, res) => {
   try {
-    const { script, protagonista, jobId } = req.body;
+    const { script, protagonista, jobId, variante = 'A' } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Falta script' });
@@ -785,19 +843,21 @@ app.post('/api/fragment', async (req, res) => {
     let materialesDisponibles = [];
     if (jobId) {
       try {
-        const job = jobStore.actualizarJob(jobId, { paso: 'fragmentacion', fragments: conPorcentaje, carpetas });
+        const job = guardarEnVariante(jobId, variante, { fragments: conPorcentaje }, { paso: 'fragmentacion', carpetas });
+        const nombreArchivo = variante === 'B' ? 'fragments-b.json' : 'fragments.json';
         if (job.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'fragments.json', JSON.stringify(conPorcentaje, null, 2))
-            .catch(e => console.warn(`⚠️ No se pudo respaldar fragments.json en Drive: ${e.message}`));
+          driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, JSON.stringify(conPorcentaje, null, 2))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
 
         // Material adicional (cita/foto/video de apoyo): sugerencia automática de a qué
         // fragmento va cada uno. Regla de robustez: si falla, sigue sin sugerencias — el
         // usuario asigna a mano en el Paso 4.
+        // En modo gemelo, cada variante ve SUS citas (repartidas) pero TODAS las fotos y videos.
         materialesDisponibles = job.materialesAdicionales || [];
         if (materialesDisponibles.length) {
           try {
-            const items = gemini.aplanarMateriales(materialesDisponibles);
+            const items = itemsDeVariante(materialesDisponibles, variante);
             const sugerencias = await gemini.asignarMateriales(conPorcentaje, items);
             for (const s of sugerencias) {
               const material = materialesDisponibles.find(m => m.id === s.materialId);
@@ -807,7 +867,7 @@ app.post('/api/fragment', async (req, res) => {
                 ...(cita ? { inicio: cita.inicioAprox, fin: cita.finAprox } : {}),
               };
             }
-            if (sugerencias.length) jobStore.actualizarJob(jobId, { fragments: conPorcentaje });
+            if (sugerencias.length) guardarEnVariante(jobId, variante, { fragments: conPorcentaje });
           } catch (e) { console.warn(`⚠️ Asignación de materiales falló, sigue sin sugerencias: ${e.message}`); }
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
@@ -861,7 +921,7 @@ app.post('/api/add-markers', async (req, res) => {
 // body: { fragments, modelo?: 'eleven_v3' | 'eleven_multilingual_v2' }
 app.post('/api/generar-audio', async (req, res) => {
   try {
-    const { fragments, modelo, jobId } = req.body;
+    const { fragments, modelo, jobId, variante = 'A' } = req.body;
     if (!Array.isArray(fragments) || fragments.length === 0) {
       return res.status(400).json({ error: 'Faltan fragments' });
     }
@@ -886,8 +946,10 @@ app.post('/api/generar-audio', async (req, res) => {
     }
 
     const token = crypto.randomBytes(16).toString('hex');
-    // Conservar solo los 4 audios más recientes
-    const viejos = [...audiosPendientes.entries()].slice(0, Math.max(0, audiosPendientes.size - 3));
+    // Conservar solo los 8 audios más recientes. Eran 4, y con videos gemelos (2 locuciones por
+    // noticia) más varias ventanas abiertas en paralelo, 4 expulsaba locuciones YA APROBADAS —
+    // que es el bug de "No se encontró la locución aprobada" que ya está en la bitácora.
+    const viejos = [...audiosPendientes.entries()].slice(0, Math.max(0, audiosPendientes.size - 7));
     for (const [t, a] of viejos) {
       try { fs.unlinkSync(a.path); } catch {}
       audiosPendientes.delete(t);
@@ -898,11 +960,12 @@ app.post('/api/generar-audio', async (req, res) => {
 
     if (jobId) {
       try {
-        const job = jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: audio.modelo });
+        const job = guardarEnVariante(jobId, variante, { audioToken: token, duracion, modelo: audio.modelo }, { paso: 'audio' });
+        const nombreArchivo = variante === 'B' ? 'audio-b.mp3' : 'audio.mp3';
         if (job.carpetaInsumoId) {
           fs.promises.readFile(audio.audioPath)
-            .then(buffer => driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'audio.mp3', buffer))
-            .catch(e => console.warn(`⚠️ No se pudo respaldar audio.mp3 en Drive: ${e.message}`));
+            .then(buffer => driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, buffer))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
@@ -988,26 +1051,20 @@ app.post('/api/generate-audio', async (req, res) => {
   }
 });
 
-// ETAPA 6: Generar Video
-app.post('/api/generate-video', async (req, res) => {
-  const renderId = `job_${Date.now()}`; // id interno solo para nombrar temporales de este render
+// ETAPA 6: Generar Video — el trabajo REAL.
+//
+// Ya no corre dentro del pedido HTTP: lo llama la cola (`colaRender`), de a uno por vez. El cuerpo
+// es el mismo de siempre; lo único que cambió es que ahora recibe `params` en vez de `req.body`,
+// devuelve el resultado en vez de escribirlo en `res`, y lanza en vez de responder 400/500.
+//
+// `params.cartelPath` viene ya resuelto desde el endpoint: el PNG del cartel se guarda a disco al
+// ENCOLAR, no acá. Si el data URL (hasta 8MB en base64) viajara dentro de la tarea, terminaría
+// persistido en cola.json y respaldado a Drive en cada cambio de estado.
+async function renderizarVideo(params, renderId) {
   try {
-    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId, efectos } = req.body;
+    const { fragments, audioPath: audioPathBody, audioToken, destFolder, guion, metadatos, jobId, efectos, cartelPath, variante = 'A' } = params;
     // metadatos (opcional): { titulo, descripcion, protagonista, nombreCorto, linkFuente }
 
-    if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
-      return res.status(400).json({ error: 'Faltan fragments' });
-    }
-    // Navegador con la versión vieja del front cargada (pestaña abierta desde antes del deploy):
-    // manda `portadaTitular` —el campo que se usaba cuando el server redibujaba el cartel— y no
-    // el PNG que ahora dibuja el navegador. Sin esta guarda el render salía SIN cartel y sin
-    // explicación: no aparecía ni la opción de generar el JPG. Pasó de verdad tras el primer
-    // deploy de este cambio, y no había forma de saber por qué.
-    if (efectos?.portadaTitular && !efectos?.cartelPNG) {
-      return res.status(400).json({
-        error: 'Tenés cargada una versión vieja de la página: recargala (Cmd/Ctrl + Shift + R) y volvé a generar. El cartel de portada ahora lo dibuja el navegador, y esta pestaña todavía no tiene ese código.',
-      });
-    }
     // Audio: preferir el aprobado por token; compatibilidad con audioPath directo
     const audioAprobado = audioToken ? audiosPendientes.get(audioToken) : null;
     let audioPath = audioAprobado?.path || audioPathBody;
@@ -1018,10 +1075,7 @@ app.post('/api/generate-video', async (req, res) => {
       if (ruta) audioPath = ruta;
     }
     if (!audioPath || !fs.existsSync(audioPath)) {
-      return res.status(400).json({ error: 'No se encontró la locución aprobada: regenera el audio' });
-    }
-    if (!destFolder) {
-      return res.status(400).json({ error: 'Falta destFolder' });
+      throw new Error('No se encontró la locución aprobada: regenera el audio');
     }
 
     // 1. Duración real de la locución: define el tiempo total del video
@@ -1252,7 +1306,7 @@ app.post('/api/generate-video', async (req, res) => {
     // fotograma real (POST /api/portada, que lee esta misma ruta desde `previews`). Antes esto
     // reconstruía la geometría a partir de texto/fuente/tamaño/caja, con la lógica duplicada
     // entre servidor y navegador: siempre terminaban difiriendo (ver portada.js).
-    const cartelPath = guardarCartelPNG(efectos?.cartelPNG, renderId);
+    // (El PNG ya quedó en disco al encolar — acá solo se usa la ruta.)
 
     // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, cartel en el frame 0
     // y música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda
@@ -1358,16 +1412,19 @@ app.post('/api/generate-video', async (req, res) => {
 
     if (jobId) {
       try {
-        const job = jobStore.actualizarJob(jobId, { paso: 'completado', fileName, folderName, driveLink });
+        // `paso: 'completado'` es del JOB, no de la variante: se marca cuando termina cualquiera
+        // de los dos videos (el historial muestra el proceso como terminado desde el primero).
+        const job = guardarEnVariante(jobId, variante, { fileName, folderName, driveLink }, { paso: 'completado' });
+        const nombreArchivo = variante === 'B' ? 'resultado-b.json' : 'resultado.json';
         if (job.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'resultado.json', JSON.stringify({ fileName, folderName, driveLink }, null, 2))
-            .catch(e => console.warn(`⚠️ No se pudo respaldar resultado.json en Drive: ${e.message}`));
+          driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, JSON.stringify({ fileName, folderName, driveLink }, null, 2))
+            .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 
     console.log(`✅ [${renderId}] Video guardado: ${fileName}`);
-    res.json({
+    return {
       status: 'success',
       fileName: fileName,
       folderName: folderName,
@@ -1378,12 +1435,76 @@ app.post('/api/generate-video', async (req, res) => {
       // saber si mostrar el paso "elegir portada" y para dibujarlo encima del fotograma elegido
       // —la imagen REAL, ya no una aproximación en CSS.
       cartelUrl: (cartelPath && previews.has(previewToken)) ? `/api/cartel/${previewToken}` : null,
-    });
+    };
   } catch (error) {
     console.error(`Error video [${renderId}]:`, error);
     video.limpiarTemporales(renderId);
+    throw error; // la cola lo marca como tarea fallida y sigue con la siguiente
+  }
+}
+
+// El endpoint ya no renderiza: valida lo barato, deja el cartel en disco y encola. Responde al
+// instante con el id del render, y el navegador sondea `/api/render/:renderId`. Así un render
+// largo no puede cruzar el límite de tiempo del gateway de Railway, y —más importante— dos
+// renders nunca corren a la vez pisándose en historial.json (ver colaRender.js).
+app.post('/api/generate-video', async (req, res) => {
+  try {
+    const { fragments, destFolder, efectos, jobId, variante, etiqueta, canal } = req.body;
+
+    if (!fragments || !Array.isArray(fragments) || fragments.length === 0) {
+      return res.status(400).json({ error: 'Faltan fragments' });
+    }
+    if (!destFolder) {
+      return res.status(400).json({ error: 'Falta destFolder' });
+    }
+    // Navegador con la versión vieja del front cargada (pestaña abierta desde antes del deploy):
+    // manda `portadaTitular` —el campo que se usaba cuando el server redibujaba el cartel— y no
+    // el PNG que ahora dibuja el navegador. Sin esta guarda el render salía SIN cartel y sin
+    // explicación: no aparecía ni la opción de generar el JPG. Pasó de verdad tras el primer
+    // deploy de ese cambio, y no había forma de saber por qué.
+    if (efectos?.portadaTitular && !efectos?.cartelPNG) {
+      return res.status(400).json({
+        error: 'Tenés cargada una versión vieja de la página: recargala (Cmd/Ctrl + Shift + R) y volvé a generar. El cartel de portada ahora lo dibuja el navegador, y esta pestaña todavía no tiene ese código.',
+      });
+    }
+
+    // El PNG se escribe a disco ACÁ, con el renderId que va a usar la tarea, y en la tarea viaja
+    // solo la ruta (ver comentario de renderizarVideo).
+    const renderId = colaRender.nuevoRenderId();
+    const cartelPath = guardarCartelPNG(efectos?.cartelPNG, renderId);
+    const efectosSinPNG = { ...(efectos || {}) };
+    delete efectosSinPNG.cartelPNG;
+
+    const tarea = colaRender.encolar({
+      renderId,
+      jobId: jobId || null,
+      variante: variante || 'A',
+      etiqueta: etiqueta || req.body?.metadatos?.nombreCorto || 'Video',
+      canal: canal || '',
+      params: { ...req.body, efectos: efectosSinPNG, cartelPath },
+    });
+
+    console.log(`📋 [${tarea.renderId}] Encolado (${tarea.etiqueta}${tarea.canal ? ` → ${tarea.canal}` : ''})`);
+    res.json({ status: 'encolado', ...colaRender.obtener(tarea.renderId) });
+  } catch (error) {
+    console.error('Error encolando video:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Estado de UN render (el que sondea la ventana que lo pidió). Cuando termina, `resultado` trae
+// exactamente el mismo objeto que este endpoint devolvía antes de existir la cola.
+app.get('/api/render/:renderId', (req, res) => {
+  const tarea = colaRender.obtener(req.params.renderId);
+  if (!tarea) return res.status(404).json({ error: 'Render no encontrado' });
+  res.json(tarea);
+});
+
+// Panorama completo de la cola: qué se renderiza ahora, qué espera y qué terminó recién. Lo
+// consultan TODAS las ventanas abiertas — el usuario trabaja varias noticias en paralelo y
+// necesita ver cuánto tiene por delante antes de que le toque.
+app.get('/api/cola', (req, res) => {
+  res.json(colaRender.listar());
 });
 
 // ETAPA 6 (modo Insumos): Exportar fragmentos numerados + locución, sin componer video final.
@@ -1531,6 +1652,10 @@ function limpiarCache() {
       ...[...previews.values()].map(entrada => entrada.cartelPath).filter(Boolean),
       ...[...portadas.values()],
       ...[...audiosPendientes.values()].map(a => a.path),
+      // Archivos de renders que todavía esperan turno en la cola: con varias ventanas trabajando
+      // en paralelo, una tarea puede pasar más de 1h en la fila y llegar a su turno con el cartel
+      // y la locución ya barridos por el TTL.
+      ...colaRender.rutasProtegidas(),
     ].map(p => path.basename(p)));
 
     for (const f of fs.readdirSync(video.TEMP_DIR)) {
@@ -1567,6 +1692,16 @@ initializeDrive();
 // (Railway lo borra en cada redeploy). Fire-and-forget: no bloquea el arranque.
 driveCache.restaurar(path.join(__dirname, 'historial.json'), 'historial.json');
 driveCache.restaurar(path.join(__dirname, 'data', 'jobs.json'), 'jobs.json');
+
+// Cola de renderizado: primero traer del respaldo lo que el redeploy borró del disco, y recién
+// después rehidratar y arrancar el worker — al revés, la cola arrancaría vacía y los renders que
+// estaban esperando se perderían sin que nadie se entere.
+driveCache.restaurar(path.join(__dirname, 'data', 'cola.json'), 'cola.json')
+  .catch(() => {})
+  .then(() => {
+    colaRender.rehidratar();
+    colaRender.configurar(renderizarVideo);
+  });
 
 // Las carpetas de insumos en Drive crecían sin límite (nadie las borraba). Al ser
 // contenido noticioso pierden vigencia rápido: se mandan a la papelera a las 48h.

@@ -167,6 +167,15 @@
                     <textarea id="custom-angle" placeholder="Describe tu enfoque..." rows="3"></textarea>
                 </div>
 
+                <label class="gemelos-switch" for="chk-gemelos">
+                    <input type="checkbox" id="chk-gemelos" onchange="toggleGemelos(this.checked)">
+                    <span><strong>Dos videos gemelos</strong> — una noticia, dos videos distintos, uno por canal hermano.</span>
+                </label>
+                <p class="hint" id="hint-gemelos">
+                    Mismos hechos y mismo ángulo, pero con guion, título, cita, cartel, tomas y música
+                    distintos en cada uno. Cuesta el doble de locución.
+                </p>
+
                 <button class="btn btn-primary" id="btn-generate-script" onclick="handleGenerateScript()">
                     <span class="icon-slot" data-icon="pencilSimple"></span> Generar guion
                 </button>
@@ -175,6 +184,14 @@
             <div class="form-section" id="guion-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2><span class="icon-slot" data-icon="article"></span> Paso 3: Revisa y aprueba el guion</h2>
+                <div class="variante-tabs hidden" data-tabs>
+                    <button type="button" class="variante-tab" data-var="A" onclick="cambiarVariante('A')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video A</span>
+                    </button>
+                    <button type="button" class="variante-tab" data-var="B" onclick="cambiarVariante('B')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video B</span>
+                    </button>
+                </div>
                 <div class="copy-block">
                     <div class="copy-header">
                         <label id="guion-stats">Guion</label>
@@ -195,6 +212,14 @@
             <div class="form-section" id="revision-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 4: Revisa las asignaciones de carpetas</h2>
+                <div class="variante-tabs hidden" data-tabs>
+                    <button type="button" class="variante-tab" data-var="A" onclick="cambiarVariante('A')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video A</span>
+                    </button>
+                    <button type="button" class="variante-tab" data-var="B" onclick="cambiarVariante('B')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video B</span>
+                    </button>
+                </div>
                 <div id="aviso-protagonista" class="banner-danger hidden"></div>
                 <div id="aviso-reconstruccion" class="banner-danger hidden"></div>
                 <p class="hint">Cada párrafo saca sus clips de la carpeta asignada. Corrige las que no te convenzan.</p>
@@ -207,6 +232,14 @@
             <div class="form-section" id="audio-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 5: Escucha y aprueba la locución</h2>
+                <div class="variante-tabs hidden" data-tabs>
+                    <button type="button" class="variante-tab" data-var="A" onclick="cambiarVariante('A')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video A</span>
+                    </button>
+                    <button type="button" class="variante-tab" data-var="B" onclick="cambiarVariante('B')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video B</span>
+                    </button>
+                </div>
                 <p id="audio-info" class="hint"></p>
                 <audio id="audio-player" controls class="mb-sm"></audio>
                 <div class="btn-row">
@@ -226,11 +259,20 @@
             <div class="form-section" id="destination-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 6: Selecciona carpeta de destino</h2>
+                <div class="variante-tabs hidden" data-tabs>
+                    <button type="button" class="variante-tab" data-var="A" onclick="cambiarVariante('A')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video A</span>
+                    </button>
+                    <button type="button" class="variante-tab" data-var="B" onclick="cambiarVariante('B')">
+                        <span class="variante-punto"></span><span class="variante-nombre">Video B</span>
+                    </button>
+                </div>
                 <div class="form-group">
                     <label for="dest-folder">Carpeta en Google Drive:</label>
-                    <select id="dest-folder">
+                    <select id="dest-folder" onchange="elegirDestino(this.value)">
                         <option value="">Cargando carpetas...</option>
                     </select>
+                    <p class="hint hidden" id="hint-gemela-destino"></p>
                 </div>
 
                 <div class="form-group">
@@ -415,6 +457,12 @@
                 <h2 class="col-title mb-0"><span class="icon-slot" data-icon="package"></span> Historial</h2>
                 <button class="btn-copy" type="button" onclick="cargarHistorial()" title="Actualizar historial"><span class="icon-slot" data-icon="arrowsClockwise"></span></button>
             </div>
+            <div class="form-section hidden" id="cola-section">
+                <h2><span class="icon-slot" data-icon="listChecks"></span> Cola de renderizado</h2>
+                <p class="hint">Los videos se renderizan de a uno. Acá ves los de TODAS las ventanas abiertas.</p>
+                <div id="cola-lista"></div>
+            </div>
+
             <div class="form-section" id="historial-section">
                 <div id="historial-lista" class="scroll-snap-col"></div>
             </div>

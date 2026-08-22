@@ -238,13 +238,14 @@ main {
 }
 
 /* Banners de aviso (reemplazan los style inline de #apikey-banner, #recuperar-banner, #aviso-protagonista) */
-.banner-warning, .banner-info, .banner-danger {
+.banner-warning, .banner-info, .banner-danger, .banner-ok {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 12px 16px;
 }
 .banner-warning { background: var(--warning-tint); border-color: var(--warning-border); }
 .banner-info { background: var(--accent-tint); border-color: var(--accent-border); }
+.banner-ok { background: var(--success-tint); border-color: var(--success-border); }
 .banner-danger {
     background: var(--danger-tint);
     border-color: var(--danger-border);
@@ -1010,4 +1011,107 @@ footer {
     .form-section { padding: 16px; }
     .angles-grid { grid-template-columns: 1fr; }
     .btn-row .btn { min-width: 0; }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   VIDEOS GEMELOS — pestañas A/B
+   Una sola copia de cada control; la pestaña cambia qué variante se está viendo. Se eligió esto
+   sobre mostrar las dos versiones lado a lado porque dos paneles completos dentro de la misma
+   tarjeta quedaban amontonados e ilegibles.
+--------------------------------------------------------------------------------------------- */
+.variante-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 14px;
+    border-bottom: 2px solid var(--border);
+}
+.variante-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    max-width: 50%;
+}
+.variante-tab .variante-nombre {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.variante-tab:hover { color: var(--text); }
+.variante-tab.activa {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+/* El punto dice si esa versión ya tiene resuelto ESTE paso. Existe para que no se pueda aprobar
+   un paso habiendo mirado solo una de las dos versiones. */
+.variante-punto {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+    background: var(--border-strong);
+}
+.variante-punto[data-estado="pendiente"] { background: var(--warning); }
+.variante-punto[data-estado="listo"] { background: var(--success); }
+
+.gemelos-switch {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 18px 0 4px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-alt);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+.gemelos-switch input { margin-top: 2px; flex: none; }
+
+/* ---------------------------------------------------------------------------------------------
+   COLA DE RENDERIZADO
+   Los renders corren de a uno (se pisan en historial.json si van en paralelo), así que con varias
+   ventanas abiertas hace falta ver qué se está haciendo y cuánto falta para el turno propio.
+--------------------------------------------------------------------------------------------- */
+.cola-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    background: var(--surface);
+}
+.cola-item[data-estado="renderizando"] {
+    border-color: var(--accent-border);
+    background: var(--accent-tint);
+}
+.cola-item[data-estado="error"] {
+    border-color: var(--danger-border);
+    background: var(--danger-tint);
+}
+.cola-estado { flex: none; }
+.cola-nombre {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cola-detalle {
+    flex: none;
+    color: var(--text-dim);
+    font-size: 0.78rem;
 }

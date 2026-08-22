@@ -31,9 +31,20 @@ function tiposTransicionElegidos() {
 // Bloque C: rehacer un paso ya completado (editar y reenviar) invalida todo lo posterior.
 // Se llama al INICIO de cada función que muta el pipeline, antes de la llamada a la API.
 const STEP_ORDER = ['fuente-section', 'script-section', 'guion-section', 'revision-section', 'audio-section', 'destination-section'];
+// Claves de "ya atendido por variante" que cada paso invalida al rehacerse. Sin esto, rehacer el
+// guion dejaría la variante B marcada como lista con datos de un guion que ya no existe.
+const CLAVES_POR_PASO = {
+    'guion-section': ['guion', 'asignaciones', 'audio'],
+    'revision-section': ['asignaciones', 'audio'],
+    'audio-section': ['audio'],
+};
+
 function lockFrom(stepId) {
     const idx = STEP_ORDER.indexOf(stepId);
     if (idx === -1) return;
+    if (typeof invalidarVariantes === 'function' && CLAVES_POR_PASO[stepId]) {
+        invalidarVariantes(CLAVES_POR_PASO[stepId]);
+    }
     for (let i = idx; i < STEP_ORDER.length; i++) {
         setStepStatus(STEP_ORDER[i], 'locked');
         if (STEP_ORDER[i] === 'guion-section') resetProductoSlot('producto-guion');
@@ -56,7 +67,7 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [] };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, carpetasDestino: [] };
     renderFuentesLista();
     renderMaterialesLista();
     sessionStorage.removeItem('farandula_job_id');
@@ -125,8 +136,278 @@ let state = {
     previewToken: null, // token del preview del último video renderizado, para /api/portada
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
     materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
+    // Videos gemelos (ver el bloque de abajo). Apagado por defecto: con `gemelos: false` nada de
+    // esto se ejecuta y el flujo es exactamente el de siempre.
+    gemelos: false,
+    varianteActiva: 'A',
+    B: null,              // datos del segundo video; se crea al activar el modo
+    aprobado: {},         // qué pasos ya se atendieron para el video A
+    carpetasDestino: [],  // catálogo de /api/folders, para nombrar las pestañas y buscar la gemela
 };
 const MAX_FUENTES = 6;
+
+// =================================================================================================
+// VIDEOS GEMELOS + COLA DE RENDERIZADO
+//
+// Gemelos: una misma noticia produce DOS videos, uno para cada canal hermano. Comparten fuentes,
+// crónica y material adicional; se diferencian en guion, título/descripción, cita, cartel, tomas
+// y música.
+//
+// Cómo está montado en la UI, y por qué así: NO se duplica el DOM. Los pasos 3 a 6 tienen una
+// pestaña A/B que cambia qué variante se está viendo, y los MISMOS controles de siempre se
+// repintan con los datos de esa variante. Duplicar el HTML habría significado dos editores de
+// guion, dos listas de asignación, dos reproductores y dos canvas de cartel — el doble de
+// superficie para que algo se desincronice, que es exactamente el bug que ya costó una semana con
+// la geometría del cartel.
+//
+// Dónde viven los datos: el video A se queda en los campos de SIEMPRE de `state` (`guion`,
+// `fragments`, `audioToken`, …) y el B cuelga de `state.B`. Misma asimetría que en el servidor
+// (`job.gemela`), y por la misma razón: con el modo apagado no cambia absolutamente nada del
+// flujo que ya funcionaba.
+// =================================================================================================
+
+function nuevaVarianteB() {
+    return {
+        guion: null, fragments: null, audioToken: null, duracion: null,
+        metadatos: null, selectedDestFolder: null, titularCartel: null,
+        carpetas: [], avisoReconstruccion: null,
+        aprobado: {},   // { guion, asignaciones, audio }
+        renderId: null, resultado: null,
+    };
+}
+
+// Los datos de una variante. `V()` sin argumento = la que se está viendo.
+// La estructura del video B se crea acá al primer uso, aunque el modo gemelos esté apagado: crearla
+// no activa nada, y evita toda una familia de errores por `state.B === null` (encontrada probando
+// la regresión con gemelos apagado, donde `actualizarTabs` igual recorre las dos pestañas).
+function V(v) {
+    if ((v || state.varianteActiva) !== 'B') return state;
+    if (!state.B) state.B = nuevaVarianteB();
+    return state.B;
+}
+function otraVariante(v) {
+    return (v || state.varianteActiva) === 'A' ? 'B' : 'A';
+}
+// Título y descripción del post. El A los saca de la lectura; el B tiene los suyos, generados por
+// `gemini.variarMetadatos` para que los dos canales no publiquen el mismo texto.
+function metaVariante(v) {
+    const q = v || state.varianteActiva;
+    if (q === 'B' && state.B?.metadatos) {
+        return { ...(state.sourceData || {}), ...state.B.metadatos };
+    }
+    return state.sourceData || {};
+}
+
+// Canales hermanos, por nombre normalizado. Único lugar donde vive el pareo: si el usuario
+// renombra una carpeta en Drive y deja de calzar, el destino del segundo video simplemente se
+// elige a mano — nunca se adivina ni se bloquea.
+const GEMELAS = {
+    chismexpicante: 'supelupe',
+    supelupe: 'chismexpicante',
+    embajadoresdelchisme: 'lanaple',
+    lanaple: 'embajadoresdelchisme',
+};
+function normalizarCanal(nombre) {
+    return (nombre || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
+function buscarCarpetaGemela(nombreCarpeta, carpetas) {
+    const objetivo = GEMELAS[normalizarCanal(nombreCarpeta)];
+    if (!objetivo) return null;
+    return (carpetas || []).find(f => normalizarCanal(f.name) === objetivo) || null;
+}
+
+function toggleGemelos(activo) {
+    state.gemelos = Boolean(activo);
+    if (!state.gemelos) state.varianteActiva = 'A';
+    if (state.gemelos && !state.B) state.B = nuevaVarianteB();
+    document.querySelectorAll('[data-tabs]').forEach(t => t.classList.toggle('hidden', !state.gemelos));
+    actualizarTabs();
+    log(state.gemelos
+        ? '👯 Modo gemelos activado: se van a generar DOS videos, uno por canal hermano'
+        : '🎬 Modo gemelos desactivado: un solo video');
+}
+
+// Nombre visible de cada pestaña: el canal destino si ya se eligió, si no "Video A"/"Video B".
+function etiquetaVariante(v) {
+    const dest = V(v).selectedDestFolder;
+    const carpeta = (state.carpetasDestino || []).find(f => f.id === dest);
+    return carpeta ? carpeta.name : `Video ${v}`;
+}
+
+function actualizarTabs() {
+    document.querySelectorAll('[data-tabs]').forEach(cont => {
+        cont.querySelectorAll('.variante-tab').forEach(btn => {
+            const v = btn.dataset.var;
+            btn.classList.toggle('activa', v === state.varianteActiva);
+            btn.querySelector('.variante-nombre').textContent = etiquetaVariante(v);
+            // El punto dice si esa variante ya tiene lo que ese paso pide, para no aprobar a ciegas
+            const paso = cont.closest('.form-section')?.id;
+            btn.querySelector('.variante-punto').dataset.estado = estadoVariantePaso(v, paso);
+        });
+    });
+}
+
+function estadoVariantePaso(v, paso) {
+    const d = V(v);
+    if (paso === 'guion-section') return d.aprobado?.guion ? 'listo' : (d.guion ? 'pendiente' : 'vacio');
+    if (paso === 'revision-section') return d.aprobado?.asignaciones ? 'listo' : (d.fragments ? 'pendiente' : 'vacio');
+    if (paso === 'audio-section') return d.aprobado?.audio ? 'listo' : (d.audioToken ? 'pendiente' : 'vacio');
+    if (paso === 'destination-section') return d.selectedDestFolder ? 'listo' : 'pendiente';
+    return 'vacio';
+}
+
+// Antes de cambiar de pestaña hay que rescatar lo que el usuario escribió en los controles
+// compartidos: si no, editar el guion A y saltar a B perdería la edición sin aviso.
+function volcarVista() {
+    const d = V();
+    const editor = document.getElementById('guion-editor');
+    if (editor && editor.value.trim()) d.guion = editor.value;
+    const titular = document.getElementById('portada-titular');
+    if (titular) d.titularCartel = titular.value;
+    const dest = document.getElementById('dest-folder');
+    if (dest && dest.value) d.selectedDestFolder = dest.value;
+}
+
+// Y al entrar en una pestaña, los controles se repintan con SUS datos.
+function pintarVista() {
+    const d = V();
+
+    const editor = document.getElementById('guion-editor');
+    if (editor) { editor.value = d.guion || ''; actualizarStatsGuion(); }
+
+    if (d.fragments) {
+        renderAsignaciones(false, state.sourceData?.protagonista);
+    } else {
+        const lista = document.getElementById('lista-asignaciones');
+        if (lista) lista.innerHTML = '<p class="hint">Todavía no se asignaron carpetas para esta versión.</p>';
+    }
+
+    const player = document.getElementById('audio-player');
+    const info = document.getElementById('audio-info');
+    if (player) {
+        if (d.audioToken) {
+            player.src = apiBase() + `/api/audio/${d.audioToken}?t=` + Date.now();
+            player.load();
+            if (info) info.textContent = `Duración: ${d.duracion || '?'}s | ${etiquetaVariante(state.varianteActiva)}`;
+        } else {
+            player.removeAttribute('src');
+            if (info) info.textContent = 'Todavía no se generó la locución de esta versión.';
+        }
+    }
+
+    const dest = document.getElementById('dest-folder');
+    if (dest) dest.value = d.selectedDestFolder || '';
+
+    const titular = document.getElementById('portada-titular');
+    if (titular) {
+        titular.value = d.titularCartel || tituloParaCartel(state.varianteActiva);
+        d.titularCartel = titular.value;
+        actualizarPortadaDiseno();
+    }
+
+    actualizarTabs();
+}
+
+function cambiarVariante(v) {
+    if (v === state.varianteActiva) return;
+    volcarVista();
+    state.varianteActiva = v;
+    pintarVista();
+    log(`👯 Ahora estás editando: ${etiquetaVariante(v)}`);
+}
+
+// El cartel se rellena con el TÍTULO de la lectura (el titular viral), no con `nombreCorto`, que
+// es la base del NOMBRE DE ARCHIVO — corto y seco, pensado para ordenar carpetas, no para leerse
+// en pantalla. Pedido explícito del usuario. `nombreCorto` queda de respaldo por si no hay título.
+function tituloParaCartel(v) {
+    const meta = metaVariante(v);
+    return (meta.titulo || meta.nombreCorto || '').slice(0, 90);
+}
+
+// Marca un paso como hecho para la variante activa. Devuelve true si YA se puede avanzar (o sea:
+// no hay gemelos, o las dos variantes cumplieron). Si falta la otra, salta a su pestaña — así el
+// usuario no puede aprobar el paso habiendo mirado solo la mitad.
+function marcarPasoVariante(clave, mensajeFalta) {
+    const d = V();
+    d.aprobado = { ...(d.aprobado || {}), [clave]: true };
+    actualizarTabs();
+    if (!state.gemelos) return true;
+    const otra = otraVariante();
+    if (V(otra).aprobado?.[clave]) return true;
+    cambiarVariante(otra);
+    log(`⏳ ${mensajeFalta}`);
+    return false;
+}
+
+// Al rehacer un paso hay que borrar lo aprobado de LAS DOS variantes de ese paso en adelante:
+// si no, la B queda marcada como lista con datos de un guion que ya no existe.
+function invalidarVariantes(claves) {
+    for (const d of [state, state.B].filter(Boolean)) {
+        if (!d.aprobado) continue;
+        for (const c of claves) delete d.aprobado[c];
+    }
+    actualizarTabs();
+}
+
+// -------------------------------------------------------------------------------------------
+// COLA DE RENDERIZADO
+// -------------------------------------------------------------------------------------------
+
+let colaTimer = null;
+
+// Sondea un render hasta que termina. Reemplaza a la espera del pedido HTTP largo: ahora el
+// servidor responde al instante con un id y el trabajo se hace en la cola, de a uno.
+async function esperarRender(renderId, etiqueta) {
+    let ultimoEstado = null;
+    while (true) {
+        const t = await apiCall(`/render/${renderId}`, 'GET');
+        if (t.estado !== ultimoEstado) {
+            ultimoEstado = t.estado;
+            if (t.estado === 'en_cola') log(`⏳ ${etiqueta}: en cola, puesto ${t.posicion} de ${t.enEspera}`);
+            if (t.estado === 'renderizando') log(`🎞️ ${etiqueta}: renderizando...`);
+        }
+        if (t.estado === 'en_cola') {
+            showProgress(`${icon('listChecks')} ${etiqueta}: en cola (puesto ${t.posicion} de ${t.enEspera})`);
+            updateProgress(55);
+        } else if (t.estado === 'renderizando') {
+            showProgress(`${icon('rocketLaunch')} ${etiqueta}: renderizando...`);
+            updateProgress(80);
+        }
+        if (t.estado === 'listo') return t.resultado;
+        if (t.estado === 'error') throw new Error(t.error || 'El render falló');
+        await new Promise(r => setTimeout(r, 3000));
+    }
+}
+
+// Arranca al cargar la página, no al generar: el usuario trabaja varias noticias en ventanas
+// distintas y quiere ver desde el principio cuánto hay por delante. El panel aparece solo cuando
+// hay algo que mostrar, así una ventana ociosa no arrastra una caja vacía.
+function iniciarPanelCola() {
+    if (colaTimer) return;
+    const tick = async () => {
+        try { pintarCola(await apiCall('/cola', 'GET')); } catch { /* la cola es informativa: si falla, se calla */ }
+    };
+    tick();
+    colaTimer = setInterval(tick, 4000);
+}
+
+function pintarCola(datos) {
+    const cont = document.getElementById('cola-lista');
+    if (!cont) return;
+    const filas = [];
+    const fila = (t, clase) => `
+        <div class="cola-item" data-estado="${t.estado}">
+            <span class="cola-estado">${clase}</span>
+            <span class="cola-nombre">${(t.etiqueta || 'Video')}${t.canal ? ` · ${t.canal}` : ''}</span>
+            <span class="cola-detalle">${t.estado === 'en_cola' ? `puesto ${t.posicion}` : (t.error ? 'falló' : '')}</span>
+        </div>`;
+    if (datos.corriendo) filas.push(fila(datos.corriendo, '🎞️'));
+    for (const t of datos.cola || []) filas.push(fila(t, '⏳'));
+    for (const t of (datos.recientes || []).slice(-3).reverse()) filas.push(fila(t, t.estado === 'listo' ? '✅' : '❌'));
+    cont.innerHTML = filas.join('');
+    document.getElementById('cola-section')?.classList.toggle('hidden', filas.length === 0);
+}
+
 
 // Funciones auxiliares (Bloque B: todos los pasos visibles a la vez, sin wizard)
 
@@ -587,12 +868,32 @@ async function handleGenerateScript() {
             angle: state.selectedAngle,
             angleContent: angleContent,
             jobId: state.jobId,
+            // Modo gemelos: el server escribe los DOS guiones en la misma llamada (el segundo con
+            // el primero como "esto es lo que NO podés parecerte") y le busca al segundo su propio
+            // título y descripción.
+            gemela: state.gemelos,
+            metadatos: state.gemelos ? { titulo: state.sourceData?.titulo, descripcion: state.sourceData?.descripcion } : undefined,
         });
 
         log('✅ Guion generado');
         state.guion = result.script;
         renderProductoGuion(result.script);
         updateProgress(50);
+
+        if (state.gemelos) {
+            if (result.gemela) {
+                state.B = { ...nuevaVarianteB(), guion: result.gemela.script, metadatos: result.gemela.metadatos };
+                log(`✅ Guion del gemelo: ${result.gemela.palabras} palabras — "${result.gemela.metadatos?.titulo || ''}"`);
+            } else {
+                // El A ya está listo: se sigue con uno solo en vez de tirar abajo todo el paso.
+                state.gemelos = false;
+                document.getElementById('chk-gemelos').checked = false;
+                toggleGemelos(false);
+                log('⚠️ No se pudo escribir el guion del gemelo: seguí con un solo video o volvé a generar');
+            }
+        }
+        state.varianteActiva = 'A';
+        actualizarTabs();
 
         // Mostrar el guion en el editor para revisión (aprobar / modificar / rechazar)
         document.getElementById('guion-editor').value = result.script;
@@ -636,32 +937,38 @@ async function aprobarGuion() {
         alert('El guion está vacío');
         return;
     }
-    state.guion = texto;
-    renderProductoGuion(texto);
-    log('✅ Guion aprobado');
+    const d = V();
+    d.guion = texto;
+    if (state.varianteActiva === 'A') renderProductoGuion(texto);
+    log(`✅ Guion aprobado (${etiquetaVariante(state.varianteActiva)})`);
 
     setButtonDisabled('btn-approve-guion', true);
     try {
         // Rehacer la aprobación (guion editado) invalida audio/destino ya hechos
-        state.audioToken = null;
-        state.selectedDestFolder = null;
+        d.audioToken = null;
+        d.selectedDestFolder = null;
+        invalidarVariantes(['asignaciones', 'audio']);
         lockFrom('revision-section');
 
-        showProgress(`${icon('folderOpen')} Asignando carpetas...`);
+        showProgress(`${icon('folderOpen')} Asignando carpetas (${etiquetaVariante(state.varianteActiva)})...`);
         log('📂 Asignando carpetas a los párrafos...');
         updateProgress(52);
         const result = await apiCall(cfg().asignar, 'POST', {
-            [cfg().asignarParam]: state.guion,
+            [cfg().asignarParam]: d.guion,
             protagonista: state.sourceData?.protagonista,
             jobId: state.jobId,
+            variante: state.varianteActiva,
         });
-        state.fragments = result[cfg().parrafosKey];
+        d.fragments = result[cfg().parrafosKey];
+        d.avisoReconstruccion = result.avisoReconstruccion || null;
+        // Las carpetas de famosos y el material adicional son del JOB, no de la variante: las dos
+        // versiones eligen entre las mismas carpetas y comparten las fotos/videos de apoyo.
         state.carpetas = result.carpetas;
-        state.avisoReconstruccion = result.avisoReconstruccion || null;
         state.materialesAdicionales = result.materialesDisponibles || [];
         renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
         hideProgress();
+        if (!marcarPasoVariante('guion', 'Ahora revisá y aprobá el guion del canal hermano.')) return;
         setStepStatus('guion-section', 'done');
         setStepStatus('revision-section', 'active');
     } catch (error) {
@@ -686,8 +993,8 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     // cada clip sale de su proporción de caracteres. Si no coinciden, todos los clips quedan
     // corridos respecto de la locución — y no falla nada a la vista, por eso hay que avisarlo.
     const avisoRec = document.getElementById('aviso-reconstruccion');
-    if (state.avisoReconstruccion) {
-        avisoRec.textContent = `⚠️ ${state.avisoReconstruccion}`;
+    if (V().avisoReconstruccion) {
+        avisoRec.textContent = `⚠️ ${V().avisoReconstruccion}`;
         avisoRec.classList.remove('hidden');
     } else {
         avisoRec.classList.add('hidden');
@@ -696,7 +1003,7 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     const lista = document.getElementById('lista-asignaciones');
     lista.innerHTML = '';
     const itemsMaterial = aplanarMaterialesCliente(state.materialesAdicionales);
-    state.fragments.forEach((f, i) => {
+    V().fragments.forEach((f, i) => {
         const div = document.createElement('div');
         div.className = 'asignacion-row';
         const p = document.createElement('p');
@@ -833,6 +1140,7 @@ async function confirmarAsignaciones() {
     setButtonDisabled('btn-confirm-assignments', true);
     try {
         await regenerarAudio('eleven_v3');
+        marcarPasoVariante('asignaciones', 'Ahora revisá las asignaciones del canal hermano.');
     } finally {
         setButtonDisabled('btn-confirm-assignments', false);
     }
@@ -844,18 +1152,22 @@ async function regenerarAudio(modelo) {
     setButtonDisabled('btn-regenerate-audio-v2', true);
     try {
         // Rehacer la locución invalida el destino ya elegido
-        state.selectedDestFolder = null;
+        const d = V();
+        d.selectedDestFolder = null;
+        invalidarVariantes(['audio']);
         lockFrom('destination-section');
 
-        showProgress(`${icon('microphone')} Generando locución (${modelo})...`);
-        log(`🎙️ Generando locución (${modelo})...`);
+        showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(state.varianteActiva)} (${modelo})...`);
+        log(`🎙️ Generando locución (${modelo}) — ${etiquetaVariante(state.varianteActiva)}...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
-            [cfg().audioParam]: state.fragments,
+            [cfg().audioParam]: d.fragments,
             modelo: modelo,
             jobId: state.jobId,
+            variante: state.varianteActiva,
         });
-        state.audioToken = result.audioToken;
+        d.audioToken = result.audioToken;
+        d.duracion = result.duracion;
 
         document.getElementById('audio-info').textContent =
             `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
@@ -863,9 +1175,10 @@ async function regenerarAudio(modelo) {
         // La URL del audio es relativa al backend activo (importante en modo insumos)
         player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
         player.load();
-        renderProductoAudio(player.src);
+        if (state.varianteActiva === 'A') renderProductoAudio(player.src);
 
         hideProgress();
+        actualizarTabs();
         setStepStatus('revision-section', 'done');
         setStepStatus('audio-section', 'active');
         log('🎧 Escucha la locución y apruébala o regenérala');
@@ -918,22 +1231,23 @@ async function recargarAudioDeDrive() {
 
 // Locución aprobada → elegir carpeta de destino
 async function aprobarAudio() {
-    if (!state.audioToken) {
-        alert('No hay locución generada');
+    if (!V().audioToken) {
+        alert('No hay locución generada para esta versión');
         return;
     }
     setButtonDisabled('btn-approve-audio', true);
     try {
-        log('✅ Locución aprobada');
+        log(`✅ Locución aprobada (${etiquetaVariante(state.varianteActiva)})`);
+        if (!marcarPasoVariante('audio', 'Ahora escuchá y aprobá la locución del canal hermano.')) return;
         await loadDestinationFolders();
         setStepStatus('audio-section', 'done');
         setStepStatus('destination-section', 'active');
-        // Prefill del titular del cartel con el mismo nombre corto que ya calculó la lectura
-        // (Paso 1) — editable, y sin pisar si el usuario ya escribió algo (ej. al reaprobar
-        // audio de nuevo tras rehacer un paso anterior).
+        // Prefill del titular del cartel con el TÍTULO de la lectura (no con `nombreCorto`, que es
+        // la base del nombre de archivo) — editable, y sin pisar si el usuario ya escribió algo.
         const portadaTitularEl = document.getElementById('portada-titular');
         if (portadaTitularEl && !portadaTitularEl.value.trim()) {
-            portadaTitularEl.value = state.sourceData?.nombreCorto || '';
+            portadaTitularEl.value = tituloParaCartel(state.varianteActiva);
+            V().titularCartel = portadaTitularEl.value;
             actualizarPortadaDiseno();
         }
     } finally {
@@ -977,13 +1291,106 @@ async function loadDestinationFolders() {
             select.appendChild(option);
         });
 
+        state.carpetasDestino = lista;
+        select.value = V().selectedDestFolder || '';
+        actualizarTabs();
         log(`✅ ${lista.length} carpetas cargadas`);
     } catch (error) {
         log(`❌ Error cargando carpetas: ${error.message}`);
     }
 }
 
+// Elegir el destino de la variante que se está viendo. En modo gemelos, elegir el del video A
+// autocompleta el del B con su canal hermano — si el nombre no está en el mapa GEMELAS (carpeta
+// renombrada, canal nuevo), simplemente no autocompleta y el usuario lo elige a mano.
+function elegirDestino(valor) {
+    V().selectedDestFolder = valor || null;
+    const hint = document.getElementById('hint-gemela-destino');
+    if (hint) hint.classList.add('hidden');
+
+    if (state.gemelos && state.varianteActiva === 'A' && valor) {
+        const carpetaA = state.carpetasDestino.find(f => f.id === valor);
+        const gemela = buscarCarpetaGemela(carpetaA?.name, state.carpetasDestino);
+        if (gemela) {
+            V('B').selectedDestFolder = gemela.id;
+            if (hint) {
+                hint.textContent = `El video B va a "${gemela.name}", el canal hermano de "${carpetaA.name}". Podés cambiarlo desde su pestaña.`;
+                hint.classList.remove('hidden');
+            }
+        } else if (hint) {
+            hint.textContent = `No encontré el canal hermano de "${carpetaA?.name}": elegí a mano el destino del video B en su pestaña.`;
+            hint.classList.remove('hidden');
+        }
+    }
+    actualizarTabs();
+}
+
 // PASO 3: Generar el resultado final (video o insumos según el modo)
+// Efectos del Paso 6. Son COMPARTIDOS por las dos variantes (zoom, espejo, transiciones,
+// subtítulos, música): lo que las diferencia visualmente no son los ajustes sino las tomas y la
+// pista, que salen distintas solas porque los renders van de a uno y la rotación de historial.json
+// no repite (ver seleccion.js).
+function efectosDelPaso6() {
+    return {
+        zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
+        zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
+        espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
+        subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
+        musica: document.getElementById('efecto-musica')?.checked ?? true,
+        musicaTono: document.getElementById('musica-tono')?.value || 'auto',
+        subtitulosFuente: subsFuente,
+        subtitulosTamano: subsTamano,
+        subtitulosMarginV: subsMarginV,
+        transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
+        transicionTipo: tiposTransicionElegidos(),
+        transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
+    };
+}
+
+// Encola UNA variante y devuelve su renderId. El cartel se dibuja en el canvas compartido justo
+// antes de exportarlo: hay un solo canvas, así que cada variante lo pinta con SU titular, exporta
+// su PNG y recién ahí se pasa a la siguiente.
+async function encolarVariante(v) {
+    const d = V(v);
+    if (!d.fragments || d.fragments.length === 0) throw new Error(`El video ${v} no tiene párrafos asignados`);
+    if (!d.audioToken) throw new Error(`El video ${v} no tiene locución aprobada`);
+    if (!d.selectedDestFolder) throw new Error(`El video ${v} no tiene carpeta de destino`);
+
+    const titularEl = document.getElementById('portada-titular');
+    if (titularEl) {
+        titularEl.value = d.titularCartel || tituloParaCartel(v);
+        await actualizarPortadaDiseno();
+    }
+    const cartelPNG = await exportarCartelPNG();
+    if (titularEl?.value.trim() && !cartelPNG) {
+        log(`⚠️ No se pudo generar el cartel del video ${v}: va a salir sin él.`);
+    }
+
+    const meta = metaVariante(v);
+    const carpeta = state.carpetasDestino.find(f => f.id === d.selectedDestFolder);
+    const respuesta = await apiCall('/generate-video', 'POST', {
+        fragments: d.fragments,
+        audioToken: d.audioToken,
+        destFolder: d.selectedDestFolder,
+        guion: d.guion,
+        jobId: state.jobId,
+        variante: v,
+        etiqueta: meta.nombreCorto || meta.titulo || 'Video',
+        canal: carpeta?.name || '',
+        metadatos: {
+            titulo: meta.titulo,
+            descripcion: meta.descripcion,
+            protagonista: meta.protagonista,
+            nombreCorto: meta.nombreCorto,
+            linkFuente: meta.linkFuente,
+        },
+        efectos: { ...efectosDelPaso6(), cartelPNG },
+    });
+    d.renderId = respuesta.renderId;
+    log(`📋 ${etiquetaVariante(v)} encolado (${respuesta.estado === 'en_cola' ? `puesto ${respuesta.posicion}` : 'arrancando'})`);
+    return respuesta.renderId;
+}
+
 async function handleGenerateVideo() {
     const select = document.getElementById('dest-folder');
     const destFolder = select.value;
@@ -993,7 +1400,55 @@ async function handleGenerateVideo() {
         return;
     }
 
-    state.selectedDestFolder = destFolder;
+    V().selectedDestFolder = destFolder;
+    state.selectedDestFolder = state.selectedDestFolder || destFolder;
+
+    // Modo gemelos: dos tareas en la cola, A y después B. El orden importa — la rotación de clips
+    // y de música mira lo que consumió el render anterior, así que planificar el B DESPUÉS del A
+    // es justamente lo que hace que las tomas no se repitan entre los dos canales.
+    if (MODO === 'video' && state.gemelos) {
+        if (!state.B?.selectedDestFolder) {
+            alert('Falta elegir la carpeta de destino del segundo video (pestaña del canal hermano)');
+            return;
+        }
+        setButtonDisabled('btn-generate-video', true);
+        iniciarPanelCola();
+        const varianteOriginal = state.varianteActiva;
+        try {
+            volcarVista();
+            showProgress(`${icon('rocketLaunch')} Encolando los dos videos...`);
+            updateProgress(50);
+            const idA = await encolarVariante('A');
+            const idB = await encolarVariante('B');
+
+            const resA = await esperarRender(idA, etiquetaVariante('A'));
+            state.resultado = resA;
+            log(`🎉 ${etiquetaVariante('A')} listo: ${resA.fileName}`);
+            showResult(resA);
+
+            try {
+                const resB = await esperarRender(idB, etiquetaVariante('B'));
+                V('B').resultado = resB;
+                log(`🎉 ${etiquetaVariante('B')} listo: ${resB.fileName}`);
+                mostrarResultadoGemelo(resB);
+            } catch (e) {
+                // El A ya está subido y registrado: se avisa del B sin tirar abajo lo que sí salió.
+                log(`❌ El video del canal hermano falló: ${e.message}`);
+                mostrarResultadoGemelo(null, e.message);
+            }
+
+            hideProgress();
+            setStepStatus('destination-section', 'done');
+        } catch (error) {
+            mostrarError(`Error generando los videos gemelos: ${error.message}`,
+                () => handleGenerateVideo(), 'destination-section');
+        } finally {
+            state.varianteActiva = varianteOriginal;
+            pintarVista();
+            setButtonDisabled('btn-generate-video', false);
+        }
+        return;
+    }
 
     setButtonDisabled('btn-generate-video', true);
     try {
@@ -1016,45 +1471,12 @@ async function handleGenerateVideo() {
             // Cartel de portada: se exporta acá el PNG EXACTO que se ve en la previa del Paso 6.
             // El server no lo re-dibuja — lo superpone tal cual en el frame 0 y en el JPG, así
             // los tres (previa, video, JPG) son literalmente la misma imagen.
-            const cartelPNG = await exportarCartelPNG();
-            // Si hay titular escrito pero no salió PNG, algo falló al dibujarlo. Avisar en vez de
-            // seguir en silencio: el video saldría sin el cartel que el usuario diseñó, y recién
-            // se enteraría al final, cuando no aparezca la opción de generar el JPG.
-            if (document.getElementById('portada-titular')?.value.trim() && !cartelPNG) {
-                log('⚠️ No se pudo generar el cartel de portada: el video va a salir sin él.');
-            }
-            resultado = await apiCall('/generate-video', 'POST', {
-                fragments: state.fragments,
-                audioToken: state.audioToken,
-                destFolder: state.selectedDestFolder,
-                guion: state.guion,
-                jobId: state.jobId,
-                metadatos: {
-                    titulo: state.sourceData?.titulo,
-                    descripcion: state.sourceData?.descripcion,
-                    protagonista: state.sourceData?.protagonista,
-                    nombreCorto: state.sourceData?.nombreCorto,
-                    linkFuente: state.sourceData?.linkFuente,
-                },
-                efectos: {
-                    zoom: document.getElementById('efecto-zoom')?.value || 'ninguno',
-                    zoomPct: Number(document.getElementById('zoom-pct')?.value) || 20,
-                    espejo: document.getElementById('efecto-espejo')?.value || 'ninguno',
-                    subtitulos: document.getElementById('efecto-subtitulos')?.checked ?? true,
-                    musica: document.getElementById('efecto-musica')?.checked ?? true,
-                    musicaTono: document.getElementById('musica-tono')?.value || 'auto',
-                    subtitulosFuente: subsFuente,
-                    subtitulosTamano: subsTamano,
-                    subtitulosMarginV: subsMarginV,
-                    transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
-                    transicionTipo: tiposTransicionElegidos(),
-                    transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
-                    // PNG del cartel tal cual se ve en la previa (data URL), o null si no hay
-                    // titular. Reemplaza a los antiguos portadaTitular/Fuente/Tamano/Caja: el
-                    // server ya no necesita saber CÓMO se dibujó, solo superpone la imagen.
-                    cartelPNG,
-                },
-            });
+            // El render ya no ocurre dentro de este pedido: el servidor encola y responde al
+            // instante, y acá se sondea el estado. Además de sacarle de encima el límite de
+            // tiempo del gateway, es lo que impide que dos renders corran a la vez.
+            iniciarPanelCola();
+            const idRender = await encolarVariante('A');
+            resultado = await esperarRender(idRender, etiquetaVariante('A'));
             log('✅ Video generado');
         } else {
             log('✂️ Cortando fragmentos y subiendo insumos...');
@@ -1089,6 +1511,27 @@ async function handleGenerateVideo() {
     } finally {
         setButtonDisabled('btn-generate-video', false);
     }
+}
+
+// El segundo video no reemplaza al primero en pantalla: se muestra debajo, con su propio link.
+// Si falló, se dice qué pasó — el primero ya está subido y registrado igual.
+function mostrarResultadoGemelo(videoData, error) {
+    const cont = document.getElementById('result-info');
+    if (!cont) return;
+    const caja = document.createElement('div');
+    caja.className = videoData ? 'banner-ok mt-md' : 'banner-danger mt-md';
+    caja.id = 'resultado-gemelo';
+    if (videoData) {
+        caja.innerHTML = `
+            <p><strong>${icon('checkCircle')} ${etiquetaVariante('B')}: ${videoData.fileName}</strong></p>
+            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Abrir en Google Drive</a></p>` : ''}
+            <p class="hint">Título del post: ${metaVariante('B').titulo || '(el mismo del primero)'}</p>`;
+    } else {
+        caja.innerHTML = `<p><strong>⚠️ El video de ${etiquetaVariante('B')} no se pudo generar</strong></p>
+            <p class="hint">${error || ''} — el primero ya quedó subido. Podés reintentar solo este desde el Paso 6.</p>`;
+    }
+    document.getElementById('resultado-gemelo')?.remove();
+    cont.appendChild(caja);
 }
 
 // Mostrar resultado
@@ -1869,6 +2312,19 @@ async function recuperarJobPendiente() {
     state.sesgo = job.sesgo || job.fuente?.sesgo || 'neutral';
     state.materialesAdicionales = job.materialesAdicionales || [];
     renderMaterialesLista();
+
+    // Job de videos gemelos: se repuebla la segunda pestaña con lo que ese video ya tenía. Un job
+    // viejo (o de un solo video) no trae `gemela` y todo sigue exactamente igual que antes.
+    if (job.gemela) {
+        state.gemelos = true;
+        state.B = { ...nuevaVarianteB(), ...job.gemela, aprobado: {} };
+        const chk = document.getElementById('chk-gemelos');
+        if (chk) chk.checked = true;
+        document.querySelectorAll('[data-tabs]').forEach(t => t.classList.remove('hidden'));
+        state.varianteActiva = 'A';
+        actualizarTabs();
+        log('👯 Este proceso tiene video gemelo: usá las pestañas para pasar de uno al otro');
+    }
     const primerLink = state.fuentes.find(f => f.type === 'link');
     state.sourceData = {
         cronica: job.cronica, titulo: job.titulo, descripcion: job.descripcion,
@@ -2256,6 +2712,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initPortadaTamano();
     initPortadaCaja();
     cargarTonosMusica();
+    if (API_KEY) iniciarPanelCola();
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();
