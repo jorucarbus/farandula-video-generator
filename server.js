@@ -1354,7 +1354,7 @@ async function renderizarVideo(params, renderId) {
     // esto: cualquier fallo acá deja musicaPath en null y sigue.
     let musicaPath = null;
     let musicaOffset = 0;
-    let musicaGananciaDb = -20; // se recalcula por pista según su loudness medido
+    let musicaGananciaDb = musica.GANANCIA_DEFAULT_DB; // se recalcula por pista según su loudness medido
     if (efectos?.musica !== false) {
       try {
         const jobActual = jobId ? jobStore.obtenerJob(jobId) : null;
@@ -1387,7 +1387,7 @@ async function renderizarVideo(params, renderId) {
                 .catch(e => console.warn(`  ⚠️ No se pudo etiquetar el loudness de "${elegida.name}": ${e.message}`));
             }
           }
-          musicaGananciaDb = musica.gananciaPara(lufs);
+          musicaGananciaDb = musica.gananciaPara(lufs, efectos?.musicaVolumenDb);
           console.log(`  🎵 [${renderId}] Música (${tono}): "${elegida.name}" (offset ${musicaOffset}s, ${Number.isFinite(lufs) ? `${lufs.toFixed(1)} LUFS → ` : 'sin medir → '}${musicaGananciaDb}dB)`);
         } else {
           console.warn(`  ⚠️ [${renderId}] Sin pistas de música disponibles (tono "${tono}" y neutral vacíos), el video sale sin música`);

@@ -341,12 +341,21 @@
                 </div>
 
                 <div class="form-group">
-                    <label><input type="checkbox" id="efecto-musica" checked> Música de fondo por sentido de la noticia (-20dB)</label>
+                    <label><input type="checkbox" id="efecto-musica" checked> Música de fondo por sentido de la noticia</label>
 
                     <label for="musica-tono" class="mt-sm">Tono de la música:</label>
                     <select id="musica-tono">
                         <option value="auto" selected>Automático (según lo que detectó la noticia)</option>
                     </select>
+
+                    <label for="musica-volumen" class="mt-sm">Volumen de la música: <strong id="musica-volumen-valor">-18 dB</strong></label>
+                    <input type="range" id="musica-volumen" min="-30" max="-10" step="1" value="-18"
+                           oninput="document.getElementById('musica-volumen-valor').textContent = this.value + ' dB'">
+                    <p class="hint">
+                        Todas las canciones se emparejan a este nivel, midiendo cada una por separado — subirlo
+                        o bajarlo mueve a todas juntas, sin que unas vuelvan a sonar más alto que otras.
+                        Más a la derecha = música más fuerte.
+                    </p>
                 </div>
 
                 <div class="form-group" id="subs-ajustes-group">

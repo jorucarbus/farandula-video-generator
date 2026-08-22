@@ -14,12 +14,19 @@ LUFS, no seguir bajando el número"*. Es exactamente lo que pasó.
 ### El cambio
 
 `volume=-20dB` para todas → **ganancia por pista**: cada una se atenúa lo que ELLA necesita para
-quedar en el mismo objetivo (`musica.gananciaPara()`).
+quedar al mismo nivel que las demás (`musica.gananciaPara(lufs, gananciaDeseada)`).
 
-**-35 LUFS no es un valor inventado**: es donde queda hoy la pista PROMEDIO (-15.0 de promedio del
-catálogo, menos los 20 dB que se aplicaban). O sea que **el volumen general de la música no cambia**
-respecto de lo que el usuario ya había aprobado a oído — lo único que desaparece es la dispersión.
-Eso importa: el objetivo era arreglar lo que le molestaba sin tocar lo que le gustaba.
+**El número que se elige sigue significando lo mismo que antes**, y por eso el usuario no tiene que
+reaprenderlo: es cuánto se atenúa una pista de REFERENCIA (`REFERENCIA_LUFS = -15`, el promedio
+medido del catálogo). "-18dB" da hoy exactamente el mismo volumen que daba el -18dB viejo sobre una
+pista promedio; lo que cambió es que ahora TODAS suenan como esa referencia.
+
+**Default -18dB y control manual en el Paso 6** (pedido del usuario en la misma conversación: *"con
+ese ajuste entonces que vuelva a -18db nomás… solo tenía problemas con las que estaban más alto. o
+también puedes dejarme ajustar el volumen manualmente, claro que quiero que todas partan del mismo
+nivel"*). Se volvió a -18 porque el problema nunca fue el nivel general sino las pistas que se
+salían: emparejadas, ninguna se pasa. El deslizador va de -30 a -10 dB y **mover el control no
+reabre la dispersión** — solo desplaza el objetivo común.
 
 ### Dónde vive la medición: en el nombre del archivo
 
@@ -46,6 +53,17 @@ silencio + loop + ganancia + fades) y medido el resultado:
 |---|---|
 | Viejo (-20 fijo) | **3.2 dB** |
 | Nuevo (por pista) | **0.6 dB** |
+
+Y con el control en cuatro posiciones distintas, para confirmar que ajustar el volumen no reabre la
+diferencia — el resultado se mueve **exactamente** lo que dice el control y la dispersión no se
+mueve nada:
+
+| Control | Las dos pistas extremas quedan en | Diferencia |
+|---|---|---|
+| -24 dB | -38.5 y -39.1 LUFS | 0.6 dB |
+| -20 dB | -34.5 y -35.1 LUFS | 0.6 dB |
+| **-18 dB (default)** | -32.5 y -33.1 LUFS | 0.6 dB |
+| -14 dB | -28.5 y -29.1 LUFS | 0.6 dB |
 
 Más dos renders reales de punta a punta: uno leyendo la etiqueta del nombre
 (`-14.4 LUFS → -20.6dB` en el log), y otro con una pista a la que se le quitó la etiqueta a

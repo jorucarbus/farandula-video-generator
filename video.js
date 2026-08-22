@@ -221,7 +221,7 @@ async function renderizarConTransiciones(segmentos, duracionesVisibles, outPath,
 // ganancia es un ATENUADO DEL ARCHIVO fuente, no una medida contra la voz — el catálogo actual
 // está parejo (-12.8 a -16.6 LUFS, medido) así que en la práctica alcanza, pero una pista futura
 // masterizada mucho más fuerte volvería a sonar alta con este mismo número.
-async function prepararMusica(localPath, offsetInicio, duracionObjetivo, jobId, gananciaDb = -20) {
+async function prepararMusica(localPath, offsetInicio, duracionObjetivo, jobId, gananciaDb = -18) {
   const limpio = path.join(TEMP_DIR, `${jobId}_musica_limpia.mp3`);
   const listo = path.join(TEMP_DIR, `${jobId}_musica_lista.m4a`);
 
@@ -436,7 +436,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   let musicaPreparada = null;
   if (efectos.musicaPath) {
     try {
-      musicaPreparada = await prepararMusica(efectos.musicaPath, efectos.musicaOffset || 0, durAudio, jobId, efectos.musicaGananciaDb ?? -20);
+      musicaPreparada = await prepararMusica(efectos.musicaPath, efectos.musicaOffset || 0, durAudio, jobId, efectos.musicaGananciaDb ?? -18);
     } catch (e) {
       console.warn(`  ⚠️ [${jobId}] No se pudo preparar la música, el video sale sin ella: ${e.message}`);
     }

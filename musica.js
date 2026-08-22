@@ -15,21 +15,28 @@ const FFMPEG_BIN = require('ffmpeg-static');
 const TAG_REGEX = /\[inicio=([\d.]+)s\]/i;
 const TAG_LUFS = /\[lufs=(-?[\d.]+)\]/i;
 
-// Volumen final al que queda la música dentro del video, medido en LUFS.
-//
 // Antes se le bajaba a TODAS las pistas el mismo número (-20dB sobre el archivo), y eso conserva
 // las diferencias de origen: el catálogo real va de -16.7 a -12.8 LUFS, así que unas canciones
 // entraban casi 4 dB más fuerte que otras — el usuario lo notó de oído ("algunas están con el
 // volumen más alto desde origen"). Bajar más el número no lo arregla: mueve las dos parejo.
 //
-// -35 LUFS no es un valor nuevo: es exactamente donde queda hoy la pista PROMEDIO del catálogo
-// (-15.0 LUFS de promedio, menos los 20 dB que se aplicaban). O sea que el volumen general de la
-// música NO cambia respecto de lo que el usuario ya aprobó — lo único que desaparece es la
-// dispersión entre unas pistas y otras.
-const OBJETIVO_LUFS = -35;
-// Nunca subir una pista más que esto. Con un objetivo tan bajo siempre se atenúa, pero una pista
+// Ahora el número que elige el usuario significa otra cosa, y por eso sigue siendo comparable con
+// los -18/-20 de antes: es cuánto se atenúa una pista de REFERENCIA. Cada pista real se mueve lo
+// que haga falta para sonar como esa referencia, así que el control ajusta el volumen de la música
+// SIN volver a abrir la dispersión entre unas y otras.
+//
+// -15 LUFS es el promedio medido del catálogo de 26 pistas (2026-08-22). O sea que "-18dB" da hoy
+// exactamente el mismo volumen que daba el -18dB viejo sobre una pista promedio — el usuario no
+// tiene que reaprender el número. Si el catálogo cambiara mucho de nivel con el tiempo, esta
+// constante es lo único que habría que volver a medir.
+const REFERENCIA_LUFS = -15;
+const GANANCIA_DEFAULT_DB = -18;
+// Nunca subir una pista más que esto. Con estos objetivos siempre se atenúa, pero una pista
 // futura grabada muy floja podría pedir ganancia positiva y saturar al mezclarla con la voz.
 const SUBIDA_MAX_DB = 6;
+// Rango que ofrece la UI. Fuera de esto no tiene sentido: más alto tapa la voz, más bajo no se oye.
+const GANANCIA_MIN_DB = -30;
+const GANANCIA_MAX_DB = -10;
 
 function estaEtiquetada(nombre) {
   return TAG_REGEX.test(nombre);
@@ -77,12 +84,17 @@ function medirLoudness(localPath, offsetInicio = 0) {
   });
 }
 
-// Cuántos dB hay que mover ESTA pista para que quede al mismo volumen que todas las demás.
-// Sin medición (pista nueva sin etiquetar y con el análisis fallado) cae al -20 de siempre: el
-// video sale igual, solo sin emparejar.
-function gananciaPara(lufsMedido) {
-  if (!Number.isFinite(lufsMedido)) return -20;
-  const bruta = OBJETIVO_LUFS - lufsMedido;
+// Cuántos dB hay que mover ESTA pista para que quede al volumen elegido, igual que todas las demás.
+// `gananciaDeseada` es lo que el usuario ajusta en el Paso 6: cuánto se atenuaría una pista de
+// referencia. Sin medición (pista nueva y análisis fallado) se aplica ese número tal cual — el
+// video sale igual, solo sin emparejar con el resto.
+function gananciaPara(lufsMedido, gananciaDeseada = GANANCIA_DEFAULT_DB) {
+  const deseada = Number.isFinite(gananciaDeseada)
+    ? Math.min(GANANCIA_MAX_DB, Math.max(GANANCIA_MIN_DB, gananciaDeseada))
+    : GANANCIA_DEFAULT_DB;
+  if (!Number.isFinite(lufsMedido)) return deseada;
+  const objetivo = REFERENCIA_LUFS + deseada;
+  const bruta = objetivo - lufsMedido;
   return Math.round(Math.min(bruta, SUBIDA_MAX_DB) * 10) / 10;
 }
 
@@ -153,5 +165,6 @@ async function etiquetarTodo() {
 
 module.exports = {
   estaEtiquetada, offsetDeNombre, detectarInicio, etiquetarTodo, TAG_REGEX,
-  lufsDeNombre, medirLoudness, gananciaPara, TAG_LUFS, OBJETIVO_LUFS,
+  lufsDeNombre, medirLoudness, gananciaPara, TAG_LUFS,
+  REFERENCIA_LUFS, GANANCIA_DEFAULT_DB, GANANCIA_MIN_DB, GANANCIA_MAX_DB,
 };
