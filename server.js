@@ -99,6 +99,61 @@ function guardarEnVariante(jobId, variante, cambios, comunes = {}) {
   return jobStore.actualizarJob(jobId, { gemela: { ...actual, ...cambios }, ...comunes });
 }
 
+// Canales hermanos, por nombre normalizado. Mismo pareo que el mapa GEMELAS del frontend, y por
+// la misma razón: los cuatro canales existen con el mismo nombre en "para publicar" y en
+// "insumos edición", así que el hermano se resuelve por nombre, no por id.
+const CANALES_HERMANOS = {
+  chismexpicante: 'supelupe',
+  supelupe: 'chismexpicante',
+  embajadoresdelchisme: 'lanaple',
+  lanaple: 'embajadoresdelchisme',
+};
+function normalizarCanal(nombre) {
+  return (nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+// Carpeta de insumos donde va el material de una variante. El video A usa la del canal elegido en
+// el Paso 1; el B usa una carpeta propia dentro de SU canal hermano — el usuario pidió que los
+// insumos queden separados por canal, para abrir la carpeta del canal que va a editar y encontrar
+// solo lo suyo. Se crea perezosamente la primera vez que hay algo que guardar del gemelo.
+async function carpetaInsumoDeVariante(job, variante) {
+  if (!job) return null;
+  if (variante !== 'B') return job.carpetaInsumoId || null;
+  if (job.gemela?.carpetaInsumoId) return job.gemela.carpetaInsumoId;
+  try {
+    const canales = await driveHelper.listarCanales();
+    const propio = canales.find(c => c.id === job.canalId);
+    const objetivo = CANALES_HERMANOS[normalizarCanal(propio?.name)];
+    const hermano = objetivo ? canales.find(c => normalizarCanal(c.name) === objetivo) : null;
+    if (!hermano) {
+      // Sin canal hermano identificable (carpeta renombrada, canal nuevo): el material del gemelo
+      // se queda en la carpeta del canal A con sufijo -b. Degrada, no rompe.
+      console.warn(`  ⚠️ Sin canal hermano para "${propio?.name}": los insumos del gemelo van junto a los del primero`);
+      return job.carpetaInsumoId || null;
+    }
+    const nombreCarpeta = await driveHelper.nombreCarpeta(job.carpetaInsumoId).catch(() => `gemelo-${job.jobId}`);
+    const id = await driveHelper.crearCarpetaInsumo(hermano.id, nombreCarpeta);
+    const actual = jobStore.obtenerJob(job.jobId)?.gemela || {};
+    jobStore.actualizarJob(job.jobId, { gemela: { ...actual, carpetaInsumoId: id, canalId: hermano.id } });
+    console.log(`  📁 Carpeta de insumos del gemelo creada en "${hermano.name}"`);
+    return id;
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo crear la carpeta de insumos del gemelo (${e.message}), se usa la del primero`);
+    return job.carpetaInsumoId || null;
+  }
+}
+
+// Dónde y con qué nombre se guarda un archivo de insumos de una variante.
+// Si el gemelo consiguió carpeta propia (su canal hermano), los archivos se llaman igual que los
+// del primero — no hace falta distinguirlos, los separa la carpeta. Solo cuando los dos terminan
+// en la misma carpeta (no se pudo identificar el canal hermano) se usa el sufijo `-b`, para que
+// el segundo no pise al primero.
+async function destinoInsumo(job, variante) {
+  const carpetaId = await carpetaInsumoDeVariante(job, variante);
+  const compartida = variante === 'B' && carpetaId === job?.carpetaInsumoId;
+  return { carpetaId, sufijo: compartida ? '-b' : '' };
+}
+
 // ¿Este mp3 lo sigue necesitando alguien? Lo referencia una locución aprobada (el usuario puede
 // reintentar el render, o generar el gemelo después) o un render que todavía espera turno.
 function audioSigueEnUso(audioPath) {
@@ -144,9 +199,17 @@ const audiosPendientes = new Map();
 // Recuperar el audio.mp3 de un job desde su carpeta de insumos en Drive, a disco local.
 // Se usa cuando el Map audiosPendientes se vació (reinicio del server / redeploy de Railway)
 // pero el audio ya fue generado y respaldado. Devuelve la ruta local, o null si no hay nada.
-async function recuperarAudioDeDrive(job, force = false) {
-  if (!job || !job.carpetaInsumoId) return null;
-  const destPath = path.join(__dirname, 'temp-videos', `audio_recuperado_${job.jobId}.mp3`);
+// `variante`: el gemelo tiene su locución en la carpeta de SU canal (o con sufijo `-b` en la del
+// primero, si no se pudo identificar el canal hermano). Sin esto, recuperar el audio del video B
+// tras un reinicio bajaría el del A y el video saldría con la voz equivocada.
+async function recuperarAudioDeDrive(job, force = false, variante = 'A') {
+  if (!job) return null;
+  const carpetaId = variante === 'B'
+    ? (job.gemela?.carpetaInsumoId || job.carpetaInsumoId)
+    : job.carpetaInsumoId;
+  if (!carpetaId) return null;
+  const sufijo = (variante === 'B' && carpetaId === job.carpetaInsumoId) ? '-b' : '';
+  const destPath = path.join(__dirname, 'temp-videos', `audio_recuperado_${job.jobId}${variante === 'B' ? '_b' : ''}.mp3`);
   // force=true: el usuario reemplazó el audio.mp3 en Drive y quiere re-bajarlo aunque
   // ya haya una copia local cacheada (botón "Recargar audio desde Drive").
   if (fs.existsSync(destPath)) {
@@ -155,8 +218,8 @@ async function recuperarAudioDeDrive(job, force = false) {
   }
   try {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const ruta = await driveHelper.descargarDeInsumo(job.carpetaInsumoId, 'audio.mp3', destPath);
-    if (ruta) console.log(`♻️ Audio recuperado desde Drive: ${job.jobId}`);
+    const ruta = await driveHelper.descargarDeInsumo(carpetaId, `audio${sufijo}.mp3`, destPath);
+    if (ruta) console.log(`♻️ Audio recuperado desde Drive: ${job.jobId} (${variante})`);
     return ruta;
   } catch (e) {
     console.warn(`⚠️ No se pudo recuperar audio de Drive (${job.jobId}): ${e.message}`);
@@ -171,10 +234,11 @@ app.get('/api/audio/:token', async (req, res) => {
   // Fallback: si el Map se vació tras un reinicio, recuperar el audio desde Drive
   // usando el job dueño de este token, y repoblar el Map para próximas lecturas.
   if (!audio || !fs.existsSync(audio.path)) {
-    const job = jobStore.buscarPorAudioToken(token);
-    const ruta = await recuperarAudioDeDrive(job);
+    const hallado = jobStore.buscarVariantePorAudioToken(token);
+    const ruta = hallado ? await recuperarAudioDeDrive(hallado.job, false, hallado.variante) : null;
     if (ruta) {
-      audio = { path: ruta, duracion: job.duracion, modelo: job.modelo };
+      const datos = hallado.variante === 'B' ? (hallado.job.gemela || {}) : hallado.job;
+      audio = { path: ruta, duracion: datos.duracion, modelo: datos.modelo };
       audiosPendientes.set(token, audio);
     }
   }
@@ -802,8 +866,9 @@ app.post('/api/generate-script', async (req, res) => {
           driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'guion.json', JSON.stringify({ script, palabras }, null, 2))
             .catch(e => console.warn(`⚠️ No se pudo respaldar guion.json en Drive: ${e.message}`));
           if (gemelaResultado) {
-            driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'guion-b.json', JSON.stringify(gemelaResultado, null, 2))
-              .catch(e => console.warn(`⚠️ No se pudo respaldar guion-b.json en Drive: ${e.message}`));
+            destinoInsumo(actualizado, 'B')
+              .then(d => d.carpetaId && driveHelper.guardarEnInsumo(d.carpetaId, `guion${d.sufijo}.json`, JSON.stringify(gemelaResultado, null, 2)))
+              .catch(e => console.warn(`⚠️ No se pudo respaldar el guion del gemelo en Drive: ${e.message}`));
           }
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
@@ -859,9 +924,10 @@ app.post('/api/fragment', async (req, res) => {
     if (jobId) {
       try {
         const job = guardarEnVariante(jobId, variante, { fragments: conPorcentaje }, { paso: 'fragmentacion', carpetas });
-        const nombreArchivo = variante === 'B' ? 'fragments-b.json' : 'fragments.json';
-        if (job.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, JSON.stringify(conPorcentaje, null, 2))
+        const destino = await destinoInsumo(job, variante);
+        const nombreArchivo = `fragments${destino.sufijo}.json`;
+        if (destino.carpetaId) {
+          driveHelper.guardarEnInsumo(destino.carpetaId, nombreArchivo, JSON.stringify(conPorcentaje, null, 2))
             .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
 
@@ -981,10 +1047,11 @@ app.post('/api/generar-audio', async (req, res) => {
     if (jobId) {
       try {
         const job = guardarEnVariante(jobId, variante, { audioToken: token, duracion, modelo: audio.modelo }, { paso: 'audio' });
-        const nombreArchivo = variante === 'B' ? 'audio-b.mp3' : 'audio.mp3';
-        if (job.carpetaInsumoId) {
+        const destino = await destinoInsumo(job, variante);
+        const nombreArchivo = `audio${destino.sufijo}.mp3`;
+        if (destino.carpetaId) {
           fs.promises.readFile(audio.audioPath)
-            .then(buffer => driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, buffer))
+            .then(buffer => driveHelper.guardarEnInsumo(destino.carpetaId, nombreArchivo, buffer))
             .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
@@ -1009,7 +1076,7 @@ app.post('/api/generar-audio', async (req, res) => {
 // aprobable (nuevo token en el Map) sin pasar por ElevenLabs.
 app.post('/api/recargar-audio', async (req, res) => {
   try {
-    const { jobId } = req.body;
+    const { jobId, variante = 'A' } = req.body;
     if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
 
     const job = jobStore.obtenerJob(jobId);
@@ -1018,7 +1085,9 @@ app.post('/api/recargar-audio', async (req, res) => {
       return res.status(400).json({ error: 'Este job no tiene carpeta de insumos en Drive' });
     }
 
-    const ruta = await recuperarAudioDeDrive(job, true); // force: re-baja aunque haya caché
+    // force: re-baja aunque haya caché. La variante decide de qué carpeta (cada gemelo tiene su
+    // locución en la carpeta de su canal).
+    const ruta = await recuperarAudioDeDrive(job, true, variante);
     if (!ruta || !fs.existsSync(ruta)) {
       return res.status(404).json({ error: 'No hay audio.mp3 en la carpeta de insumos de Drive' });
     }
@@ -1026,9 +1095,9 @@ app.post('/api/recargar-audio', async (req, res) => {
     const duracion = await video.obtenerDuracion(ruta);
     const token = crypto.randomBytes(16).toString('hex');
     audiosPendientes.set(token, { path: ruta, duracion, modelo: 'drive' });
-    jobStore.actualizarJob(jobId, { paso: 'audio', audioToken: token, duracion, modelo: 'drive' });
+    guardarEnVariante(jobId, variante, { audioToken: token, duracion, modelo: 'drive' }, { paso: 'audio' });
 
-    console.log(`♻️ Audio recargado desde Drive (${jobId}): ${duracion.toFixed(1)}s`);
+    console.log(`♻️ Audio recargado desde Drive (${jobId}, ${variante}): ${duracion.toFixed(1)}s`);
     res.json({
       status: 'success',
       audioToken: token,
@@ -1091,7 +1160,7 @@ async function renderizarVideo(params, renderId) {
     // Fallback: si el Map se vació tras un reinicio, recuperar el audio.mp3 del job
     // desde su carpeta de insumos en Drive antes de dar por perdida la locución.
     if ((!audioPath || !fs.existsSync(audioPath)) && jobId) {
-      const ruta = await recuperarAudioDeDrive(jobStore.obtenerJob(jobId));
+      const ruta = await recuperarAudioDeDrive(jobStore.obtenerJob(jobId), false, variante);
       if (ruta) audioPath = ruta;
     }
     if (!audioPath || !fs.existsSync(audioPath)) {
@@ -1338,44 +1407,43 @@ async function renderizarVideo(params, renderId) {
     });
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
-    // 7. Guardar en la carpeta de destino, dentro de una subcarpeta "AAAA-MM-DD - Título" —
-    // pedido explícito del usuario, para que el video y su portada (elegida después de ver el
-    // resultado) queden juntos en vez de sueltos en la carpeta del canal, y para poder ordenar
-    // por fecha de un vistazo.
-    const nombreSubcarpeta = `${fecha} - ${nombreCorto}`;
+    // 7. Guardar el video SUELTO en la carpeta del canal, sin subcarpeta por video.
+    //
+    // Antes cada render creaba una subcarpeta "AAAA-MM-DD - Título" para que el video y su portada
+    // quedaran juntos. Cambió con la carpeta "para publicar" (2026-08-22): esa carpeta va a
+    // alimentar al publicador automático, y ahí "todo archivo nuevo en la carpeta de este canal se
+    // publica en este canal" es una regla de una línea — con subcarpetas habría que recorrer
+    // niveles y distinguir carpeta de archivo. La portada queda al lado con el MISMO nombre base
+    // (`.mp4` y `.jpg`), que es lo que le dice al publicador que van juntos, y las imágenes que el
+    // usuario suba a mano entran en la misma lógica sin ninguna excepción.
     const folderName = await driveHelper.nombreCarpeta(destFolder);
     const localBase = process.env.RENDERS_LOCAL_PATH;
     let driveLink;
     // Dónde guardar la portada más tarde (se genera después, con el usuario ya viendo el
-    // resultado) — se completa en cada rama de abajo, o queda null si no se pudo crear la
-    // subcarpeta (la portada sigue funcionando igual, solo se queda sin copia junto al video).
-    // `nombreBase` (para los ARCHIVOS adentro, `nombreCorto.jpg`) se queda sin fecha — el usuario
-    // pidió la fecha en la carpeta, no duplicarla en cada archivo.
+    // resultado). `nombreBase` incluye ahora la fecha, porque ya no hay carpeta con fecha que la
+    // aporte: el JPG tiene que llamarse igual que el MP4 para quedar emparejado con él.
+    const nombreBasePortada = fileName.replace(/\.mp4$/i, '');
     let destinoPortada = null;
+    // Id del archivo en Drive: lo necesita el publicador automático para encontrar el video sin
+    // tener que buscarlo por nombre. Queda null si el video se guardó en la carpeta local (ahí lo
+    // sube el cliente de escritorio de Drive y el id recién existe después de sincronizar).
+    let archivoDriveId = null;
 
     if (localBase && fs.existsSync(path.join(localBase, folderName))) {
       // Copiar a la carpeta local de Google Drive (el cliente de escritorio la sincroniza solo)
-      const carpetaVideo = path.join(localBase, folderName, nombreSubcarpeta);
-      fs.mkdirSync(carpetaVideo, { recursive: true });
-      const destPath = path.join(carpetaVideo, fileName);
+      const carpetaCanal = path.join(localBase, folderName);
+      const destPath = path.join(carpetaCanal, fileName);
       console.log(`💾 [${renderId}] Guardando en Drive local: ${destPath}`);
       fs.copyFileSync(resultado.finalPath, destPath);
       driveLink = `https://drive.google.com/drive/folders/${destFolder}`;
-      destinoPortada = { modo: 'local', carpetaLocal: carpetaVideo, nombreBase: nombreCorto };
+      destinoPortada = { modo: 'local', carpetaLocal: carpetaCanal, nombreBase: nombreBasePortada };
     } else {
       // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
-      let carpetaDestinoId = destFolder;
-      try {
-        carpetaDestinoId = await driveHelper.crearCarpetaInsumo(destFolder, nombreSubcarpeta);
-      } catch (e) {
-        console.warn(`  ⚠️ [${renderId}] No se pudo crear la subcarpeta "${nombreSubcarpeta}" (${e.message}), el video sube directo a la carpeta del canal`);
-      }
       console.log(`⬆️ [${renderId}] Subiendo a Drive por API: ${fileName}`);
-      const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, carpetaDestinoId);
+      const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, destFolder);
       driveLink = subido.webViewLink;
-      if (carpetaDestinoId !== destFolder) {
-        destinoPortada = { modo: 'api', carpetaDriveId: carpetaDestinoId, nombreBase: nombreCorto };
-      }
+      archivoDriveId = subido.id || null;
+      destinoPortada = { modo: 'api', carpetaDriveId: destFolder, nombreBase: nombreBasePortada };
     }
 
     // 8. Respaldar la locución en Drive con el mismo nombre que el video
@@ -1403,6 +1471,13 @@ async function renderizarVideo(params, renderId) {
         linkFuente: metadatos?.linkFuente,
         linkRender: driveLink,
         guion: guion || '',
+        // Campos para el publicador automático (proyecto aparte). `idNoticia` es el jobId: los dos
+        // videos gemelos lo comparten, así el publicador sabe que son la misma historia en canales
+        // hermanos.
+        tipo: 'video',
+        destino: 'feed',
+        idNoticia: jobId || '',
+        archivoDriveId,
       });
     } catch (e) {
       console.warn(`⚠️ [${renderId}] No se pudo registrar en Sheets: ${e.message}`);
@@ -1443,9 +1518,10 @@ async function renderizarVideo(params, renderId) {
         // `paso: 'completado'` es del JOB, no de la variante: se marca cuando termina cualquiera
         // de los dos videos (el historial muestra el proceso como terminado desde el primero).
         const job = guardarEnVariante(jobId, variante, { fileName, folderName, driveLink }, { paso: 'completado' });
-        const nombreArchivo = variante === 'B' ? 'resultado-b.json' : 'resultado.json';
-        if (job.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(job.carpetaInsumoId, nombreArchivo, JSON.stringify({ fileName, folderName, driveLink }, null, 2))
+        const destino = await destinoInsumo(job, variante);
+        const nombreArchivo = `resultado${destino.sufijo}.json`;
+        if (destino.carpetaId) {
+          driveHelper.guardarEnInsumo(destino.carpetaId, nombreArchivo, JSON.stringify({ fileName, folderName, driveLink }, null, 2))
             .catch(e => console.warn(`⚠️ No se pudo respaldar ${nombreArchivo} en Drive: ${e.message}`));
         }
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }

@@ -73,6 +73,18 @@ function buscarPorAudioToken(token) {
   return Object.values(cargar()).find(j => j.audioToken === token) || null;
 }
 
+// Igual que el anterior pero dice ADEMÁS de qué variante es el token: en un job de videos
+// gemelos hay dos locuciones, la del primero en `audioToken` y la del hermano en
+// `gemela.audioToken`. Sin distinguirlas, recuperar el audio del segundo tras un reinicio bajaría
+// el del primero y el video saldría con la voz que no es.
+function buscarVariantePorAudioToken(token) {
+  for (const job of Object.values(cargar())) {
+    if (job.audioToken === token) return { job, variante: 'A' };
+    if (job.gemela?.audioToken === token) return { job, variante: 'B' };
+  }
+  return null;
+}
+
 function listarJobs(limite = 20) {
   return Object.values(cargar())
     .sort((a, b) => new Date(b.actualizado) - new Date(a.actualizado))
@@ -99,4 +111,4 @@ function marcarInsumosLimpiados(carpetaIds) {
   return marcados;
 }
 
-module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken, marcarInsumosLimpiados };
+module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken, buscarVariantePorAudioToken, marcarInsumosLimpiados };

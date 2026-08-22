@@ -1201,14 +1201,16 @@ async function recargarAudioDeDrive() {
     setButtonDisabled('btn-recargar-audio', true);
     try {
         // Cambiar la locución invalida el destino ya elegido
-        state.selectedDestFolder = null;
+        V().selectedDestFolder = null;
+        invalidarVariantes(['audio']);
         lockFrom('destination-section');
 
         showProgress(`${icon('arrowsClockwise')} Recargando audio desde Drive...`);
         log('♻️ Recargando audio desde Drive...');
         updateProgress(65);
-        const result = await apiCall('/recargar-audio', 'POST', { jobId: state.jobId });
-        state.audioToken = result.audioToken;
+        const result = await apiCall('/recargar-audio', 'POST', { jobId: state.jobId, variante: state.varianteActiva });
+        V().audioToken = result.audioToken;
+        V().duracion = result.duracion;
 
         document.getElementById('audio-info').textContent =
             `Duración: ${result.duracion}s | Origen: Drive`;

@@ -8,3 +8,4 @@ usage.json
 historial.json
 data/
 graphify-out/
+.env.backup*

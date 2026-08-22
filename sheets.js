@@ -4,10 +4,22 @@ const path = require('path');
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
+// La hoja no es solo un registro: es la COLA del publicador automático (proyecto aparte, 2026).
+// De ahí las columnas Tipo/Destino/Status/Publicado el/Link del post — el publicador lee las filas
+// en `pendiente_publicar`, sube el archivo al canal de esa fila y la marca `publicado`. Y las
+// imágenes que se generen para publicar sacan su texto de acá (Título, Descripción, Protagonista),
+// que es lo que pidió el usuario: una sola fuente de verdad para el post.
+//
+// ⚠️ Si se agrega o mueve una columna hay que tocar TRES lugares a la vez: `ENCABEZADOS`, el
+// arreglo de valores en `registrarVideo()` y el mapeo de `leerHistorial()`. Y `ANCHOS`/`ALINEAR`
+// tienen que seguir midiendo lo mismo que `ENCABEZADOS`.
 const ENCABEZADOS = [
   'Fecha', 'Título', 'Descripción + Hashtags', 'Protagonista', 'Canal',
   'Nombre archivo', 'Link fuente', 'Link render', 'Dinero generado', 'Status', 'Guion',
+  'Tipo', 'Destino', 'ID noticia', 'Archivo en Drive', 'Publicado el', 'Link del post',
 ];
+const NUM_COLS = ENCABEZADOS.length;       // 17 → columna Q
+const ULTIMA_COL = 'Q';
 
 let sheetsClient = null;
 
@@ -34,12 +46,15 @@ async function asegurarEncabezados() {
   const client = getClient();
   const res = await client.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'A1:K1',
+    range: `A1:${ULTIMA_COL}1`,
   });
-  if (!res.data.values || res.data.values.length === 0) {
+  const actuales = res.data.values?.[0] || [];
+  // Se reescriben también si la hoja quedó con menos columnas que las que el código espera (una
+  // hoja creada antes de que existieran las columnas del publicador).
+  if (actuales.length < NUM_COLS) {
     await client.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: 'A1:K1',
+      range: `A1:${ULTIMA_COL}1`,
       valueInputOption: 'RAW',
       requestBody: { values: [ENCABEZADOS] },
     });
@@ -57,8 +72,8 @@ const COLOR = {
   amarillo: { red: 1, green: 0.851, blue: 0.239 },
   verde:    { red: 0.722, green: 0.949, blue: 0.545 },
 };
-const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155, 350]; // px por columna A..K
-const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER','LEFT'];
+const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155, 350, 80, 110, 150, 150, 110, 130]; // px por columna A..Q
+const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER'];
 const FILAS_CAPACIDAD = 200; // formatea header + 199 filas por adelantado
 
 async function formatearHoja() {
@@ -84,7 +99,7 @@ async function formatearHoja() {
 
   // Encabezado negro, texto blanco negrita, centrado
   requests.push({ repeatCell: {
-    range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 11 },
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: NUM_COLS },
     cell: { userEnteredFormat: { backgroundColor: COLOR.negro, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', wrapStrategy: 'WRAP', textFormat: { foregroundColor: COLOR.blanco, bold: true, fontSize: 11 } } },
     fields: 'userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat)',
   }});
@@ -92,7 +107,7 @@ async function formatearHoja() {
 
   // Datos: alinear arriba + ajustar texto (el fondo lo pone la banda)
   requests.push({ repeatCell: {
-    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: NUM_COLS },
     cell: { userEnteredFormat: { verticalAlignment: 'TOP', wrapStrategy: 'WRAP', textFormat: { fontSize: 10 } } },
     fields: 'userEnteredFormat(verticalAlignment,wrapStrategy,textFormat)',
   }});
@@ -106,16 +121,16 @@ async function formatearHoja() {
 
   // Banda alterna blanco/crema
   requests.push({ addBanding: { bandedRange: {
-    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
+    range: { sheetId: gid, startRowIndex: 1, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: NUM_COLS },
     rowProperties: { firstBandColor: COLOR.blanco, secondBandColor: COLOR.crema },
   }}});
 
   // Bordes negros: gruesos alrededor, medios internos + línea gruesa bajo el encabezado
   requests.push({ updateBorders: {
-    range: { sheetId: gid, startRowIndex: 0, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: 11 },
+    range: { sheetId: gid, startRowIndex: 0, endRowIndex: FILAS_CAPACIDAD, startColumnIndex: 0, endColumnIndex: NUM_COLS },
     top: grueso, bottom: grueso, left: grueso, right: grueso, innerHorizontal: medio, innerVertical: medio,
   }});
-  requests.push({ updateBorders: { range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 11 }, bottom: grueso } });
+  requests.push({ updateBorders: { range: { sheetId: gid, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: NUM_COLS }, bottom: grueso } });
 
   // Dinero (col I): moneda
   requests.push({ repeatCell: {
@@ -142,7 +157,7 @@ async function registrarVideo(datos) {
   await asegurarEncabezados();
   await getClient().spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: 'A:K',
+    range: `A:${ULTIMA_COL}`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[
@@ -157,6 +172,14 @@ async function registrarVideo(datos) {
         '', // Dinero generado (manual)
         datos.status || 'pendiente_publicar',
         datos.guion || '',
+        datos.tipo || 'video',
+        datos.destino || 'feed',
+        // ID noticia: los dos videos gemelos comparten el jobId, así el publicador sabe que son
+        // la misma historia en canales hermanos (para no publicarlos en el mismo minuto, por ej.)
+        datos.idNoticia || '',
+        datos.archivoDriveId || '',
+        '', // Publicado el (lo llena el publicador)
+        '', // Link del post (lo llena el publicador)
       ]],
     },
   });
@@ -169,7 +192,7 @@ async function leerHistorial(limite = 20) {
   if (!configurado()) return [];
   const res = await getClient().spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'A2:K',
+    range: `A2:${ULTIMA_COL}`,
   });
   const filas = res.data.values || [];
   return filas.slice(-limite).reverse().map(f => ({
@@ -184,6 +207,12 @@ async function leerHistorial(limite = 20) {
     dinero: f[8] || '',
     status: f[9] || '',
     guion: f[10] || '',
+    tipo: f[11] || '',
+    destino: f[12] || '',
+    idNoticia: f[13] || '',
+    archivoDriveId: f[14] || '',
+    publicadoEl: f[15] || '',
+    linkPost: f[16] || '',
   }));
 }
 
