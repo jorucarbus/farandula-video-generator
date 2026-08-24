@@ -16,6 +16,7 @@ const tiempos = require('./tiempos');
 const subtitulos = require('./subtitulos');
 const musica = require('./musica');
 const jobStore = require('./jobStore');
+const famosos = require('./famosos');
 const driveCache = require('./driveCache');
 const limpiezaInsumos = require('./limpiezaInsumos');
 const exportar = require('./exportar');
@@ -678,6 +679,54 @@ async function extraerActaDeFuente(type, content) {
 // job existente; sin `jobId` crea uno nuevo (requiere canalId). Cada fuente se procesa a su
 // ACTA (barata, sesgo-independiente) y luego se sintetiza UNA crónica con TODAS las actas
 // acumuladas — nunca se vuelve a tocar una fuente ya leída para agregar la siguiente.
+
+// -------------------------------------------------------------------------------------------
+// NOMBRES DE FAMOSOS BIEN ESCRITOS
+//
+// Gemini transcribe DE OÍDO: "Fátima Bosch" vuelve como "Fátima Bos", "Nawat" como "Nagua". Ese
+// nombre mal escrito no se queda en la crónica — se propaga a la locución (ElevenLabs lee lo que
+// está escrito), a los subtítulos, a la carpeta de clips (que no matchea y deja al video sin su
+// famoso), al nombre del archivo y a los hashtags, donde además mata el alcance.
+//
+// Se cotejan los nombres recién leídos contra las carpetas de Drive — la única fuente de verdad
+// que el usuario mantiene a mano — ANTES de que nada más los use. Lo de confianza 'alta' se
+// corrige solo (y se avisa qué cambió); lo de 'media' viaja a la UI como sugerencia.
+// Regla de robustez: si Drive no responde, la lectura sigue sin cotejar nada.
+// -------------------------------------------------------------------------------------------
+
+async function revisarNombres(result, actas = []) {
+  let carpetas = [];
+  try {
+    carpetas = Object.keys(await driveHelper.obtenerCarpetasFamosos());
+  } catch (e) {
+    console.warn(`⚠️ No se pudieron leer las carpetas para cotejar nombres: ${e.message}`);
+    return { result, nombresDetectados: [] };
+  }
+
+  // `acta.personas` ya existía: es la lista de nombres que Gemini detectó en cada fuente.
+  const candidatos = [];
+  const agregar = (n) => {
+    const v = (n || '').trim();
+    if (!v) return;
+    if (candidatos.some(c => famosos.claveFonetica(c) === famosos.claveFonetica(v))) return;
+    candidatos.push(v);
+  };
+  agregar(result.protagonista);
+  agregar(result.secundario);
+  for (const a of actas) for (const p of (a?.personas || [])) agregar(p);
+
+  const nombresDetectados = candidatos.map(n => famosos.cotejar(n, carpetas));
+  let corregido = result;
+  for (const n of nombresDetectados) {
+    if (n.confianza !== 'alta' || !n.sugerido || n.sugerido === n.leido) continue;
+    corregido = famosos.reemplazarEn(corregido, n.leido, n.sugerido);
+    console.log(`  ✏️ Nombre corregido: "${n.leido}" → "${n.sugerido}"`);
+    // Se aprende para la próxima: el mismo error ya no se vuelve a preguntar ni a cotejar.
+    try { famosos.registrar({ escribir: n.sugerido, leido: n.leido, carpeta: n.carpeta }); } catch {}
+  }
+  return { result: corregido, nombresDetectados };
+}
+
 app.post('/api/read', async (req, res) => {
   try {
     const { type, content, sesgo, canalId, jobId: jobIdExistente, sintetizar } = req.body;
@@ -729,7 +778,8 @@ app.post('/api/read', async (req, res) => {
     }
 
     console.log(`📝 Sintetizando crónica (${todasLasFuentes.length} fuente${todasLasFuentes.length > 1 ? 's' : ''}, sesgo: ${sesgoElegido})...`);
-    const result = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido);
+    const cronicaBase = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido);
+    const { result, nombresDetectados } = await revisarNombres(cronicaBase, todasLasFuentes.map(f => f.acta));
 
     if (!job) {
       // Primera fuente del video: crear la carpeta de insumos y el job.
@@ -770,6 +820,7 @@ app.post('/api/read', async (req, res) => {
       accion: result.accion,
       nombreCorto: result.nombreCorto,
       tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
+      nombresDetectados,   // [{leido, sugerido, carpeta, confianza, decir}] — para confirmar en el Paso 1
     });
   } catch (error) {
     console.error('Error lectura:', error);
@@ -792,7 +843,8 @@ app.post('/api/resintetizar', async (req, res) => {
 
     const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
     console.log(`📝 Re-sintetizando con sesgo ${sesgoElegido} (${job.fuentes.length} fuente(s) cacheadas, sin re-descargar)...`);
-    const result = await gemini.sintetizarCronica(job.fuentes.map(f => f.acta), sesgoElegido);
+    const cronicaBase = await gemini.sintetizarCronica(job.fuentes.map(f => f.acta), sesgoElegido);
+    const { result, nombresDetectados } = await revisarNombres(cronicaBase, job.fuentes.map(f => f.acta));
 
     const jobActualizado = jobStore.actualizarJob(jobId, { sesgo: sesgoElegido, ...result });
     driveHelper.guardarEnInsumo(jobActualizado.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: job.fuentes, ...result }, null, 2))
@@ -1014,18 +1066,24 @@ app.post('/api/generar-audio', async (req, res) => {
 
     console.log('🎙️ Generando locución para aprobación...');
     const marcado = await gemini.agregarMarcas(fragments);
+    // Pronunciación por famoso: lo que se MANDA A HABLAR puede escribirse distinto de lo que se
+    // muestra ("Nawat" -> "Nagüat"). El mismo mapa viaja a la alineación, que si no daría por
+    // desalineada la locución entera y tiraría los subtítulos al reparto estimado.
+    const mapaVoz = famosos.mapaPronunciacion();
+    const paraHablar = famosos.aplicarPronunciacion(marcado, mapaVoz);
+    if (paraHablar !== marcado) console.log(`  🗣️ Pronunciación aplicada a ${mapaVoz.size} nombre(s)`);
     // Fase 5: audio + alineación carácter-por-carácter en la misma llamada (sin costo extra
     // sobre lo que ya se pagaba). Si algo falla, cae al TTS simple — el render no se detiene.
     let audio, duracion, duracionesReales, palabrasAlineadas;
     try {
-      audio = await tiempos.generarConTiempos(marcado, { modelo: modelo || 'eleven_v3' });
+      audio = await tiempos.generarConTiempos(paraHablar, { modelo: modelo || 'eleven_v3' });
       duracion = await video.obtenerDuracion(audio.audioPath);
-      const alineado = tiempos.alinearFragmentos(fragments, audio, duracion);
+      const alineado = tiempos.alinearFragmentos(fragments, audio, duracion, mapaVoz);
       duracionesReales = alineado?.duraciones || null;
       palabrasAlineadas = alineado?.palabras || null;
     } catch (errTiempos) {
       console.warn(`  ⚠️ Tiempos reales fallaron (${errTiempos.message}), cae a TTS simple + % de caracteres`);
-      audio = await elevenlabs.generarAudio(marcado, modelo || 'eleven_v3');
+      audio = await elevenlabs.generarAudio(paraHablar, modelo || 'eleven_v3');
       duracion = await video.obtenerDuracion(audio.audioPath);
       duracionesReales = null;
       palabrasAlineadas = null;
@@ -1738,6 +1796,46 @@ app.post('/api/exportar', async (req, res) => {
 });
 
 // Historial de jobs (persistencia local): recuperar/listar procesos por jobId
+// El usuario confirma o corrige en el Paso 1 los nombres detectados. Cada corrección se aplica a
+// TODA la lectura guardada (crónica incluida, que es de donde se escribe el guion) y queda
+// APRENDIDA: la próxima vez que Gemini oiga mal ese nombre, se corrige solo y sin preguntar.
+// Acá también se guarda la pronunciación, que es lo que después escucha ElevenLabs.
+app.put('/api/nombres', (req, res) => {
+  try {
+    const { jobId, nombres } = req.body;
+    if (!Array.isArray(nombres) || nombres.length === 0) {
+      return res.status(400).json({ error: 'Faltan nombres' });
+    }
+    const job = jobId ? jobStore.obtenerJob(jobId) : null;
+    if (jobId && !job) return res.status(404).json({ error: 'Job no encontrado' });
+
+    let lectura = job ? {
+      cronica: job.cronica, titulo: job.titulo, descripcion: job.descripcion,
+      protagonista: job.protagonista, secundario: job.secundario,
+      accion: job.accion, nombreCorto: job.nombreCorto,
+    } : null;
+
+    const aplicados = [];
+    for (const n of nombres) {
+      const escribir = (n?.escribir || '').trim();
+      if (!escribir) continue;
+      const leido = (n?.leido || '').trim();
+      famosos.registrar({ escribir, leido: leido || null, decir: n?.decir, carpeta: n?.carpeta });
+      if (lectura && leido && leido !== escribir) {
+        lectura = famosos.reemplazarEn(lectura, leido, escribir);
+        aplicados.push(`${leido} -> ${escribir}`);
+      }
+    }
+
+    if (job && lectura) jobStore.actualizarJob(jobId, lectura);
+    if (aplicados.length) console.log(`  ✏️ Nombres corregidos a mano: ${aplicados.join(', ')}`);
+    res.json({ status: 'success', aplicados, ...(lectura || {}) });
+  } catch (e) {
+    console.error('Error guardando nombres:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/jobs', (req, res) => {
   res.json({ jobs: jobStore.listarJobs(20) });
 });
@@ -1813,6 +1911,7 @@ initializeDrive();
 // (Railway lo borra en cada redeploy). Fire-and-forget: no bloquea el arranque.
 driveCache.restaurar(path.join(__dirname, 'historial.json'), 'historial.json');
 driveCache.restaurar(path.join(__dirname, 'data', 'jobs.json'), 'jobs.json');
+driveCache.restaurar(famosos.TABLA_PATH, famosos.NOMBRE_DRIVE);
 
 // Cola de renderizado: primero traer del respaldo lo que el redeploy borró del disco, y recién
 // después rehidratar y arrancar el worker — al revés, la cola arrancaría vacía y los renders que

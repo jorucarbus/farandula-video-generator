@@ -425,6 +425,23 @@
             <div class="form-section hidden" id="lectura-section">
                 <h2><span class="icon-slot" data-icon="newspaper"></span> Resultado de la lectura</h2>
 
+                <!-- Nombres de la noticia. Va PRIMERO a propósito: Gemini transcribe de oído, así
+                     que los nombres propios llegan fonéticos ("Fátima Bos" por "Fátima Bosch"), y
+                     de acá salen la locución, los subtítulos, la carpeta de clips, el nombre del
+                     archivo y los hashtags. Revisarlos después de generar el guion ya es tarde. -->
+                <div id="nombres-section" class="nombres-section hidden">
+                    <div class="nombres-head">
+                        <span class="icon-slot" data-icon="userFocus"></span>
+                        <strong>Nombres de la noticia</strong>
+                    </div>
+                    <p class="hint" id="nombres-hint"></p>
+                    <div id="nombres-lista"></div>
+                    <button class="btn btn-secondary" id="btn-guardar-nombres" onclick="guardarNombres()">
+                        <span class="icon-slot" data-icon="check"></span> Guardar nombres
+                    </button>
+                    <p class="hint" id="nombres-estado"></p>
+                </div>
+
                 <!-- Solo visible en modo gemelos: sin esto, con dos juegos de título/descripción en
                      pantalla no se sabría cuál es de cuál canal. -->
                 <h3 id="lectura-propia-titulo" class="hidden">Para el canal principal</h3>

@@ -67,7 +67,7 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, carpetasDestino: [] };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, carpetasDestino: [] };
     renderFuentesLista();
     renderMaterialesLista();
     sessionStorage.removeItem('farandula_job_id');
@@ -136,6 +136,7 @@ let state = {
     previewToken: null, // token del preview del último video renderizado, para /api/portada
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
     materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
+    nombresDetectados: [],    // [{leido, sugerido, carpeta, confianza, decir}] — cotejo contra las carpetas de Drive
     // Videos gemelos (ver el bloque de abajo). Apagado por defecto: con `gemelos: false` nada de
     // esto se ejecuta y el flujo es exactamente el de siempre.
     gemelos: false,
@@ -555,6 +556,109 @@ function revealLectura() {
     document.getElementById('lectura-section').classList.remove('hidden');
 }
 
+// Los tres caminos que producen una lectura (leer fuente, procesar varias, cambiar de sesgo)
+// pintaban lo mismo copiado tres veces. Ahora pasan por acá, así los nombres detectados no se
+// quedan afuera en uno de los tres.
+function pintarLectura(result) {
+    state.sourceData = { ...state.sourceData, ...result };
+    document.getElementById('res-titulo').textContent = result.titulo || '';
+    document.getElementById('res-descripcion').textContent = result.descripcion || '';
+    document.getElementById('res-cronica').textContent = result.cronica || '';
+    if (Array.isArray(result.nombresDetectados)) state.nombresDetectados = result.nombresDetectados;
+    pintarNombres();
+    revealLectura();
+}
+
+// Nombres de la noticia, cotejados contra las carpetas de Drive.
+//
+// Los de confianza ALTA ya vienen corregidos del servidor: se muestran para que el usuario VEA lo
+// que cambió, no para pedirle permiso. Los de confianza MEDIA son sugerencia (con 272 carpetas,
+// "Camila" y "Camilo" suenan casi igual, así que adivinar sería peor). Los que no tienen carpeta
+// se muestran con aviso y no bloquean nada — decisión explícita del usuario.
+function pintarNombres() {
+    const caja = document.getElementById('nombres-section');
+    const lista = document.getElementById('nombres-lista');
+    if (!caja || !lista) return;
+    const nombres = state.nombresDetectados || [];
+    caja.classList.toggle('hidden', nombres.length === 0);
+    document.getElementById('nombres-estado').textContent = '';
+    lista.innerHTML = '';
+    if (nombres.length === 0) return;
+
+    const corregidos = nombres.filter(n => n.confianza === 'alta' && n.sugerido !== n.leido).length;
+    const sinCarpeta = nombres.filter(n => !n.carpeta).length;
+    document.getElementById('nombres-hint').textContent =
+        'Se transcribieron de oído: de acá salen la locución, los subtítulos, la carpeta de clips y los hashtags.'
+        + (corregidos ? (corregidos === 1 ? ' Se corrigió 1 solo.' : ` Se corrigieron ${corregidos} solos.`) : '')
+        + (sinCarpeta ? (sinCarpeta === 1 ? ' 1 sin carpeta en Drive.' : ` ${sinCarpeta} sin carpeta en Drive.`) : '');
+
+    nombres.forEach((n, i) => {
+        const fila = document.createElement('div');
+        fila.className = 'nombre-fila';
+        fila.dataset.idx = String(i);
+
+        const escribir = document.createElement('input');
+        escribir.className = 'nombre-escribir';
+        escribir.value = n.sugerido || n.leido || '';
+        escribir.placeholder = 'Cómo se escribe';
+
+        const decir = document.createElement('input');
+        decir.className = 'nombre-decir';
+        decir.value = n.decir || '';
+        decir.placeholder = 'Cómo se dice (opcional)';
+
+        const estado = document.createElement('span');
+        estado.className = 'nombre-estado';
+        estado.dataset.conf = n.confianza || 'ninguna';
+        estado.textContent = n.confianza === 'alta' && n.sugerido !== n.leido ? `corregido — se leyó "${n.leido}"`
+            : n.confianza === 'media' ? `se leyó "${n.leido}" — ¿es este?`
+            : n.carpeta ? 'tiene carpeta' : 'sin carpeta en Drive';
+
+        fila.append(escribir, decir, estado);
+        lista.appendChild(fila);
+    });
+}
+
+// Guarda lo que el usuario dejó escrito: aplica las correcciones a TODA la lectura (crónica
+// incluida) y las deja aprendidas para la próxima vez que aparezca ese famoso.
+async function guardarNombres() {
+    const filas = [...document.querySelectorAll('#nombres-lista .nombre-fila')];
+    const detectados = state.nombresDetectados || [];
+    const nombres = filas.map(f => {
+        const det = detectados[Number(f.dataset.idx)] || {};
+        return {
+            leido: det.leido || '',
+            carpeta: det.carpeta || null,
+            escribir: f.querySelector('.nombre-escribir').value.trim(),
+            decir: f.querySelector('.nombre-decir').value.trim(),
+        };
+    }).filter(n => n.escribir);
+    if (nombres.length === 0) return;
+
+    setButtonDisabled('btn-guardar-nombres', true);
+    try {
+        const r = await apiCall('/nombres', 'PUT', { jobId: state.jobId, nombres });
+        // Lo que vuelve es la lectura entera ya corregida: el nombre pudo cambiar en la crónica,
+        // el título, la descripción y los hashtags, no solo en el campo del nombre.
+        // Confirmado por el usuario: deja de ser sugerencia (si no, seguiría preguntando "¿es este?"
+        // por algo que él acaba de decidir).
+        state.nombresDetectados = nombres.map((n, i) => ({
+            ...(detectados[i] || {}), leido: n.escribir, sugerido: n.escribir, decir: n.decir || null,
+            confianza: detectados[i]?.confianza === 'media' ? 'alta' : detectados[i]?.confianza,
+        }));
+        if (r.cronica) pintarLectura(r);
+        else pintarNombres();
+        document.getElementById('nombres-estado').textContent = r.aplicados?.length
+            ? `Guardado. Se aplicó: ${r.aplicados.join(', ')}`
+            : 'Guardado.';
+        log(r.aplicados?.length ? `✏️ Nombres corregidos: ${r.aplicados.join(', ')}` : '✅ Nombres guardados');
+    } catch (e) {
+        document.getElementById('nombres-estado').textContent = `No se pudieron guardar: ${e.message}`;
+    } finally {
+        setButtonDisabled('btn-guardar-nombres', false);
+    }
+}
+
 // Barra de progreso flotante (ya no tapa el grid de pasos, como antes hacía showSection)
 function showProgress(label) {
     ocultarError();
@@ -824,11 +928,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
 
         if (result.sintetizado) {
             log(esPrimera ? '✅ Lectura completada' : `✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada y procesada`);
-            state.sourceData = { ...state.sourceData, ...result };
-            document.getElementById('res-titulo').textContent = result.titulo;
-            document.getElementById('res-descripcion').textContent = result.descripcion;
-            document.getElementById('res-cronica').textContent = result.cronica;
-            revealLectura();
+            pintarLectura(result);
             marcarFuentesPendientes(false);
             hideProgress();
             setStepStatus('fuente-section', 'done');
@@ -867,11 +967,7 @@ async function procesarFuentes() {
         updateProgress(30);
 
         const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo: state.sesgo });
-        state.sourceData = { ...state.sourceData, ...result };
-        document.getElementById('res-titulo').textContent = result.titulo;
-        document.getElementById('res-descripcion').textContent = result.descripcion;
-        document.getElementById('res-cronica').textContent = result.cronica;
-        revealLectura();
+        pintarLectura(result);
         marcarFuentesPendientes(false);
         hideProgress();
         setStepStatus('fuente-section', 'done');
@@ -2073,11 +2169,7 @@ async function otroSesgo(sesgo) {
         // audio/video/web de ninguna fuente (Fase 4 del plan maestro).
         const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo });
 
-        state.sourceData = { ...state.sourceData, ...result };
-        document.getElementById('res-titulo').textContent = result.titulo;
-        document.getElementById('res-descripcion').textContent = result.descripcion;
-        document.getElementById('res-cronica').textContent = result.cronica;
-        revealLectura();
+        pintarLectura(result);
 
         hideProgress();
         setStepStatus('fuente-section', 'done');

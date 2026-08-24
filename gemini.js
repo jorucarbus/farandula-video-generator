@@ -57,6 +57,11 @@ no redactes con estilo todavía, eso es un paso aparte y lo hace otro prompt. De
 transcribe o resume SOLO lo que se DICE: nunca describas gestos, expresiones, ropa, edición ni
 nada visual — eso no importa para este trabajo, ni siquiera si el video lo muestra.
 
+NOMBRES PROPIOS: si la fuente trae texto (el título, la descripción, el caption, un rótulo en
+pantalla, un letrero), copia los nombres TAL COMO ESTÁN ESCRITOS AHÍ. Solo escríbelos de oído
+cuando no aparezcan escritos en ninguna parte, y en ese caso usa la grafía más habitual del
+nombre, no la fonética de lo que escuchaste.
+
 Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin bloques de código):
 {
   "hechos": "Los hechos concretos mencionados, en prosa breve y neutral: quién, qué, cuándo, dónde, y cualquier cita textual relevante. Sin narrativa, sin opinión, sin adornos — es una nota de investigación, no un artículo.",

@@ -14,6 +14,7 @@
 // timestamps de ningún proveedor.
 const path = require('path');
 const elevenlabs = require('./elevenlabs');
+const famosos = require('./famosos');
 const video = require('./video');
 
 const FUENTES = {
@@ -80,7 +81,11 @@ function limpiarMarcas(caracteres, inicios) {
 // para que nunca queden en relojes distintos).
 //
 // Devuelve: { duraciones: [seg, ...] (una por fragmento), palabras: [[{texto,inicio,fin}, ...], ...] (una lista por fragmento) }
-function alinearFragmentos(fragments, alineacion, duracionAudioReal) {
+// `mapaVoz` (opcional): pronunciaciones por famoso. Un nombre puede haberse MANDADO A HABLAR con
+// otra escritura ("Nawat" -> "Nagüat"), así que comparar contra la forma escrita fallaría y
+// tumbaría la alineación entera al reparto estimado. Se compara contra lo que de verdad se dijo;
+// lo que se muestra en los subtítulos sigue siendo la forma escrita.
+function alinearFragmentos(fragments, alineacion, duracionAudioReal, mapaVoz = null) {
   const { caracteres, inicios } = alineacion || {};
   if (!Array.isArray(caracteres) || caracteres.length === 0 || !Array.isArray(inicios)) {
     console.warn('  ⚠️ Tiempos reales: ElevenLabs no devolvió alineación, cae a % de caracteres');
@@ -101,9 +106,10 @@ function alinearFragmentos(fragments, alineacion, duracionAudioReal) {
         return null;
       }
       inicios2.push(iniciosLimpios[j]);
-      const jFinal = matchTexto(limpios, j, palabra);
+      const hablada = famosos.hablar(palabra, mapaVoz);
+      const jFinal = matchTexto(limpios, j, hablada);
       if (jFinal === -1) {
-        console.warn(`  ⚠️ Tiempos reales: "${palabra}" no calza con el audio, cae a % de caracteres`);
+        console.warn(`  ⚠️ Tiempos reales: "${palabra}"${hablada !== palabra ? ` (dicho "${hablada}")` : ''} no calza con el audio, cae a % de caracteres`);
         return null;
       }
       j = jFinal;

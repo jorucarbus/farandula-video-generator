@@ -1131,3 +1131,43 @@ footer {
     color: var(--text-dim);
     margin: 0 0 10px;
 }
+
+/* Nombres de la noticia (Paso 1). Va arriba del resultado de la lectura porque es lo primero que
+   hay que revisar: de estos nombres salen la locución, los subtítulos, la carpeta de clips y los
+   hashtags. */
+.nombres-section {
+    border: 1px solid var(--borde);
+    border-radius: var(--radio);
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    background: var(--superficie-2, transparent);
+}
+.nombres-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+.nombre-fila {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+    gap: 0.4rem;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+.nombre-fila input {
+    width: 100%;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.9rem;
+}
+.nombre-estado {
+    font-size: 0.75rem;
+    color: var(--texto-suave, #666);
+    white-space: nowrap;
+}
+.nombre-estado[data-conf="alta"] { color: var(--ok, #2f8f2f); }
+.nombre-estado[data-conf="media"] { color: var(--aviso, #b26a00); }
+@media (max-width: 700px) {
+    .nombre-fila { grid-template-columns: 1fr; }
+    .nombre-estado { white-space: normal; }
+}
