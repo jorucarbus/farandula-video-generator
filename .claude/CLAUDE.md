@@ -1,5 +1,123 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-24 (noche) — Motor de guion por estructura, sobre el grafo de técnica narrativa
+
+El usuario tenía el generador con graphify funcionando aparte (por CLI) y pidió **las dos opciones
+dentro de la app**: *"quiero tener las dos opciones, guion con graphify y guion tradicional, o sea
+quiero poder elegir entre cuál usar"*. Y sobre cómo debía comportarse el nuevo: *"quiero que mi
+motor escoja la mejor forma de estructurar la noticia, no me interesa escoger el ángulo en
+graphify, quiero que él mismo lo escoja"*.
+
+### Lo que ya estaba hecho jugó a favor
+
+`MOTORES_GUION` (gemini.js) se creó el 22/08 **exactamente para esto**, calcado de `FRAGMENTADORES`.
+El motor nuevo entró como una entrada más del objeto: `server.js` no cambió de forma, solo pasa qué
+motor usar.
+
+### La diferencia real entre los dos motores
+
+| | Motor de siempre | Motor del grafo |
+|---|---|---|
+| Qué elige el usuario | uno de 7 ángulos (de qué va) | nada |
+| Qué decide el motor | la redacción | **cómo estructurar** (apertura, orden de revelación, cierre) |
+| De dónde sale el criterio | el prompt | 208 técnicas del grafo (curso de guion + redacción + retención de video corto) |
+| Palabras medidas | 206-215 | 190-203 (ver guarda abajo) |
+
+**Ojo con la distinción, que costó aclararla con el usuario**: el grafo aporta **técnica**, no
+**tema**. Sus consultas son apertura, tensión, personaje, cierre y retención — ninguna decide de qué
+habla el video. Sacar el selector de ángulos sin más dejaba esa decisión huérfana; el usuario eligió
+que la tome el motor.
+
+### Por qué NO hay Python en Railway
+
+El catálogo viaja **congelado** en `catalogo-tecnicas.json` (208 técnicas, 85 KB, ~14.000 tokens).
+`graphify query` es un binario de Python que vive en la máquina del usuario, y meterlo al build le
+agregaría al pipeline de video —que ya está en producción— una dependencia que puede romperlo.
+
+Y el catálogo completo es **mejor** que las 5 consultas fijas del proyecto original: la elección se
+hace **con la noticia delante**, mientras las consultas de allá preguntan siempre lo mismo. Eso
+además esquiva el punto ciego que ya apareció allá el 19/08: el BFS arranca por similitud de
+palabras, así que el material de retención quedaba invisible para consultas redactadas con
+vocabulario de cine.
+
+Se excluyen del catálogo las comunidades de **maquetación de guion de cine** (formato de página,
+formato de diálogo): no aplican a una locución de 70 segundos. Por NOMBRE, no por número de
+comunidad — los números cambian en cada reconstrucción del grafo.
+
+**Para actualizarlo**: en `generador-guion-graphify`, `graphify . --update` +
+`node exportar-catalogo.js`, y copiar el archivo. Nada más.
+
+### Sin duplicar prompts (la lección del cartel, aplicada)
+
+El guion se escribe con el **mismo** `PROMPTS.guion` y los **mismos** bloques de citas y de
+no-repetición: `bloqueDeCitas` y `bloqueDeEvitar` se extrajeron de `generarGuion()` a funciones
+compartidas que exporta `gemini.js`. Duplicarlos era garantizar que un día se desincronizaran — es
+el bug que costó una semana con la geometría del cartel. Efecto concreto: el motor nuevo **no
+pierde** la feature de que el guion le haga lugar a las citas de la entrevista.
+
+### Bug encontrado probando: elegía la misma estructura para los dos gemelos
+
+Pedirle "que sea estructuralmente distinto del hermano" **no alcanzó**: eligió la misma (la de doble
+caída, que es la más aplicable a video corto y por eso se vuelve la respuesta fácil). Ahora primero
+tiene que **nombrar** la estructura del hermano en un campo `evitada` y después apartarse de ella.
+Obligarlo a decir de qué se aparta es lo que lo saca de la respuesta cómoda — y quedó en el log,
+que es lo único que permite confirmarlo en producción.
+
+### Guarda de longitud (sirve a los dos motores)
+
+Medido: el motor del grafo se queda corto seguido (190-203 palabras) porque al sumarle el bloque de
+estructura el modelo recorta. Y **la longitud no es cosmética: de ella sale la duración del video**
+— 190 palabras son ~5 segundos menos.
+
+`escribirGuion` reintenta **una** vez cuando baja de 200 (el mínimo que el propio prompt declara).
+Dos detalles del diseño:
+- El aviso viaja por un parámetro `nota` **propio**, no por `guionEvitar`: en el motor del grafo,
+  `guionEvitar` dispara las reglas del gemelo y habría ensuciado la elección de estructura.
+- La nota va al prompt del **guion**, nunca al de la elección: si no, elegiría estructura "para
+  escribir más largo" en vez de para la noticia.
+
+Si el reintento sale peor, se usa el primero. Nunca aborta.
+
+### Verificación (Gemini real, sin gastar ElevenLabs)
+
+| Qué | Resultado |
+|---|---|
+| Guion por el grafo | "Doble caída de la dignidad", citando 4 técnicas reales, incluidas las de retención (Zeigarnik, romper patrón) |
+| **Gemelos** | **dos estructuras distintas, 0 tiras de 5 palabras compartidas, 16% de vocabulario común** (el motor de siempre: 1 tira y 46%) |
+| Guarda de longitud | detectó 192 → reintento → 202. El motor de siempre dio 215 sin reintento |
+| Endpoints | motor inexistente 400, sin ángulo ni motor 400, grafo sin ángulo 200 |
+| Regresión | con ángulo 2 y sin mandar motor: 212 palabras, el grafo no se activa |
+| Browser real | el selector oculta la grilla de ángulos y la restaura; genera guion sin ángulo elegido y sin alertas |
+
+**Los gemelos son la mejora más clara**: el motor de siempre los diferencia por redacción (46% de
+vocabulario común); el del grafo, por estructura (16%). Es lo que TikTok mira cuando penaliza
+contenido duplicado entre canales.
+
+### El proyecto del grafo salió de Google Drive
+
+`generador-guion-graphify` vivía en `G:\Mi unidad\` **sin git**. Ahora está en
+`D:\claude pro apps\generador-guion-graphify` con remoto privado en GitHub
+(`jorucarbus/generador-guion-graphify`).
+
+Se movió porque el sync de Drive corrompe archivos por la carrera de escritura —ya había pasado con
+`npm install`, está en su README— y un `.git` a medio escribir es peor que un `node_modules` roto.
+Verificado antes de borrar el original: 480 archivos, checksums idénticos de todos los `.js`, y el
+grafo respondiendo las 5 consultas desde la ubicación nueva. Fuera del repo: `.env`,
+`node_modules`, el `graph.html` y el caché semántico.
+
+⚠️ **Git en D: necesita excepción**: es exFAT y no registra propietario, así que pide
+`git config --global --add safe.directory`. Ya está puesta para este repo.
+
+### Pendiente
+
+- **El juicio del usuario**: si los guiones del grafo le gustan más que los de siempre. Está
+  medido que son más distintos entre gemelos; si son *mejores* lo decide él.
+- Los ~200 palabras del motor del grafo dan videos ~4 segundos más cortos que los 215 del motor de
+  siempre. Con la guarda quedan en el mínimo aceptable, no en el medio del rango.
+- `graphify query` en vivo (elegir técnica según la noticia consultando el grafo, no el catálogo
+  congelado) sigue siendo posible, pero exigiría Python en Railway. Hoy no hace falta.
+
+
 ## 2026-08-24 — Nombres de famosos: bien escritos (cotejo fonético) y bien pronunciados
 
 Reporte del usuario: *"como suele poner lo que escucha a veces le cambia los nombres de los
