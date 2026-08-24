@@ -42,6 +42,7 @@ const TAREAS = {
   // inventa nada — mismo criterio que fragmentación/marcas.
   citas:         { nombre: 'citas',         cadena: CADENAS.mecanico },
   materiales:    { nombre: 'materiales',    cadena: CADENAS.mecanico },
+  tecnica:       { nombre: 'técnica',       cadena: CADENAS.mecanico },
 };
 
 // Prompts maestros
@@ -540,21 +541,12 @@ async function procesarLectura(sourceType, content, sesgo = 'neutral') {
 // presente, este guion tiene que contar los MISMOS hechos con el MISMO ángulo pero sin parecerse —
 // otro arranque, otro orden, otro vocabulario. No es un capricho de estilo: los dos videos se
 // publican el mismo día en canales gemelos, y dos guiones parecidos leen como contenido duplicado.
-async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null) {
-  try {
-    let descripcionEnfoque;
-
-    if (angle === 7) {
-      descripcionEnfoque = angleContent;
-    } else if (angle === 6) {
-      descripcionEnfoque = 'Combina elementos de varios enfoques: lenguaje corporal, hipocresía del pasado, reacción del entorno, dinero oculto y ruptura de expectativas. Usa los 2-3 que mejor encajen con la historia.';
-    } else {
-      descripcionEnfoque = getAngleDescription(angle);
-    }
-
-    // Bloque opcional: las citas de entrevista que se van a escuchar con su voz original.
-    const listaCitas = (citas || []).map(c => (c && c.texto ? String(c.texto).trim() : '')).filter(Boolean);
-    const bloqueCitas = listaCitas.length === 0 ? '' : `
+// Bloque de citas para el prompt de guion. Vive fuera de generarGuion() porque el motor de
+// guion con graphify usa EXACTAMENTE las mismas reglas: duplicarlas era garantizar que un día se
+// desincronizaran (es el bug que costó una semana con la geometría del cartel).
+function bloqueDeCitas(citas) {
+  const listaCitas = (citas || []).map(c => (c && c.texto ? String(c.texto).trim() : '')).filter(Boolean);
+  return listaCitas.length === 0 ? '' : `
 
 === CITAS REALES QUE SE VAN A ESCUCHAR EN EL VIDEO ===
 ${listaCitas.map((t, i) => `${i + 1}. "${t}"`).join('\n')}
@@ -573,9 +565,11 @@ REGLAS OBLIGATORIAS PARA LAS CITAS:
   pasado, y nunca repitas lo que ya dijo.
 - Las citas entran en el MISMO ORDEN en que están numeradas arriba.
 - El resto del guion sigue igual: mismo largo, mismo ritmo, mismo tono.`;
+}
 
-    // Bloque opcional: el guion hermano que este NO puede parecerse.
-    const bloqueEvitar = !guionEvitar ? '' : `
+// Ídem para el guion hermano que este NO puede parecerse (videos gemelos).
+function bloqueDeEvitar(guionEvitar) {
+  return !guionEvitar ? '' : `
 
 === GUION YA ESCRITO PARA EL CANAL HERMANO (NO es material, es lo que TENÉS QUE EVITAR) ===
 ${guionEvitar}
@@ -591,6 +585,22 @@ REGLAS OBLIGATORIAS PARA NO REPETIRLO:
 - Cierre distinto, con otra pregunta o tensión abierta.
 - Mismo largo, mismo ritmo, misma calidad. No es una versión resumida ni una segunda parte: es el
   mismo escándalo contado por otra boca.`;
+}
+
+async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null) {
+  try {
+    let descripcionEnfoque;
+
+    if (angle === 7) {
+      descripcionEnfoque = angleContent;
+    } else if (angle === 6) {
+      descripcionEnfoque = 'Combina elementos de varios enfoques: lenguaje corporal, hipocresía del pasado, reacción del entorno, dinero oculto y ruptura de expectativas. Usa los 2-3 que mejor encajen con la historia.';
+    } else {
+      descripcionEnfoque = getAngleDescription(angle);
+    }
+
+    const bloqueCitas = bloqueDeCitas(citas);
+    const bloqueEvitar = bloqueDeEvitar(guionEvitar);
 
     const userMessage = `A continuación tienes dos bloques claramente separados.
 
@@ -602,7 +612,9 @@ ${cronica}
 ${descripcionEnfoque}
 === FIN DEL ENFOQUE ===
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}${bloqueEvitar}`;
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}${bloqueEvitar}${nota ? `
+
+${nota}` : ''}`;
 
     const { texto: response } = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
     return response.trim();
@@ -618,13 +630,47 @@ TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MA
 // entrada de este objeto sin tocar una línea de server.js.
 const MOTORES_GUION = {
   gemini: generarGuion,
-  // graphify: generarGuionGraphify,  // futuro
+  // El motor del grafo: elige él mismo la estructura narrativa (el usuario no elige ángulo) y
+  // escribe con el MISMO prompt maestro de arriba. `require` perezoso porque guionGrafo.js
+  // requiere este módulo de vuelta — cargarlo acá arriba sería un ciclo.
+  grafo: (...args) => require('./guionGrafo').generarGuionGrafo(...args),   // recibe la misma firma, `nota` incluida
 };
+
+// El prompt pide 205-220 palabras ("nunca menos de 200") porque de ahí sale la duración del video:
+// la locución manda, así que 190 palabras son ~5 segundos menos de video. Medido: el motor de
+// siempre cumple (206-212), y el del grafo se queda corto seguido (190-203) — al sumarle el bloque
+// de estructura, el modelo recorta. Un solo reintento avisando que se quedó corto; si vuelve corto,
+// se usa igual (Regla de robustez: esta guarda no puede tumbar el paso del guion).
+const PALABRAS_MIN = 200;
+
+function contarPalabras(t) {
+  return String(t || '').split(/\s+/).filter(Boolean).length;
+}
 
 async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini') {
   const fn = MOTORES_GUION[motor];
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
-  return fn(cronica, angle, angleContent, citas, guionEvitar);
+  const guion = await fn(cronica, angle, angleContent, citas, guionEvitar);
+  const palabras = contarPalabras(guion);
+  if (palabras >= PALABRAS_MIN) return guion;
+
+  console.warn(`  ⚠️ El guion salió con ${palabras} palabras (mínimo ${PALABRAS_MIN}); se pide una vez más`);
+  try {
+    const nota = `AVISO: el intento anterior de este mismo guion salió de ${palabras} palabras, `
+      + `demasiado corto. La longitud NO es opcional: de ella sale la duración del video. `
+      + `Escribe entre 205 y 220 palabras, sin recortar el desarrollo.`;
+    const reintento = await fn(cronica, angle, angleContent, citas, guionEvitar, nota);
+    const nuevas = contarPalabras(reintento);
+    if (nuevas > palabras) {
+      console.log(`  ✏️ Reintento: ${nuevas} palabras`);
+      return reintento;
+    }
+    console.warn(`  ⚠️ El reintento salió con ${nuevas}; se usa el primero`);
+    return guion;
+  } catch (e) {
+    console.warn(`  ⚠️ El reintento del guion falló (${e.message}); se usa el primero`);
+    return guion;
+  }
 }
 
 const PROMPT_VARIAR_META = `Rol: Community manager de un canal de farándula en TikTok.
@@ -1010,6 +1056,7 @@ function getAngleName(angle) {
 
 module.exports = {
   escribirGuion, MOTORES_GUION, variarMetadatos,
+  bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, PROMPTS,
   procesarLectura,
   extraerActa,
   sintetizarCronica,

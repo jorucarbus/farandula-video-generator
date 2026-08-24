@@ -1171,3 +1171,13 @@ footer {
     .nombre-fila { grid-template-columns: 1fr; }
     .nombre-estado { white-space: normal; }
 }
+
+/* Selector de motor de guion (Paso 2). Con el motor del grafo la grilla de ángulos se oculta:
+   la estructura la elige el motor, no el usuario. */
+.motor-guion {
+    margin-bottom: 1rem;
+}
+.motor-guion select {
+    width: 100%;
+    padding: 0.45rem 0.5rem;
+}

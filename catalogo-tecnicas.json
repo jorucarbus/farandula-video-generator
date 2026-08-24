@@ -1,0 +1,1263 @@
+{
+ "generado": "2026-08-24",
+ "grafo": {
+  "nodos": 251,
+  "sinTecnica": 18,
+  "excluidosPorGrupo": 25,
+  "gruposExcluidos": [
+   "Formato técnico del guion",
+   "Formato de diálogo"
+  ],
+  "fuentes": 21
+ },
+ "tecnicas": [
+  {
+   "tecnica": "Programa del curso (formato, narrativa, ejecución)",
+   "explicacion": "El curso se divide en tres bloques: formato (normas técnicas de escritura), narrativa (premisa, tres actos, personajes, escenas, diálogos, géneros y temas) y ejecución (primer borrador, corrección, reescritura); el foco principal está en la narrativa.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Camino del héroe",
+   "explicacion": "Estructura clásica recomendada para quienes quieran construir una historia con narrativa mítica; Joseph Campbell la formuló llevando la poética de Aristóteles a un territorio más moderno.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Screenplay (Syd Field)",
+   "explicacion": "Recomendado como uno de los libros más importantes y simples para entender el guión clásico al estilo hollywoodense y la narrativa clásica.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Salva al gato (Save the Cat)",
+   "explicacion": "Tiene una visión más comercial de la escritura de guiones, basada en reglas concretas, útil para armar una estructura inicial dentro de la narrativa clásica.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Story (Robert McKee)",
+   "explicacion": "Libro más académico, recomendado para más adelante en el proceso de aprendizaje del guionista principiante.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "El héroe de las mil caras",
+   "explicacion": "Define totalmente el concepto del camino del héroe; es una reversión moderna de la poética de Aristóteles.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Poética de Aristóteles",
+   "explicacion": "Ensayo de la antigua Grecia que define la estructura básica de la narrativa occidental, usado desde el drama griego hasta hoy en guion, teatro y novela.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "01_introduccion.txt"
+  },
+  {
+   "tecnica": "Regla: una página de guión equivale a un minuto",
+   "explicacion": "Una página de guión formateada convencionalmente equivale aproximadamente a un minuto de pantalla, lo que permite estimar la duración final de la obra a partir del número de páginas (no es una ciencia exacta).",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "02_formato.txt"
+  },
+  {
+   "tecnica": "Premisa",
+   "explicacion": "Es la respuesta a 'de qué trata la historia'; sirve como disparador narrativo porque a partir de personaje, acción y conflicto ya se puede empezar a imaginar y desarrollar una historia completa, y hay que contarla poniéndose en el lugar del interlocutor para que se entienda rápido.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Fórmula personaje + acción + conflicto",
+   "explicacion": "Un personaje que cumple una acción genera naturalmente un conflicto; esa combinación es la fórmula mínima para tener una premisa desarrollable, como se ve en el cortometraje de Scrat de La Era del Hielo.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Log line",
+   "explicacion": "Es la premisa resumida en 150 a 400 caracteres, usada para vender el proyecto a productoras que reciben demasiados guiones para leerlos todos; es muy difícil de escribir bien y no es indispensable para empezar a escribir el primer borrador.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "No hay reglas para escribir un primer borrador",
+   "explicacion": "El primer borrador siempre es malo y cada persona tiene un proceso creativo distinto (algunos escriben la premisa, otros dibujan storyboards como Miyazaki); no hay que atarse a un método único ni angustiarse por no seguir una estructura fija.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Fuentes de ideas: experiencia personal e investigación",
+   "explicacion": "La mayoría de las grandes ideas surgen de experiencias personales (traumas, relaciones, investigación) porque es más fácil contar aquello que uno conoce de primera mano; por eso vivir experiencias y salir al mundo alimenta la escritura.",
+   "grupo": "Fuentes de ideas",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "El proceso creativo es único en cada persona",
+   "explicacion": "Cada persona tiene una forma distinta de acercarse a la escritura (dibujar, escribir la premisa, investigar, mapear personajes); el riesgo es enroscarse tanto en el proceso preparatorio que nunca se llega a escribir la primera escena.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Atrapa al pez dorado (David Lynch)",
+   "explicacion": "Muestra un proceso creativo no convencional basado en meditación y búsqueda de la conciencia, confirmando que no hay reglas fijas para escribir un primer borrador.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Teoría del iceberg (temas subyacentes)",
+   "explicacion": "Toda historia visible (la premisa) tiene por debajo temas más amplios y humanos (relaciones familiares, diferencias generacionales, etc.) que enriquecen la narrativa sin ser la trama explícita.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Hay Algo en el Bosque (serie del instructor)",
+   "explicacion": "Sus episodios 'La negociación' y el del influencer surgieron de experiencias personales del instructor (planificar un trabajo con expectativas excesivas, su relación con la audiencia de YouTube).",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Misery (Stephen King) — ejemplo de idea desde el trauma",
+   "explicacion": "Stephen King se inspiró en un accidente de auto que lo dejó parcialmente paralizado, ejemplo de idea surgida de una experiencia personal traumática.",
+   "grupo": "Fuentes de ideas",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Dexter (ejemplo de idea desde la investigación)",
+   "explicacion": "Ejemplo de premisa (un médico forense que es asesino serial) que puede surgir de investigar un campo como la medicina forense.",
+   "grupo": "Fuentes de ideas",
+   "fuente": "03_premisa.txt"
+  },
+  {
+   "tecnica": "Estructura de tres actos (el paradigma)",
+   "explicacion": "Es la estructura narrativa occidental por excelencia (llamada 'el paradigma' por Syd Field): introducción, conflicto y final, presente incluso de forma inconsciente al contar anécdotas cotidianas.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Punto de giro / disparador narrativo (inciting incident)",
+   "explicacion": "Es el momento en que la acción o el conflicto arranca, llevando al personaje de un estado estático a un estado de conflicto; separa el primer acto del segundo.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Clímax",
+   "explicacion": "Es el momento de mayor tensión de la historia, cuando el personaje arriesga todo y solo queda una posibilidad de ganar; separa el segundo acto del tercero porque después de él ya no queda mucho más que contar.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "El tercer acto debe ser rápido",
+   "explicacion": "La tensión dramática está concentrada en el segundo acto, así que estirar demasiado el tercer acto cerrando demasiados arcos hace que la historia se sienta eterna; conviene resolverlo rápido, como recomienda también Save the Cat.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Referencia de páginas: punto de giro ~10-15, clímax ~75-80 (guión de 90 páginas)",
+   "explicacion": "En un guión de 90 páginas (90 minutos, a una página por minuto) el primer punto de giro suele ocurrir alrededor de la página 10-15 y el clímax entre la página 75 y 80; es una referencia orientativa, no una regla estricta, útil para detectar si una introducción se alarga demasiado o un segundo acto queda corto.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Prólogo",
+   "explicacion": "Introduce contexto de la historia antes de presentar a los personajes principales, como la narración de Galadriel en El Señor de los Anillos o la canción inicial de las musas en Hércules.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Epílogo",
+   "explicacion": "Es un cierre del cierre, ya sin peso narrativo directo, que le da a la audiencia un último regalo después de resuelto el tercer acto, como la canción final de los alumnos en School of Rock.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Historia impulsada por el personaje (character driven)",
+   "explicacion": "Sin un personaje con motivaciones y objetivos no hay acción; sin acción no hay conflicto; y sin conflicto no hay historia (un personaje que solo cumple una rutina sin obstáculos, como levantarse, trabajar y dormir, no genera narrativa).",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "El segundo acto puede tener múltiples puntos de giro",
+   "explicacion": "El segundo acto no tiene un único punto de giro: cada vez que la historia parece volver a la calma puede aparecer un nuevo conflicto que la reactiva, como ocurre varias veces en El Rey León.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "El Rey León (ejemplo analizado)",
+   "explicacion": "Analizado en detalle para mostrar introducción, primer punto de giro (Scar manda a Simba al cementerio de elefantes), múltiples puntos de giro, clímax (Scar revela que mató a Mufasa) y tercer acto.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Hércules de Disney (ejemplo analizado)",
+   "explicacion": "Analizado en detalle con prólogo musical, primer punto de giro (secuestro de Hércules por Hades), sucesión de conflictos, clímax (rescate de Meg) y epílogo musical.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Spider-Man de Sam Raimi (ejemplo analizado)",
+   "explicacion": "Analizado en detalle con varios puntos de giro (descubrir poderes, muerte del tío Ben, pelea con el Duende Verde), clímax (rescate de Mary Jane y el autobús) y un tercer acto agridulce.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Cita de Jean-Luc Godard sobre comienzo, conflicto y final",
+   "explicacion": "'Toda película tiene un comienzo, un conflicto y un final, aunque no necesariamente en ese orden'; usada para ilustrar la estructura de tres actos incluso viniendo de un director rupturista.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Cita de Juan José Campanella sobre el héroe que no descansa",
+   "explicacion": "'El héroe no triunfa durante el segundo acto sino que descansa', usada para reforzar que el personaje debe pasar de conflicto en conflicto con solo pequeños momentos de respiro.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "La noche (Antonioni) — ejemplo de ruptura de la estructura",
+   "explicacion": "Gira en torno al aburrimiento interno de una mujer sin un conflicto externo claro; usada para mostrar que romper la estructura clásica es válido solo si primero se conocen sus reglas.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "El paradigma (Syd Field)",
+   "explicacion": "Nombre que Syd Field le da en su libro El guión cinematográfico a la estructura de tres actos.",
+   "grupo": "Teoría clásica y fundamentos",
+   "fuente": "04_estructura_narrativa.txt"
+  },
+  {
+   "tecnica": "Introducción (primer acto)",
+   "explicacion": "Expone al espectador el entorno, el tiempo y los personajes (sobre todo el protagonista, sus motivaciones y frustraciones) para darle una base sólida antes de que el primer punto de giro rompa ese estado de normalidad; suele fallar en el primer borrador porque hay que dar mucha información sin conocer aún bien al personaje.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Primer punto de giro / disparador narrativo (inciting incident)",
+   "explicacion": "Es el evento que corta la introducción e inicia el segundo acto: a partir de él ya no hay vuelta atrás y el protagonista pasa de su estado natural al estado conflictivo; cuando funciona bien suele ser tan icónico que se convierte en el arte de tapa o material promocional de la película, porque decide si la audiencia se queda viendo.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Exposición: mostrar en vez de contar (show, don't tell)",
+   "explicacion": "Mostrar información a través de acciones e imágenes en vez de diálogos explicativos involucra más al espectador y evita que la película se sienta narrada; sin embargo contar también es válido cuando no hay otra opción, así que en la práctica es una mezcla de ambas, no una regla absoluta.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Prólogo + introducción formal (doble introducción)",
+   "explicacion": "Algunas historias clásicas incluyen un prólogo con su propio punto de giro antes de la introducción 'verdadera' del protagonista humano; permite plantar el contexto mitológico o las reglas del mundo antes de arrancar la trama central.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Apertura in medias res con conflicto directo",
+   "explicacion": "Arrancar directamente en una escena de acción o conflicto, dejando al espectador con más preguntas que respuestas, engancha de inmediato aunque la exposición quede pendiente para resolverse después, típicamente durante el segundo acto.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Apertura con un evento del futuro (flash-forward)",
+   "explicacion": "Mostrar primero un momento que ocurre más adelante en la trama genera la pregunta '¿cómo llegamos hasta acá?', capturando la atención del espectador antes de retroceder al inicio cronológico de la historia.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Regla de duración: la introducción debe ser corta",
+   "explicacion": "En un guion de 90 páginas la introducción ocupa apenas entre la página 10 y 15 (primeros 10-15 minutos); si se alarga demasiado no pasa nada y se pierde al espectador, por eso hay que setear rápido personaje, motivaciones y conflicto.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Errores comunes en la introducción",
+   "explicacion": "Los fallos típicos del primer acto son: exceso de exposición, exposición demasiado obvia o 'contada' por un personaje que relata su propio backstory, e introducciones que se extienden demasiado (por ejemplo, la mitad de las páginas del guion) restando espacio al conflicto.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "El primer borrador siempre es basura (hay que reescribir)",
+   "explicacion": "Citando a Hemingway, el instructor insiste en que el primer borrador de la introducción casi siempre falla porque todavía no se conoce bien al personaje; no hay que tenerle miedo, porque el verdadero guion se construye en las reescrituras.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "El personaje activo impulsa la historia (no la sufre pasivamente)",
+   "explicacion": "Toda la trama debe originarse en decisiones que toma el protagonista, no en cosas que simplemente le ocurren; un personaje que solo obedece órdenes sin decisiones propias resulta poco dimensional y debilita la historia.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Hay algo en el bosque – episodio \"La negociación\"",
+   "explicacion": "Serie propia del instructor (Disney+/Star Plus) usada como ejemplo real de cómo escribir un primer punto de giro y una introducción condensada en un formato corto de 24 minutos.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "05_estructura_introduccion.txt"
+  },
+  {
+   "tecnica": "Segundo acto: el conflicto ('el nudo')",
+   "explicacion": "Es el acto más largo, donde el protagonista atraviesa sus peores obstáculos; cuanto más conflicto haya, mejor, porque es lo que permite que la audiencia se identifique con el personaje y desee que triunfe.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Conflicto externo",
+   "explicacion": "Problemas que le ocurren al personaje desde afuera de su universo interno (a veces provocados por sus propias acciones); es relativamente más fácil de escribir que el conflicto interno.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Conflicto interno",
+   "explicacion": "Conflicto psicológico o emocional del personaje consigo mismo (traumas, inseguridades); es más difícil de escribir porque exige un personaje tridimensional con el que el espectador pueda identificarse, y es lo que lo humaniza.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Clímax (momento culmine del segundo acto)",
+   "explicacion": "El instructor prefiere llamarlo 'clímax' en vez de 'segundo punto de giro' para evitar confusión, ya que dentro del segundo acto puede haber varios giros narrativos adicionales; es el momento de máxima tensión donde converge todo lo generado durante la película.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Escalada de conflicto sin piedad (no perdonarle nada al personaje)",
+   "explicacion": "El escritor tiene que ser despiadado: llevar al personaje a lo peor de lo peor, porque solo enfrentando sus mayores miedos e inseguridades puede descubrir su esencia y resolver su conflicto interno; sin sufrimiento no hay transformación ni historia.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Punto de no retorno",
+   "explicacion": "Momento en que el conflicto se vuelve tan grande que el protagonista ya no puede volver a la normalidad de la introducción; fuerza inevitablemente la transformación del personaje.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Falsa victoria (arrebatarle el triunfo justo antes de lograrlo)",
+   "explicacion": "Poner al protagonista a punto de cumplir su objetivo y luego arrebatárselo mantiene al espectador compenetrado con la historia; siempre que el conflicto pueda ponerse peor, conviene ponerlo peor en vez de resolverlo demasiado rápido.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "El conflicto es consecuencia de las acciones del protagonista",
+   "explicacion": "La gran mayoría de los conflictos y giros narrativos son provocados por decisiones del personaje (por maldad o por ingenuidad), no por azar; esto es lo que hace que la historia se sienta impulsada por el personaje.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Plot twist / giro narrativo inesperado",
+   "explicacion": "Momento en que lo que el personaje y la audiencia creían cierto resulta ser falso, generando una situación mucho peor; suele estar motivado por las mismas acciones del protagonista, no ser aleatorio.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Sin personaje no hay conflicto, sin conflicto no hay historia",
+   "explicacion": "Principio central del curso: se necesita un personaje genuino, con grises morales, para poder generarle un conflicto real; personajes moralmente perfectos no pueden generar conflicto porque no pueden hacer nada mal.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Arco / desarrollo del personaje",
+   "explicacion": "Es la transformación (para bien o para mal) que sufre el personaje a raíz de los conflictos que atraviesa; si un personaje no cambia es porque no tuvo conflicto real.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Cada conflicto deja una marca o trauma en el protagonista",
+   "explicacion": "Los golpes narrativos (físicos o psicológicos) que recibe el personaje dejan una marca que en el mejor de los casos lo fuerza a cambiar, igual que ocurre con los golpes reales en la vida.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Errores comunes en el segundo acto",
+   "explicacion": "Fallos típicos: que no haya conflicto real, que haya 'falso conflicto' (acción sin desarrollo humano), que el espectador no conecte con el personaje, o que haya conflicto pero el personaje no se transforme.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "\"La negociación\" (Hay algo en el bosque) – construcción del clímax",
+   "explicacion": "Caso real de escritura donde el instructor y su coguionista fueron agregando conflictos en capas (sospecha, veneno, mezcla de platos) para que la tensión subiera constantemente sin bajar nunca hasta llegar al clímax con las armas desenfundadas.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "06_estructura_conflicto.txt"
+  },
+  {
+   "tecnica": "Tercer acto: el final",
+   "explicacion": "Comienza justo donde termina el clímax; suele ser el acto más corto y, pese a ser el más simple en teoría, el más difícil de escribir bien.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Resolución narrativa",
+   "explicacion": "Tras el clímax hay que definir si el protagonista logró o no su objetivo; la resolución puede ser feliz, trágica o agridulce, pero siempre tiene que resolver la pregunta central planteada por la historia.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Cierre de los arcos narrativos de los personajes",
+   "explicacion": "Además de resolver la trama hay que cerrar la transformación de cada personaje; si el personaje no logra cerrar su arco, la historia tiende a castigarlo con un final trágico, como ocurre en Uncut Gems.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Arquetipo del héroe caído / final agridulce",
+   "explicacion": "El protagonista logra su objetivo pero a un costo tan alto que pierde su humanidad o a las personas que más ama (Ciudadano Kane, The Social Network); es positivo para la trama pero trágico para el personaje.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Regla: el final debe ser corto",
+   "explicacion": "Un final que se estira demasiado corre el riesgo de ser ridiculizado por la audiencia, incluso en grandes películas (el ejemplo clásico es el final de El Retorno del Rey); conviene salir 'por la puerta de atrás' apenas se cierra el clímax.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Epílogo",
+   "explicacion": "Escena posterior a la resolución que brinda una satisfacción final mostrando la nueva normalidad de los personajes, y que además puede funcionar como gancho hacia una secuela (Iron Man, Matrix, Toy Story).",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Final con plot twist (giro de 360 grados)",
+   "explicacion": "Un giro narrativo revelado justo al final, típico de películas de misterio o thriller, que deja a la audiencia completamente sorprendida al descubrir que el villano o la verdad estuvo siempre frente a sus narices.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Deus ex machina",
+   "explicacion": "Recurso narrativo (de origen en la tragedia griega) donde una fuerza externa e inesperada resuelve el clímax en vez de que lo resuelva la acción del propio protagonista; funciona mejor cuando encaja con el tono desenfadado de la historia, como en Shrek.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Final trágico por falta de transformación del personaje",
+   "explicacion": "Cuando el protagonista tuvo oportunidades de cambiar y decide no hacerlo, la historia lo castiga con un desenlace trágico (muerte) porque su arco nunca se cerró, como en Uncut Gems.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "El final debe ser fiel al personaje",
+   "explicacion": "El desenlace tiene que ocurrir 'bajo la propia ley' del personaje, sin traicionar quién es (por ejemplo Shrek se casa en un pantano, no en una boda rimbombante); un final infiel a la lógica construida durante la historia resulta insatisfactorio aunque cierre bien la trama.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "El final debe conectar y satisfacer a la audiencia",
+   "explicacion": "Aunque el arco cierre correctamente a nivel narrativo, si la audiencia no puede conectar emocionalmente con la transformación del personaje el final resulta insatisfactorio; conviene sembrar pistas previas que hagan creíble la resolución.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Errores comunes en el tercer acto",
+   "explicacion": "Los fallos más frecuentes son: un final demasiado largo, arcos de personaje que no cierran, un final infiel al personaje, o un final que no logra conectar emocionalmente con la audiencia.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "\"Educando a la mandrágora\" (Hay algo en el bosque) – dificultad de encontrar el final",
+   "explicacion": "Caso real donde el instructor descartó múltiples finales propuestos (incluido que la mandrágora se comiera a un personaje) hasta encontrar una muerte accidental y coherente con que ninguno de los protagonistas es un asesino, ilustrando que el final debe ser fiel al personaje.",
+   "grupo": "Apertura y primer acto",
+   "fuente": "07_estructura_final.txt"
+  },
+  {
+   "tecnica": "Historias Character Driven",
+   "explicacion": "El instructor explica que las historias más vendidas en Hollywood y las tragedias griegas (Edipo Rey, Antígona) están motivadas por el personaje: sin personaje no hay conflicto y sin conflicto no hay historia, por eso el personaje es la pieza clave de todo guion.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Personaje activo",
+   "explicacion": "Un personaje que no hace nada o se mantiene siempre igual resulta aburrido; incluso si su rutina es constante, esa rutina debe afectarlo psicológicamente (ej. La Noche de Antonioni) para mantener el interés, aunque para cine comercial conviene que la actividad del personaje sea más explícita.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "El personaje es lo que hace, no lo que dice",
+   "explicacion": "Mostrar la acción del personaje (p. ej. verlo matar) es mucho más efectivo y creíble que hacerle decir lo que es o hizo, porque en la vida real juzgamos a la gente más por sus acciones que por sus palabras.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Motivación externa (objetivo)",
+   "explicacion": "Es un deseo consciente y visible del personaje que se explicita normalmente en el primer acto; desata el conflicto externo porque el personaje debe sortear obstáculos para conseguirlo.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Necesidad interna (subconsciente)",
+   "explicacion": "Es algo que el personaje no sabe que necesita al inicio; se descubre gradualmente a medida que sortea obstáculos, desata el conflicto interno y es mucho más difícil de escribir que la motivación -a veces no se encuentra hasta reescrituras posteriores.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Arco de personaje",
+   "explicacion": "Es la transformación que va desde la motivación externa hacia el descubrimiento de la necesidad interna; normalmente positiva y convierte al personaje en alguien mejor al superar los conflictos que la trama le plantea.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Personaje incompleto y con fallas",
+   "explicacion": "Un personaje perfecto sin fallas impide la empatía del espectador; los personajes deben tener fallas humanas para que el público se identifique y sienta lo mismo que el personaje (miedo, frustración).",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Pirámide de Maslow aplicada a personajes",
+   "explicacion": "Sirve como guía para pensar qué necesidades (fisiológicas, seguridad, afiliación, reconocimiento, autorrealización) tiene cubiertas o no un personaje, ayudando a definir motivaciones y necesidades de forma escalonada.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Antihéroe / héroe trágico",
+   "explicacion": "Surge cuando el personaje logra su motivación pero reprime o no descubre su necesidad (o confunde su necesidad con una motivación destructiva); el guionista debe estar dispuesto a indagar sin miedo en la falla del personaje para que funcione.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Conflicto externo vs conflicto interno",
+   "explicacion": "La motivación del personaje desata el conflicto externo (obstáculos visibles) mientras que la necesidad desata el conflicto interno (lucha subconsciente); ambos son necesarios para un arco completo.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Descubrir al personaje en la reescritura",
+   "explicacion": "La motivación es fácil de escribir desde el primer borrador, pero la necesidad del personaje suele descubrirse recién en reescrituras posteriores; citando a Hemingway, 'el primer borrador siempre es basura', por lo que no hay que angustiarse si no aparece de entrada.",
+   "grupo": "Construcción de personaje",
+   "fuente": "08_construccion_personajes.txt"
+  },
+  {
+   "tecnica": "Personaje tridimensional",
+   "explicacion": "Combina perfil exterior, perfil interior y backstory (además de motivación y necesidad) para que el personaje deje de ser un arquetipo plano y se sienta genuino, generando más empatía en el espectador.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Perfil exterior del personaje",
+   "explicacion": "Es todo lo observable a primera vista (trabajo, vestimenta, estatus, apariencia, familia); equivale a lo que se leería en un perfil de Wikipedia de una persona y ayuda a que el personaje sea creíble en su contexto.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Perfil interior del personaje",
+   "explicacion": "Incluye códigos morales, ideología, emocionalidad, miedos, vicios y secretos que el personaje no siempre exterioriza; conocerlo, aunque no aparezca en el guion, permite ser fiel al personaje y anticipar cómo reaccionaría ante un conflicto.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Backstory / historia de fondo",
+   "explicacion": "La historia previa del personaje (traumas de infancia, relación con los padres) justifica sus acciones y reacciones aunque nunca se muestre explícitamente en pantalla, dándole riqueza y coherencia (ej. el miedo a los murciélagos de Batman).",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Código moral del personaje",
+   "explicacion": "Define los límites que el personaje no cruzará (ej. Spider-Man no mata); cuando el personaje respeta un código moral reconocible, el espectador puede identificarse con él y el código genera conflictos dramáticos concretos al ponerlo a prueba.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Características visuales como desarrollo de personaje",
+   "explicacion": "Rasgos visuales (vestuario, marcas físicas, objetos) comunican información del personaje sin necesidad de diálogo explicativo -ej. la cicatriz de soga de Aldo Raine en Malditos Bastardos sugiere un pasado violento sin decirlo.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Punto de vista / creencias del personaje",
+   "explicacion": "El personaje debe tener una cosmovisión propia y consistente (crea o no en la suerte, por ejemplo) aunque no coincida con la del guionista; traicionar ese punto de vista es lo primero que la audiencia detecta como falso.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Fidelidad al personaje",
+   "explicacion": "El escritor debe actuar siempre de manera consistente con la psicología ya establecida del personaje (ej. un jefe mafioso no se rebaja a discutir con un subordinado de bajo rango); traicionar esa coherencia rompe la credibilidad ante la audiencia.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Contexto socioeconómico e investigación de campo",
+   "explicacion": "El entorno del personaje (clase social, profesión, jerarquías) debe investigarse (ej. el equipo de Succession consultando cómo vive gente muy rica) para que sus acciones sean creíbles y fieles a ese contexto.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Arquetipos como punto de partida (Jung, astrología, Myers-Briggs, eneagrama)",
+   "explicacion": "Son herramientas opcionales para arrancar la personalidad de un personaje; no son obligatorias ni definitivas, sino puntos de partida que cada guionista puede usar o descartar según le sirva.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Desarrollo de personaje durante la escritura, reescritura y rodaje",
+   "explicacion": "No hace falta tener todo el personaje resuelto antes de escribir; el desarrollo puede surgir durante el primer borrador, las reescrituras o incluso en preproducción/rodaje al hablar con actores y equipo de vestuario, y obsesionarse con desarrollarlo todo antes de escribir impide terminar el guion.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Detalles no explícitos que el actor o director conocen aunque el guion no los muestre",
+   "explicacion": "Backstory y motivaciones psicológicas que nunca aparecen en pantalla (la pulsera de hermanos, el collar de luna invertida, la infidelidad del padre de Nerea) igual informan la actuación y le dan entidad al personaje a nivel subconsciente para la audiencia.",
+   "grupo": "Construcción de personaje",
+   "fuente": "09_desarrollo_personajes.txt"
+  },
+  {
+   "tecnica": "Función de la escena",
+   "explicacion": "Una escena puede hacer avanzar la historia, revelar información del personaje, marcar un salto temporal (prolepsis/analepsis), narrar un momento clave o ser una escena de transición; esto es una guía flexible, no una receta obligatoria a seguir en cada escena.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Proceso de escritura de escena en tres pasos",
+   "explicacion": "Primero hay que escribir la escena dejándose llevar sin autocensura; luego pensar de qué va y para qué está dentro del guion; recién en un tercer paso agregar información adicional y subtexto. Pensar demasiado en las reglas desde el inicio bloquea la escritura.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Estructura triangular de la escena (general a particular a clímax)",
+   "explicacion": "Analizando la escena inicial de Pulp Fiction, el instructor propone que una escena efectiva va de contexto general, a conocer mejor a los personajes, hasta llegar a una situación climática/conflicto, generando enganche progresivo en el espectador.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Escena inicial / secuencia de apertura como gancho",
+   "explicacion": "El guionista pone mucha fuerza en las primeras páginas porque ahí el productor o lector debe engancharse; estudiar aperturas de películas (Pulp Fiction, El Caballero de la Noche, Taxi Driver, Barbie) enseña distintas formas de generar ese enganche.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Subtexto e indicios en la escena",
+   "explicacion": "Información que se comunica sin decirla explícitamente (miradas, vestuario, comportamiento) permite que la audiencia infiera datos sobre personajes y trama de forma más efectiva que la exposición directa, reforzando la idea de que 'el personaje es lo que hace, no lo que dice'.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Prolepsis y analepsis (flashback / flash-forward)",
+   "explicacion": "Son los términos académicos para saltos temporales hacia el pasado o el futuro entre escenas; el instructor los simplifica como flashback y flash-forward para que sean más manejables al escribir.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Escribir el primer borrador de la escena sin autocensura",
+   "explicacion": "En la primera escritura de una escena hay que dejarse llevar sin preocuparse por ritmo o si cumple todas las funciones narrativas, porque pensar cada línea 600 veces impide terminar de escribir; el análisis y ajuste vienen después, en la reescritura.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Prueba y error y perseverancia frente al fracaso",
+   "explicacion": "El instructor usa sus propios cortometrajes fallidos como ejemplo de que ninguna escena o guion sale bien a la primera; hay que escribir, fallar y reescribir en vez de paralizarse por miedo al fracaso o a la crítica, porque las carreras se construyen sobre fracasos.",
+   "grupo": "Construcción de personaje",
+   "fuente": "10_construccion_escenas.txt"
+  },
+  {
+   "tecnica": "Función del diálogo: hacer avanzar la historia",
+   "explicacion": "Un diálogo tiene dos funciones básicas; una es hacer avanzar la trama, por ejemplo cuando un personaje le encarga a otro una misión.",
+   "grupo": "Función del diálogo",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Función del diálogo: desarrollar al personaje",
+   "explicacion": "La otra función del diálogo es revelar información del personaje, ya sea literalmente (nombre, edad) o a través de su forma de hablar.",
+   "grupo": "Función del diálogo",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Diálogo fiel al personaje",
+   "explicacion": "El personaje no debe decir lo que el guionista querría, sino lo que él diría; la audiencia nota de inmediato cuando un personaje deja de ser fiel a sí mismo.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Diálogo en cubierta vs. al descubierto",
+   "explicacion": "La información puede darse al descubierto (el personaje dice directamente su nombre) o en cubierta, dentro del subtexto: un comentario mundano que en realidad revela algo relevante para la trama, como el ejemplo de las plantas sin regar o los diálogos de Pulp Fiction.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Acento y forma de hablar como caracterización",
+   "explicacion": "El acento, la cadencia y las palabras que usa un personaje revelan su perfil interno y externo; el instructor cita el arquetipo del villano con acento extranjero, a veces usado justamente para subvertir expectativas.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Caracterización de personaje vía vestuario y decorado",
+   "explicacion": "Además del diálogo, objetos del decorado (afiches de teatro, plantas) y el vestuario (un poncho sobre ropa urbana, joyas brillantes) pueden comunicar quién es un personaje sin necesidad de explicarlo en el diálogo.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Información del diálogo como semilla narrativa",
+   "explicacion": "Cada dato que un diálogo entrega, incluso en charlas aparentemente mundanas, la audiencia lo toma como una semilla que espera ver cosechada más adelante; ejemplo citado: la charla de las hamburguesas Royale with Cheese en Pulp Fiction.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "El personaje es lo que hace, no lo que dice",
+   "explicacion": "Al reescribir la escena de José María, el instructor reemplaza la exposición verbal ('funcionó la térmica') por acción directa (José María ya arreglando la térmica), porque el personaje se define por lo que hace, no por lo que declara.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "El diálogo se domina con experiencia, no con teoría",
+   "explicacion": "A nivel académico la función del diálogo es simple, pero escribir buenos diálogos es la parte más difícil y frustrante del guion; solo se mejora escribiendo mucho, no solo estudiando teoría.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "No preocuparse por el diálogo en el primer borrador",
+   "explicacion": "En el primer borrador el diálogo puede ser un cliché; no hay que trabarse en la misma escena, hay que terminar de escribir y recién en la reescritura sofisticar el diálogo.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Caso de estudio: reescritura de la escena José María y Olivia",
+   "explicacion": "El instructor toma un guion propio de cuando tenía 19 años (escena de apertura con José María, el portero, y Olivia, una chica que se muda) y lo reescribe en vivo para mostrar cómo mejorar el diálogo, la información en cubierta, la caracterización por acento y vestuario, y el ritmo de la apertura.",
+   "grupo": "Caracterización y voz",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "La crítica constructiva revela potencial, no ataque",
+   "explicacion": "Cuando alguien dice que un guion 'no funciona así como está' no es un ataque personal: detrás de la crítica constructiva siempre hay alguien que ve potencial en la historia y quiere exprimirlo al máximo.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "11_dialogos.txt"
+  },
+  {
+   "tecnica": "Géneros narrativos como marco de convenciones",
+   "explicacion": "Un género narrativo (western, terror, policial, etc.) es un marco que dota a la historia de convenciones que facilitan contarla y le dan estructura; se puede seguir a rajatabla o romper.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Mezcla de géneros",
+   "explicacion": "Los géneros narrativos se pueden combinar entre sí (ej. Us de Jordan Peele es comedia de terror); no son compartimentos estancos.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Teoría del iceberg de Hemingway",
+   "explicacion": "Ernest Hemingway plantea que toda historia tiene una superficie visible (la trama tal como se cuenta) y una profundidad de temas y símbolos que hay que analizar para descubrir; lo simple no es sinónimo de superficial.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Temas de la historia (profundidad simbólica)",
+   "explicacion": "Toda historia, aunque no se lo proponga, termina hablando de temas humanos básicos (amor, justicia, muerte, pertenencia); son la parte de la profundidad del iceberg.",
+   "grupo": "Caracterización y voz",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Asociación entre género narrativo y temas profundos",
+   "explicacion": "Cada género trae consigo temas recurrentes: western - libertad y relación hombre-naturaleza; comedia - desafío al establishment; acción - autosuperación; aventura - autodescubrimiento; fantasía - bien contra el mal y razón contra fe; ciencia ficción - humano contra tecnología, el cambio, la muerte; películas históricas - humanidad y civilización contra barbarie; bélico - el costado oscuro de la humanidad; terror - miedo a lo desconocido y el subconsciente; drama - amor y vínculos humanos; misterio y policial - la justicia y la motivación del mal. Sirve como punto de partida, no como receta rígida.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "El terror como vehículo del subconsciente humano",
+   "explicacion": "El terror suele hablar del miedo a lo desconocido y del subconsciente, el lugar psicológico al que más se teme entrar porque ahí están las pulsiones reprimidas; ejemplo citado: Us de Jordan Peele, cuyo iceberg es literalmente la guerra entre el ego y el subconsciente, representada por dos personajes idénticos, uno oculto abajo.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Convertir un tema abstracto en algo simbólico y concreto",
+   "explicacion": "Cuando cuesta narrar directamente un tema abstracto (ej. la ansiedad), conviene darle forma corpórea dentro de un género, por ejemplo convertir la ansiedad en un monstruo dentro de una historia de terror, para volver el tema un conflicto dramatizable.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Análisis de iceberg: El Exorcista",
+   "explicacion": "Superficie: una madre busca ayuda de dos curas porque su hija es poseída. Profundidad: el conflicto de fe del cura joven, la incomprensión materna hacia una hija adolescente, y la adolescencia vivida como rebelión total contra los padres y la religión.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "No empezar a escribir por la profundidad temática",
+   "explicacion": "No hay que obsesionarse con el simbolismo antes de tener la historia: primero se cuenta la historia, incluso sin saber el tema, y los temas subyacentes se descubren o desarrollan en la reescritura; forzar el simbolismo desde el inicio traba a muchos guionistas, que nunca terminan un primer borrador.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Save the Cat (Blake Snyder)",
+   "explicacion": "Libro que el instructor considera demasiado recetario (dicta página por página qué debe ocurrir) pero que sigue mencionando por ser un best-seller muy usado en escuelas de cine; propone arquetipos de historia en vez de géneros clásicos.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: Un monstruo en mi casa",
+   "explicacion": "Premisa de Tiburón, Alien o El Exorcista: qué pasa cuando el mal se mete dentro de la cotidianidad del hogar.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: El tesoro escondido",
+   "explicacion": "La historia de aventuras por excelencia (Indiana Jones, Misión Imposible) y también las películas de robo a banco: un protagonista debe buscar algo oculto.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: La lámpara maravillosa",
+   "explicacion": "Un objeto o hechizo otorga un poder sobrenatural que trae tanto beneficios como una contra inevitable (Aladín, La Máscara, Bruce Todopoderoso, la pata de mono).",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: Un tipo corriente se enfrenta a circunstancias poco corrientes",
+   "explicacion": "Un protagonista común se ve arrastrado a una trama que lo supera (North by Northwest, Die Hard, Terminator); genera identificación fácil con la audiencia porque ese protagonista podría ser cualquiera.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: Ritos de iniciación (Coming of Age)",
+   "explicacion": "Películas centradas en el crecimiento de un personaje, típicamente el paso de la niñez o adolescencia a la adultez (Superbad, The Breakfast Club).",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: Amor de colegas (buddy movie)",
+   "explicacion": "Dos personajes que no tienen mucho en común deben aliarse para cumplir un objetivo (Tonto y Retonto, Buscando a Nemo, la dupla clásica de policías que no se llevan bien).",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: ¿Por qué lo hizo? (whydunit)",
+   "explicacion": "Thrillers y policiales (Se7en, Chinatown) donde la pregunta central no es quién es el asesino sino qué lo motivó; sirve para explorar la oscuridad humana.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: El triunfo del tonto",
+   "explicacion": "El personaje menospreciado por todos termina demostrando lo contrario (Forrest Gump, Zoolander).",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: Soy un interno (pertenencia a un grupo)",
+   "explicacion": "La aspiración central del protagonista es pertenecer a un clan o grupo (películas de gánsters como El Padrino o Goodfellas; el instructor lo extiende también a algo como Tarzán).",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Arquetipo: El superhéroe",
+   "explicacion": "Un personaje dotado de poderes o cualidades por encima de lo común decide usarlos para el bien, con toda la responsabilidad que eso conlleva; el instructor nota que el arquetipo también aparece en westerns, donde el cowboy funciona casi como una figura de autoridad sobrehumana.",
+   "grupo": "Arquetipos narrativos (Save the Cat)",
+   "fuente": "12_generos_temas.txt"
+  },
+  {
+   "tecnica": "Salir de la rutina para encontrar ideas",
+   "explicacion": "Las ideas no se buscan activamente, se encuentran; una vida excesivamente rutinaria limita su aparición. Salir a caminar, viajar, leer o juntarse con amigos a 'abarajar ideas' estimula la creatividad; uno de los pilotos de la última serie del instructor nació en una juntada de amigos.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Las ideas se marinan en el subconsciente hasta imponerse",
+   "explicacion": "Citando a Stephen King, las buenas ideas se quedan pegadas en el subconsciente y son imposibles de sacarse de la cabeza; esa persistencia es la señal de que es la idea indicada con la que hay que sentarse a escribir.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Escribir es transponer la idea del plano etéreo al plano real",
+   "explicacion": "Las primeras palabras del primer borrador frustran porque traen una idea perfecta del mundo de las ideas (donde uno es dios y todo es posible) hacia el mundo tangible e imperfecto; esa fricción es normal y no debe detener la escritura.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Terminar el primer borrador a toda costa",
+   "explicacion": "Menos del 1% de quienes empiezan a escribir un guion terminan el primer borrador; no importa si es horrible, terminarlo ya es un acto heroico y el único objetivo real en esa etapa. El primer borrador suele ser malo (cita a Hemingway) y eso está bien.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Bloqueo creativo: empujar o tomar distancia, pero sin procrastinar",
+   "explicacion": "Ante el bloqueo creativo hay dos caminos válidos: forzar la escritura hasta terminar el borrador cueste lo que cueste, o tomarse un tiempo breve para volver a buscar ideas; el enemigo real es la procrastinación disfrazada de necesitar inspirarse, que puede terminar en nunca volver a escribir.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Registrar el guion en el organismo de propiedad intelectual",
+   "explicacion": "Tras terminar el primer borrador conviene registrarlo (ej. Dirección Nacional del Derecho de Autor en Argentina), un trámite simple y hoy mayormente online.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Tomar distancia temporal antes de corregir",
+   "explicacion": "Justo después de terminar el primer borrador la visión está sesgada por amor u odio hacia el propio trabajo; dejarlo reposar un tiempo permite volver con perspectiva más objetiva antes de reescribir.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Poder contar la premisa en tres líneas",
+   "explicacion": "Si el propio guionista no puede resumir su guion en una premisa simple de tres líneas, hay una falla de estructura o algo que el autor mismo no terminó de entender de su historia; sin premisa clara no hay forma de vendérsela a un productor.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Revisar si los personajes funcionan en la reescritura",
+   "explicacion": "Un error común de principiantes son los personajes acartonados que solo mueven la trama; en la reescritura hay que retomar historia pasada, relaciones y trasfondo del personaje. El instructor cita un guion que tardó tres años en madurar su protagonista.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Revisar el ritmo de las escenas en la reescritura",
+   "explicacion": "Una escena bien manejada suele partir de un contexto general y acercarse cada vez más a un punto de conflicto sin retorno; en la reescritura hay que evaluar si cada escena importante logra ese acercamiento y si evoca la emoción buscada.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Buscar feedback honesto, no complaciente",
+   "explicacion": "Mostrar el guion solo a familiares o amigos cercanos no sirve porque siempre van a decir que está bien; hay que buscar a alguien sin miedo de decir que el guion es malo, capaz de detectar el potencial detrás de los problemas.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "El diálogo sigue siendo amorfo hasta el rodaje y el montaje",
+   "explicacion": "El diálogo es de los últimos puntos a revisar en la reescritura porque nunca queda tal cual está en el guion: actores y director lo modifican en rodaje, y en montaje se cortan líneas.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Plantar y cosechar (arma de Chéjov)",
+   "explicacion": "Nada en un guion debe estar librado al azar: todo lo que se planta (un objeto, un dato) debe cosecharse más adelante, o hay que cortarlo. Ejemplo citado: el lanzallamas de Once Upon a Time in Hollywood.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Si algo te genera dudas como guionista, córtalo",
+   "explicacion": "Lo que a uno como escritor le genera un mínimo de ruido, a la audiencia le va a generar mucho más ruido; ante la duda sobre una escena o línea, la recomendación es cortarla y, si vale la pena, reutilizarla en otro proyecto.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Caso de estudio: Educando a la Mandrágora (8 versiones)",
+   "explicacion": "El instructor recorre ocho versiones reales del guion del episodio Educando a la Mandrágora (serie Hay Algo en el Bosque), mostrando cómo fue condensando diálogo explicativo, cambiando quién patea la puerta para darle épica a la escena, y construyendo el arco de redención de la villana Claritita junto con la actriz en preproducción.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Darle al villano una oportunidad de redención",
+   "explicacion": "Un antagonista gana profundidad si en algún momento se le ofrece una salida hacia el bien; que decida rechazarla, como Claritita al volver a mirar su celular y elegir el odio de los comentarios, es lo que la convierte definitivamente en villana y justifica su destino trágico.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "El personaje es lo que hace, no lo que dice (mostrar, no contar)",
+   "explicacion": "En la reescritura del clímax, el instructor elimina diálogos que explicitan lo que el espectador ya está viendo (Markel diciéndole a Claritita que se alimenta de la fama) y lo reemplaza por notificaciones en pantalla que muestran el fenómeno en vez de explicarlo.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Humanizar al villano dándole una motivación comprensible",
+   "explicacion": "Trabajando con la actriz, el instructor añade rasgos y motivaciones reconocibles a Claritita (envidia de ver a otros triunfar, sentirse validada por comentarios de odio) para que no sea solo una caricatura de hater sino un ser humano con una razón que se puede entender aunque no se comparta.",
+   "grupo": "Caracterización y voz",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Contratar un consultor de guion (con cuidado)",
+   "explicacion": "Un buen consultor da feedback minucioso que desmenuza el guion, no un resumen con puntos positivos y negativos; hay que investigar las referencias reales de quien se contrata, porque abundan los que exageran su experiencia en la industria.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Enviar a concursos de guion (con expectativas moderadas)",
+   "explicacion": "Pueden acercar a productoras y distribuidoras, pero no hay que convertirlo en un agujero de dinero; el propio instructor perdió todos los concursos a los que se presentó, incluida esta misma serie, y le funcionó mejor vender guiones por su cuenta. Cita que Paul Thomas Anderson también perdió un concurso con Boogie Nights.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Primero la historia, después todo lo demás",
+   "explicacion": "Toda la teoría (iceberg, temas, construcción psicológica de personajes) es secundaria; lo primero y principal es que se está contando una historia, y esa historia necesita conflicto, que a su vez necesita personajes.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Duele más el arrepentimiento que el fracaso",
+   "explicacion": "Fracasar y levantarse es doloroso pero recuperable; no intentarlo por miedo genera un arrepentimiento mucho mayor a largo plazo. El instructor cuenta que perdió todos los concursos a los que se presentó y vio progresar a otros a su lado, y que eso también es parte del camino.",
+   "grupo": "Género, tema y cierre",
+   "fuente": "13_ejecucion.txt"
+  },
+  {
+   "tecnica": "Empatía con el lector",
+   "explicacion": "Conectar emocionalmente compartiendo experiencias o situaciones que el lector podría haber vivido (anécdotas, alegrías, frustraciones) para que sienta que no está solo. Cita: 'Empieza con empatía, continúa con la utilidad' (John Atom Code Man, Facebook/Intercom).",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "14_platzi_empatia_utilidad_lector.txt"
+  },
+  {
+   "tecnica": "Utilidad del contenido (soluciones prácticas aplicables)",
+   "explicacion": "Ofrecer consejos concretos que el lector pueda implementar de inmediato (ej. escribir una carta a alguien que aprecie para romper el bloqueo de la página en blanco); la utilidad es lo que engancha después de la empatía.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "14_platzi_empatia_utilidad_lector.txt"
+  },
+  {
+   "tecnica": "Buyer persona del lector (quién es, por qué/cómo lo hace, cuándo lo hace)",
+   "explicacion": "Construir una figura imaginaria del lector a partir de su perfil demográfico/socioeconómico, sus motivaciones y métodos, y sus patrones de consumo de información, para enviar el mensaje correcto en el momento oportuno.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "14_platzi_empatia_utilidad_lector.txt"
+  },
+  {
+   "tecnica": "Ejercicio del lector crítico (autorrevisión con 3 preguntas)",
+   "explicacion": "Revisar el propio texto preguntando: ¿qué siente mi lector? (¿evoco una emoción o es un texto plano?), ¿qué preguntas quedan sin responder? (evitar dejar al lector más confundido que informado), ¿hago trabajar de más al lector? (no saturar de información).",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "14_platzi_empatia_utilidad_lector.txt"
+  },
+  {
+   "tecnica": "Regla tú vs yo (lector como protagonista)",
+   "explicacion": "Reemplazar 'yo'/'nosotros' por 'tú'/'ustedes' para trasladar el foco de la narrativa del escritor al lector, evitando que un texto dirigido al usuario termine siendo una declaración empresarial vacía. Es la versión de copywriting de poner al lector/espectador como protagonista activo; se refuerza con la 'técnica del tú invisible' de los guiones de video corto (archivo 22) y con el uso del pronombre 'tú' en titulares (archivo 20).",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "14_platzi_empatia_utilidad_lector.txt"
+  },
+  {
+   "tecnica": "Pictograma vs ideograma (palabra concreta)",
+   "explicacion": "Los pictogramas (palabras que representan objetos reales y concretos, ej. 'perro') se procesan más fácilmente que los ideogramas (símbolos que requieren contexto y mayor carga cognitiva, ej. 'paz'); para claridad y retención, preferir palabras que evoquen imágenes concretas. Es el equivalente léxico de 'mostrar en vez de contar / show don't tell' del guion cinematográfico: la palabra concreta 'muestra' una imagen mental en vez de 'contar' una abstracción.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "15_platzi_tipos_de_palabras.txt"
+  },
+  {
+   "tecnica": "Metáfora del cazador y la presa (poner trampas de interés)",
+   "explicacion": "El escritor es el cazador y el lector la presa: se deben poner 'trampas' a lo largo del texto (primeras líneas de cada párrafo, evitar lugares comunes, información relevante que despierte curiosidad) para mantener la atención.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "16_platzi_atencion_gancho_piramide_invertida.txt"
+  },
+  {
+   "tecnica": "Regla de la primera línea impactante (evitar frases genéricas de apertura)",
+   "explicacion": "La primera línea de cada párrafo es la primera impresión; evitar aperturas vacías como 'De acuerdo con…', 'Es importante que…', 'En mi opinión…' y comenzar directamente con el hecho o la tesis. Es la aplicación a nivel de párrafo del mismo principio que la 'apertura in medias res / gancho de impacto' y la 'regla de duración corta de la introducción' del curso de guion (archivo 05_estructura_introduccion): entrar directo al contenido de valor sin rodeos.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "16_platzi_atencion_gancho_piramide_invertida.txt"
+  },
+  {
+   "tecnica": "Esquema situación-problema-pregunta (generar interés con preguntas)",
+   "explicacion": "Estructurar el texto en tres pasos —situación (contexto), problema (obstáculo) y pregunta (incógnita intrigante a responder más adelante)— para instar al lector a seguir leyendo.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "16_platzi_atencion_gancho_piramide_invertida.txt"
+  },
+  {
+   "tecnica": "Pirámide de Milito (preguntas primero, explicaciones después)",
+   "explicacion": "Presentar primero las preguntas centrales del texto y luego las explicaciones/respuestas, satisfaciendo la curiosidad del lector de forma ordenada y manteniéndolo interesado desde el inicio.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "16_platzi_atencion_gancho_piramide_invertida.txt"
+  },
+  {
+   "tecnica": "Pirámide invertida (dato relevante primero)",
+   "explicacion": "Ordenar la información para que el dato/acción más relevante encabece el texto (ej. 'Por primera vez en cinco años, cayó la venta de autos en julio' en vez de empezar con la fuente estadística), aumentando el interés y la comprensión desde la primera línea.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "16_platzi_atencion_gancho_piramide_invertida.txt"
+  },
+  {
+   "tecnica": "Tiempo de la historia vs tiempo del relato",
+   "explicacion": "El tiempo de la historia es la duración real de los hechos; el tiempo del relato es cuánto espacio narrativo el escritor le dedica en el texto. La diferencia intencional entre ambos genera velocidad o lentitud, es decir, el ritmo narrativo.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Elipsis narrativa",
+   "explicacion": "Cortar por completo información que ocurrió en la historia pero no aporta al objetivo del relato (no se menciona, no existe en el texto); es la figura de velocidad más rápida porque elimina fragmentos enteros del tiempo de la historia.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Sumario (alta densidad de verbos)",
+   "explicacion": "Resume varias acciones en pocas palabras comprimiendo los hechos sin borrarlos; se caracteriza por una alta concentración de verbos (acciones), lo que hace que el texto corra rápido.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Escena narrativa (tiempo del relato ≈ tiempo de la historia)",
+   "explicacion": "Ocurre cuando el tiempo del relato se acerca mucho al tiempo de la historia, como en los diálogos: leer las palabras toma casi lo mismo que pronunciarlas en la realidad; estabiliza el ritmo entre lo real y lo narrado.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Pausa narrativa",
+   "explicacion": "La figura más lenta: extiende un instante brevísimo de la historia mediante pensamientos y descripciones internas detalladas, desacelerando el texto al máximo.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Alternancia de figuras de velocidad (ritmo por combinación)",
+   "explicacion": "El ritmo no depende de usar siempre la misma velocidad sino de vincular sumarios, pausas, escenas y elipsis según lo que cada momento necesita, como ilustra un párrafo de García Márquez que combina las cuatro figuras en pocas líneas.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "17_platzi_ritmo_tiempo_narrativo.txt"
+  },
+  {
+   "tecnica": "Metáfora como herramienta de memoria y aprendizaje",
+   "explicacion": "Las metáforas simplifican conceptos complejos conectándolos con situaciones cotidianas familiares (traductor entre lenguaje abstracto y mundo real), volviendo la información tangible, memorable y más fácil de recordar porque se liga a experiencias o emociones previas.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Humor asociado a metáforas",
+   "explicacion": "Insertar humor junto con metáforas hace el contenido más atractivo y facilita la retención de información (ej. imagen de un huevo haciendo 'stand-up' con tomates volando para ilustrar un anuncio).",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Contexto cultural de las metáforas",
+   "explicacion": "Una metáfora efectiva en una cultura puede no tener sentido en otra (referencias específicas de México pueden no ser claras en Japón); para audiencias internacionales conviene usar referencias globalmente comprensibles.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Metáfora de orientación (dirección espacial)",
+   "explicacion": "Conceptualiza ideas según dirección espacial por acuerdo social compartido, ej. felicidad='arriba' ('levantó mi ánimo'), tristeza/dificultad='abajo' ('está en su punto más bajo').",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Metáfora de sustancia y entidad",
+   "explicacion": "Basada en experiencias pasadas con objetos o sucesos, ej. 'la inflación me enferma' (malestar físico para impacto económico negativo), 'él es un buen partido' (cualidades positivas sin referencia deportiva).",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Metáfora de recipiente (dentro/fuera)",
+   "explicacion": "Entiende conceptos como entidades con un límite interior/exterior, ej. 'estoy fuera de mí' (enojo), 'cayó en depresión' (estado emocional sin descenso literal).",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Personificación (metáfora)",
+   "explicacion": "Atribuye características humanas a objetos o situaciones para permitir empatía, ej. 'la vida me ha estafado', 'la inflación ha atacado'; técnica común en cine.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Metonimia",
+   "explicacion": "Menciona una cosa a través de otra con relación directa, ej. 'leer al Marqués de Sade' (sus obras, no el individuo), 'buenas cabezas en la universidad' (personas inteligentes).",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "18_platzi_metaforas_humor.txt"
+  },
+  {
+   "tecnica": "Fórmula de titular '¿Cómo hacer…?' + beneficio",
+   "explicacion": "Pregunta con verbo, sustantivo y beneficio claro, ej. 'Cómo ganar amigos e influir sobre las personas'; atrae ofreciendo un resultado deseable.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "Fórmula de titular número + sustantivo + verbo + complemento",
+   "explicacion": "Los números en titulares tienen alto poder de atracción por su impacto inmediato y conciso, ej. 'Más de un millón de alumnos abandonan sus estudios en México'.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "Fórmula de titular verbo + deseo + complemento + negación",
+   "explicacion": "Introducir negaciones genera curiosidad o rompe tabúes al resaltar un beneficio inesperado, ej. 'Aprende a programar sin saber matemáticas'.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "Fórmula de titular consigue + deseo + tiempo",
+   "explicacion": "Establecer un marco temporal genera urgencia y motiva la acción del lector, ej. 'Consigue vender tu casa al mejor precio en un mes'.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "Ética de titulares (veracidad, sin sensacionalismo)",
+   "explicacion": "Cumplir lo que el titular promete; mentir para ganar clics perjudica la credibilidad y aleja seguidores a largo plazo. Generar curiosidad con moderación, sin recurrir al sensacionalismo.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "Pronombre 'tú' en titulares (conexión personal)",
+   "explicacion": "Usar pronombres como 'tú' ayuda a crear una conexión más personal y directa con el lector, involucrándolo directamente en el titular.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "20_platzi_titulares.txt"
+  },
+  {
+   "tecnica": "El Baile (contexto vs conflicto, open loop constante)",
+   "explicacion": "Toda historia que retiene alterna entre información de base y obstáculos: se entrega contexto, surge un conflicto que abre una duda o tensión mental (open loop), se resuelve parcialmente y surge un nuevo conflicto; cada respuesta debe detonar una nueva pregunta.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Regla de South Park (Pero / Por lo tanto, evitar 'Y entonces')",
+   "explicacion": "Evitar 'Y entonces...' porque solo apila información lineal y aburre; usar 'Pero...' o 'Por lo tanto...' porque introducen causalidad, giros y fricción narrativa: [Acción/Contexto] → PERO [Conflicto/Giro] → POR LO TANTO [Consecuencia]. Es una implementación concreta de evitar la exposición plana / 'mostrar en vez de contar' del guion cinematográfico: reemplaza la enumeración pasiva de hechos por causalidad dramática.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Ritmo y cadencia (musicalidad, variación de longitud de frases)",
+   "explicacion": "El cerebro desconecta ante patrones monótonos o predecibles; combinar oraciones muy cortas, medianas y largas acelera o pausa el discurso, y escribir en voz alta asegura que el guion suene natural.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Truco visual del margen irregular",
+   "explicacion": "Escribir una frase por línea: si el margen derecho queda parejo/recto, las frases miden lo mismo y sonarán monótonas; si queda en zigzag, el ritmo es variado y dinámico. Herramienta de diagnóstico visual para la variación de longitud de frases.",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Tono conversacional (1 a 1)",
+   "explicacion": "La audiencia en redes sociales rechaza conferencias o cátedras rígidas y busca cercanía; creadores como Ibai Llanos o David Broncano destacan por hablar como si charlaran con un amigo, no dar una clase formal.",
+   "grupo": "Tono conversacional",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Técnica de la nota de voz de WhatsApp",
+   "explicacion": "Escribir y grabar imaginando que se envía una nota de voz por WhatsApp a un amigo cercano; elimina la barrera psicológica de la cámara y genera autenticidad.",
+   "grupo": "Tono conversacional",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "La Dirección: escribir el guion desde el final",
+   "explicacion": "Construir una narrativa sólida requiere saber con exactitud a qué conclusión o transformación llegará la audiencia; método: 1) definir la idea central/frase final, 2) redactar el gancho inicial, 3) rellenar el cuerpo intermedio con el baile de contexto/conflicto.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "El 'Último Gancho' (frase final memorable)",
+   "explicacion": "La frase final debe ser la más memorable, aquella que invite a compartir o reflexionar.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Loop de cierre (bucle en video corto)",
+   "explicacion": "En formatos como TikTok o Reels, la frase de cierre debe enlazar naturalmente con el inicio para fomentar reproducciones continuas. Refuerza, en formato de video corto, la misma idea de que 'el final debe conectar y satisfacer' del curso de guion cinematográfico (archivo 07_estructura_final), llevada aquí al extremo de generar un bucle que reinicia la reproducción.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Las Gafas de la Historia (prisma de diferenciación)",
+   "explicacion": "En internet la mayoría de los temas ya están cubiertos; lo que genera interés es la perspectiva única. Metáfora de la luz: el tema es un haz de luz blanca estándar y el enfoque/experiencias/metáforas/estilo del creador actúan como un prisma que lo descompone en un espectro de colores único. No compitas solo por la información (el qué), sino por el ángulo y la voz (el cómo).",
+   "grupo": "Ritmo y lenguaje figurado",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "El Gancho (hook de entrada, primeros 3 segundos)",
+   "explicacion": "El gancho define si el usuario se queda o pasa al siguiente video en los primeros 3 segundos. Gancho verbal: directo y enfocado en el problema, evitando frases vacías de clickbait ('No vas a creer esto'). Gancho visual: mostrar una imagen de alto impacto inmediatamente, ya que los ojos procesan la información mucho más rápido que los oídos. Es la versión en video corto de la 'apertura in medias res / gancho de impacto' y la 'regla de duración corta de la introducción' del curso de guion cinematográfico (archivo 05_estructura_introduccion), llevada al extremo de una ventana de 3 segundos.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "21_storytelling_video_6_tecnicas.md"
+  },
+  {
+   "tecnica": "Retención media (métrica reina de la viralidad)",
+   "explicacion": "A diferencia de likes, comentarios, vistas y seguidores (que se pueden inflar o comprar) o los shares (valiosos pero difíciles de predecir), la retención media es la métrica predecible y controlable que se debe optimizar; el objetivo del guion es planificar el impacto, eliminar lo prescindible y desarrollar una sola idea central por video.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Regla de retención del 50%",
+   "explicacion": "Si un video retiene a más del 50% de la audiencia en promedio (ej. más de 15 segundos en un video de 30 segundos), la probabilidad algorítmica de viralización asciende a un 90%.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Efecto Zeigarnik (bucles abiertos / open loops)",
+   "explicacion": "Descubierto en 1927 por la psicóloga Bluma Zeigarnik: el cerebro humano recuerda significativamente mejor las tareas incompletas o interrumpidas que las ya concluidas ('lo inconcluso se queda grabado en la mente'). Aplicado a video: mantener bucles de intriga abiertos a lo largo de la pieza para que el espectador siga mirando mientras su mente busca cerrar la tensión cognitiva. Es el mecanismo psicológico detrás del cierre en bucle y de las preguntas sin responder que ya usa el guion de ficción (los 'open loops' equivalen al mecanismo que sostiene un buen cierre en bucle o un primer punto de giro que deja una pregunta abierta): explica por qué dejar una pregunta abierta retiene audiencia.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Estructura de la doble caída (6 pasos)",
+   "explicacion": "Adaptación compacta del viaje del héroe en 4 fases narrativas ([Problema 1]→[Solución 1]→[Problema Peor/Doble Caída]→[Solución Definitiva]), expandida a 6 pasos para formato corto sin miniatura ni título externo: 1) Romper Patrón, 2) Intriga/Gancho Negativo, 3) Problema 1, 4) Solución Parcial, 5) Problema 2 (Doble Caída), 6) Solución Final. Supera el esquema tradicional ambiguo Gancho→Cuerpo→CTA.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Romper patrón (disrupción en el segundo 0)",
+   "explicacion": "Acción visual/sonora disruptiva en el segundo 0, opuesta al estándar del nicho, para detener el scroll automático; primer paso de la estructura de doble caída.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Cliffhangers / micro-hooks intermedios",
+   "explicacion": "Conectar cada sección con pequeñas preguntas o frases de enlace que anticipen la siguiente revelación (ej. 'Pero hay un detalle que casi todos ignoran…'), manteniendo la tensión entre los 6 pasos de la doble caída.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Zoom in a detalle sensorial concreto",
+   "explicacion": "Evitar frases genéricas y abstractas ('Cuando empecé nadie veía mis videos') y cambiarlas por detalles sensoriales y emocionales concretos ('Publicaba todos los días y solo mi mamá me daba like'). Es la aplicación en video corto del principio de 'mostrar en vez de contar / show don't tell' que ya aparece en varios archivos del curso de guion cinematográfico: el detalle concreto sensorial sustituye la afirmación abstracta.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  },
+  {
+   "tecnica": "Técnica del 'tú invisible' (segunda persona singular)",
+   "explicacion": "Redactar y hablar en segunda persona singular ('tú'), no en plural ('ustedes'/'mi audiencia'), para crear la percepción psicológica de una conversación uno a uno. Es la misma mecánica que la 'regla tú vs yo' del copywriting (archivo 14) y el uso del pronombre 'tú' en titulares (archivo 20): poner al lector/espectador como protagonista directo del mensaje.",
+   "grupo": "Atención, retención y gancho",
+   "fuente": "22_estructura_doble_caida_retencion.md"
+  }
+ ]
+}

@@ -131,7 +131,22 @@
             <div class="form-section" id="script-section" data-status="locked">
                 <span class="step-badge"></span>
                 <h2>Paso 2: Elige el ángulo</h2>
-                <div class="angles-grid">
+
+                <!-- Motor de guion. `grafo` decide él mismo la estructura narrativa a partir del
+                     catálogo de técnicas (curso de guion + retención de video corto), así que en
+                     ese modo el ángulo no se elige: los ángulos se ocultan. -->
+                <div class="motor-guion">
+                    <label for="motor-guion">Cómo se escribe el guion</label>
+                    <select id="motor-guion" onchange="elegirMotorGuion(this.value)">
+                        <option value="gemini" selected>Por ángulo — lo elijo yo (como siempre)</option>
+                        <option value="grafo">Por estructura — la elige el grafo de técnica narrativa</option>
+                    </select>
+                    <p class="hint" id="hint-motor">
+                        El de siempre: elegís uno de los 7 ángulos y el guion se escribe con esa lente.
+                    </p>
+                </div>
+
+                <div class="angles-grid" id="angles-grid">
                     <div class="angle-card" onclick="selectAngle(1)">
                         <strong><span class="angle-num">1</span> Lenguaje Corporal</strong>
                         <p>Lo que nadie notó en el video</p>

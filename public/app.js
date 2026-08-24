@@ -67,7 +67,7 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, carpetasDestino: [] };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], motorGuion: 'gemini', gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, carpetasDestino: [] };
     renderFuentesLista();
     renderMaterialesLista();
     sessionStorage.removeItem('farandula_job_id');
@@ -137,6 +137,7 @@ let state = {
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
     materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
     nombresDetectados: [],    // [{leido, sugerido, carpeta, confianza, decir}] — cotejo contra las carpetas de Drive
+    motorGuion: 'gemini',     // 'gemini' (elijo el ángulo) | 'grafo' (la estructura la elige el grafo)
     // Videos gemelos (ver el bloque de abajo). Apagado por defecto: con `gemelos: false` nada de
     // esto se ejecuta y el flujo es exactamente el de siempre.
     gemelos: false,
@@ -981,6 +982,23 @@ async function procesarFuentes() {
 }
 
 // PASO 2: Seleccionar ángulo
+// Motor de guion. Con `grafo`, la estructura narrativa la elige el motor a partir del catálogo de
+// técnicas, así que los ángulos NO se eligen y se ocultan — pedido explícito del usuario: "no me
+// interesa escoger el ángulo en graphify, quiero que él mismo lo escoja".
+function elegirMotorGuion(valor) {
+    state.motorGuion = valor === 'grafo' ? 'grafo' : 'gemini';
+    const esGrafo = state.motorGuion === 'grafo';
+    document.getElementById('angles-grid')?.classList.toggle('hidden', esGrafo);
+    if (esGrafo) document.getElementById('custom-angle-group')?.classList.add('hidden');
+    const hint = document.getElementById('hint-motor');
+    if (hint) {
+        hint.textContent = esGrafo
+            ? 'El motor lee la noticia y elige él mismo cómo estructurarla, con las técnicas del curso de guion y del material de retención. No hace falta elegir ángulo. En modo gemelos, cada video sale de una estructura distinta.'
+            : 'El de siempre: elegís uno de los 7 ángulos y el guion se escribe con esa lente.';
+    }
+    log(esGrafo ? '🎓 Guion por estructura: la elige el grafo de técnica narrativa' : '🎯 Guion por ángulo: lo elegís vos');
+}
+
 function selectAngle(angle) {
     state.selectedAngle = angle;
 
@@ -1000,13 +1018,14 @@ function selectAngle(angle) {
 
 // PASO 2.5: Generar guion
 async function handleGenerateScript() {
-    if (!state.selectedAngle) {
+    // Con el motor del grafo no hay ángulo que elegir: la estructura la decide él.
+    if (!state.selectedAngle && state.motorGuion !== 'grafo') {
         alert('Selecciona un ángulo primero');
         return;
     }
 
     let angleContent = null;
-    if (state.selectedAngle === 7) {
+    if (state.selectedAngle === 7 && state.motorGuion !== 'grafo') {
         angleContent = document.getElementById('custom-angle').value;
         if (!angleContent.trim()) {
             alert('Escribe tu enfoque personalizado');
@@ -1031,6 +1050,7 @@ async function handleGenerateScript() {
             angle: state.selectedAngle,
             angleContent: angleContent,
             jobId: state.jobId,
+            motor: state.motorGuion,
             // Modo gemelos: el server escribe los DOS guiones en la misma llamada (el segundo con
             // el primero como "esto es lo que NO podés parecerte") y le busca al segundo su propio
             // título y descripción.

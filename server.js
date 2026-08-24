@@ -871,9 +871,17 @@ app.post('/api/resintetizar', async (req, res) => {
 // ETAPA 2: Generar Guion
 app.post('/api/generate-script', async (req, res) => {
   try {
-    const { cronica, angle, angleContent, jobId, gemela, metadatos } = req.body;
+    const { cronica, angle, angleContent, jobId, gemela, metadatos, motor } = req.body;
 
-    if (!cronica || !angle) {
+    // Motor de guion (router `MOTORES_GUION` de gemini.js). `grafo` elige él mismo la estructura
+    // narrativa a partir del catálogo de técnicas, así que en ese modo NO hace falta ángulo — es
+    // justamente lo que el usuario pidió no tener que elegir.
+    const motorElegido = motor && gemini.MOTORES_GUION[motor] ? motor : 'gemini';
+    if (motor && !gemini.MOTORES_GUION[motor]) {
+      return res.status(400).json({ error: `Motor de guion desconocido: ${motor}` });
+    }
+    if (!cronica) return res.status(400).json({ error: 'Falta cronica' });
+    if (!angle && motorElegido !== 'grafo') {
       return res.status(400).json({ error: 'Faltan cronica o angle' });
     }
 
@@ -886,8 +894,9 @@ app.post('/api/generate-script', async (req, res) => {
     // En modo gemelo cada video recibe SUS citas (repartidas), no todas.
     const citasA = citasDeVariante(materiales, 'A');
 
-    console.log(`✍️ Generando guion (ángulo ${angle})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
-    const script = await gemini.escribirGuion(cronica, angle, angleContent, citasA);
+    const comoElige = motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`;
+    console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
+    const script = await gemini.escribirGuion(cronica, angle, angleContent, citasA, null, motorElegido);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
@@ -898,7 +907,7 @@ app.post('/api/generate-script', async (req, res) => {
     if (gemela) {
       try {
         const citasB = citasDeVariante(materiales, 'B');
-        const scriptB = await gemini.escribirGuion(cronica, angle, angleContent, citasB, script);
+        const scriptB = await gemini.escribirGuion(cronica, angle, angleContent, citasB, script, motorElegido);
         const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
         const metadatosB = await gemini.variarMetadatos(cronica, scriptB, metadatos || {});
         gemelaResultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
