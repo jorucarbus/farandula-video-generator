@@ -2410,3 +2410,37 @@ a ser falso. Ahora explica la condición (motor por estructura + sesgo no neutra
 
 **Sin probar de punta a punta**: no se generó un par de videos gemelos completo con esto. Lo
 verificado es la inversión y que las crónicas salen opuestas.
+
+### 2026-08-24 (Mac) — Auditoría del volumen de música: nada roto, pero el default quedó 2 dB alto
+
+El usuario: "me parece que el último video que hizo el volumen estaba muy alto". Se auditó todo el
+sistema de emparejado antes de tocar nada.
+
+**Lo que está BIEN** (verificado, no supuesto):
+- **Las 26 pistas están etiquetadas** y las 26 etiquetas son **exactas**: se re-midió cada archivo
+  con `medirLoudness()` (mismo offset que usa `prepararMusica`) y se comparó contra su `[lufs=]`.
+  Diferencia: 0.0 dB en las 26. Cero discrepancias.
+- **El emparejado funciona**: en la cadena real, las pistas extremas (-13.2 y -17.0 LUFS) terminan
+  en -34.1 y -34.3 → **0.3 dB de dispersión**, contra los 3.8 dB de origen. Sobre las 26, la
+  dispersión aritmética da 0.0 dB.
+- **El control manual funciona**: mover el slider mueve el nivel general sin reabrir la dispersión.
+
+**Lo que estaba mal — el nivel general, no el mecanismo**: el default era `-18`, que deja la música
+en **-34.1 LUFS** (medido en render real). El nivel que el usuario había aprobado el 2026-08-14 era
+`-20` → **-36.1 LUFS**. O sea, venía sonando **2 dB más alto que lo aprobado**, y por eso lo notó.
+
+**Por qué pasó**: cuando entró el emparejado por LUFS se volvió a -18 razonando que el problema
+eran solo las pistas que se salían del promedio. Es cierto para la DISPERSIÓN, pero el número
+también fija el nivel general, y volver de -20 a -18 lo subió 2 dB. Las dos cosas son
+independientes: el emparejado da 0.3 dB de dispersión con cualquiera de los dos números.
+
+**Cambio**: `GANANCIA_DEFAULT_DB` de -18 a **-20** (`musica.js`), más el default del slider
+(`public/index.html`) y su fallback (`public/app.js`) para que los tres digan lo mismo. La historia
+del número quedó escrita en el comentario de la constante, porque ya se movió dos veces y conviene
+no repetir la vuelta.
+
+**Separación resultante**: música ~-36 LUFS contra voz -18.1 LUFS ≈ **18 dB**, igual que lo que el
+usuario ya había aprobado.
+
+**Sin verificar**: no se generó un video completo con el default nuevo — la medición es de la
+cadena real de `prepararMusica()`, no de un render de punta a punta. Falta el oído del usuario.

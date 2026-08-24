@@ -1539,7 +1539,7 @@ function efectosDelPaso6() {
         musicaTono: document.getElementById('musica-tono')?.value || 'auto',
         // Cuánto se atenúa la música. Cada pista se emparejará a ESE nivel midiendo su propio
         // loudness, así que mover esto no reabre la diferencia entre unas y otras (ver musica.js).
-        musicaVolumenDb: Number(document.getElementById('musica-volumen')?.value) || -18,
+        musicaVolumenDb: Number(document.getElementById('musica-volumen')?.value) || -20,
         subtitulosFuente: subsFuente,
         subtitulosTamano: subsTamano,
         subtitulosMarginV: subsMarginV,

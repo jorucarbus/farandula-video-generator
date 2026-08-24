@@ -30,7 +30,15 @@ const TAG_LUFS = /\[lufs=(-?[\d.]+)\]/i;
 // tiene que reaprender el número. Si el catálogo cambiara mucho de nivel con el tiempo, esta
 // constante es lo único que habría que volver a medir.
 const REFERENCIA_LUFS = -15;
-const GANANCIA_DEFAULT_DB = -18;
+// -20, no -18. Historia, porque el número se movió dos veces y conviene no repetir la vuelta:
+// el 2026-08-14 el usuario aprobó -20 (medido: la música quedaba en ~-36 LUFS contra una voz de
+// -18.1, o sea 18 dB de separación). Cuando entró el emparejado por LUFS se volvió a -18 pensando
+// que el problema eran solo las pistas que se salían del promedio — cierto para la dispersión,
+// pero eso subió el nivel general 2 dB respecto de lo aprobado, y el usuario lo volvió a escuchar
+// alto (2026-08-24). Medido en la cadena real: -18 deja la música en -34.1 LUFS y -20 en -36.1.
+// El emparejado sigue haciendo su trabajo igual (0.3 dB de dispersión entre las 26 pistas con
+// cualquiera de los dos números) — lo único que cambia acá es el nivel general.
+const GANANCIA_DEFAULT_DB = -20;
 // Nunca subir una pista más que esto. Con estos objetivos siempre se atenúa, pero una pista
 // futura grabada muy floja podría pedir ganancia positiva y saturar al mezclarla con la voz.
 const SUBIDA_MAX_DB = 6;
