@@ -1,5 +1,66 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-23 — La pestaña sin locución mostraba (y REPRODUCÍA) la de la otra variante
+
+Reportado con captura: Paso 5, pestaña del video A, el texto decía *"Todavía no se generó la
+locución de esta versión"* mientras el reproductor mostraba un audio de **1:13**, y "Aprobar
+locución" contestaba *"No hay locución generada para esta versión"*. Tres mensajes contradictorios
+sobre lo mismo.
+
+**El 1:13 era el audio del video B** (73s; el de A dura 75.5s — se confirmó consultando el job real
+en staging, que tenía los DOS tokens guardados). O sea: el reproductor mostraba la locución de la
+otra pestaña.
+
+### La causa, y por qué había que buscarla en la recuperación
+
+`recuperarJobPendiente` llenaba la pestaña B con `job.gemela` **entero**
+(`{...nuevaVarianteB(), ...job.gemela}`), sin mirar la etapa, mientras la A se rehidrataba **etapa
+por etapa** (guion → fragmentos → audio → completado). Y el `paso` del job es **global: lo comparten
+las dos variantes**. Entonces, al retomar un proceso que había vuelto atrás (rehacer el guion baja
+el paso a `guion`), la A quedaba correctamente sin locución y la B se quedaba con la suya, marcada
+como lista. Dos pestañas contando historias distintas.
+
+`varianteBDesdeJob()` aplica ahora la misma escalera. **De paso apareció otro agujero**: el guion
+del segundo video no se restauraba nunca — en el job se llama `script` y en el frontend `guion`,
+así que el volcado con spread no lo copiaba y la pestaña B abría con el editor vacío.
+
+### Los otros tres, del mismo reporte
+
+- **`removeAttribute('src')` no descarga lo que el reproductor ya tenía.** Sin un `load()` detrás,
+  la pestaña sin locución seguía mostrando —y reproduciendo— la anterior. **Medido en el navegador**:
+  con el código viejo, tras quitarle el `src`, el reproductor seguía sonando con los 73.12s del
+  video B; con el fix queda en blanco de verdad.
+- **La locución vive en DOS lados** (el token local y el job del servidor) y solo se miraba el
+  local. `rescatarAudioVariante()` la busca en el proceso guardado antes de darla por perdida, y
+  **verifica que suene** con un `HEAD` a `/api/audio` — que ya recupera el mp3 desde Drive por su
+  cuenta (fix de julio). Sin esto, un desfase de estado local costaba una locución de ElevenLabs YA
+  PAGADA. Si el HEAD falla, no se adopta el token: mejor regenerar que aprobar un audio fantasma.
+- **`confirmarAsignaciones` avanzaba con la locución fallada**: `regenerarAudio` atrapa su propio
+  error (para poder ofrecer "reintentar"), así que había que mirar lo que devuelve. Marcaba el paso
+  igual y mandaba a la otra pestaña, y el problema aparecía recién en el Paso 5, lejos de su origen.
+
+### Verificación (navegador real, contra el job del reporte)
+
+El job real de staging se copió al `data/jobs.json` local para probar contra sus archivos de Drive
+de verdad (y se restauró al terminar). Los dos audios bajaron de Drive: `HEAD /api/audio/<token>`
+dio 200 para A y para B.
+
+1. Rescate de la locución de A: token repoblado y **audio sonando, 75.52s** (coincide con el job).
+2. Reproductor: viejo → seguía con 73.12s del B; nuevo → `duration` nula, pausado, sin `src`.
+3. `varianteBDesdeJob` en los 5 pasos: la B ya no adelanta a la etapa del job.
+4. `aprobarAudio`: rescata sin alertar cuando hay algo que rescatar; alerta **con instrucciones**
+   cuando de verdad no hay.
+5. Paso 4 con la locución fallada: no marca el paso ni salta de pestaña.
+
+### Decisión de UI que el usuario tomó en esta sesión
+
+Preguntó por poner **pestañas A/B también en la columna Productos**, porque no encontraba el título
+y la descripción del gemelo. Al ver que ese bloque ya existía (abajo del de A, hay que scrollear)
+**decidió dejarlo como está**. Queda anotado el diagnóstico por si vuelve: guion B y audio B **no
+existen** en Productos (las tres casillas se llenan solo con `state.varianteActiva === 'A'`), y si
+algún día se hacen esas pestañas, **el título y la descripción deben quedar FUERA de ellas** — al
+publicar hacen falta los dos textos a la vez, que es la razón por la que ese bloque se hizo así.
+
 ## 2026-08-22 — Faltaba el título y la descripción del segundo video en la UI
 
 Reporte del usuario: *"noté que no tengo acceso al título de la lectura y descripción para redes del
