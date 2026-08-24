@@ -291,7 +291,12 @@ function pintarVista() {
             player.load();
             if (info) info.textContent = `Duración: ${d.duracion || '?'}s | ${etiquetaVariante(state.varianteActiva)}`;
         } else {
+            // `removeAttribute('src')` NO descarga lo que el reproductor ya tenía cargado: sin el
+            // `load()`, la pestaña sin locución seguía mostrando —y reproduciendo— la de la otra
+            // variante mientras el texto decía que no había ninguna. El usuario escuchaba un audio
+            // de 1:13 y el botón de aprobar contestaba que no existía.
             player.removeAttribute('src');
+            player.load();
             if (info) info.textContent = 'Todavía no se generó la locución de esta versión.';
         }
     }
@@ -348,6 +353,34 @@ function cambiarVariante(v) {
     state.varianteActiva = v;
     pintarVista();
     log(`👯 Ahora estás editando: ${etiquetaVariante(v)}`);
+    // Si esta pestaña quedó sin locución, puede ser un desfase del estado local (no que falte de
+    // verdad): se intenta rescatarla del proceso guardado antes de que el usuario la regenere.
+    rescatarAudioVariante(v).then(ok => { if (ok && state.varianteActiva === v) pintarVista(); });
+}
+
+// La locución vive en DOS lados: el token local (`state` / `state.B`) y el job del servidor. El
+// local se puede perder sin que la locución desaparezca — al retomar un proceso, al rehacer un
+// paso anterior, o al recargar la pestaña. Antes de decirle al usuario que no hay locución (y
+// hacerle gastar otra de ElevenLabs), se busca la que YA se pagó.
+async function rescatarAudioVariante(v) {
+    const d = V(v);
+    if (d.audioToken || !state.jobId) return false;
+    let job;
+    try { job = await apiCall(`/jobs/${state.jobId}`); } catch { return false; }
+    const datos = (v === 'B' ? job?.gemela : job) || {};
+    if (!datos.audioToken) return false;
+    // El token puede estar muerto: el Map de audios vive en la memoria del server y se vacía en
+    // cada redeploy. `/api/audio` lo recupera solo desde Drive; si aun así no responde, no se
+    // adopta un token que no suena — mejor que el usuario regenere a que apruebe un audio fantasma.
+    try {
+        const r = await fetch(`${apiBase()}/api/audio/${datos.audioToken}`, { method: 'HEAD' });
+        if (!r.ok) return false;
+    } catch { return false; }
+    d.audioToken = datos.audioToken;
+    d.duracion = datos.duracion || d.duracion;
+    actualizarTabs();
+    log(`♻️ Locución de ${etiquetaVariante(v)} recuperada del proceso guardado`);
+    return true;
 }
 
 // El cartel se rellena con el TÍTULO de la lectura (el titular viral), no con `nombreCorto`, que
@@ -1174,7 +1207,11 @@ async function refrescarCarpetas() {
 async function confirmarAsignaciones() {
     setButtonDisabled('btn-confirm-assignments', true);
     try {
-        await regenerarAudio('eleven_v3');
+        // `regenerarAudio` atrapa su propio error para poder ofrecer "reintentar", así que hay que
+        // mirar lo que devuelve: si la locución falló, marcar el paso mandaba al usuario a la otra
+        // pestaña y esta variante seguía adelante SIN locución — y el problema recién aparecía en
+        // el Paso 5, lejos de donde se originó.
+        if (!await regenerarAudio('eleven_v3')) return;
         marcarPasoVariante('asignaciones', 'Ahora revisá las asignaciones del canal hermano.');
     } finally {
         setButtonDisabled('btn-confirm-assignments', false);
@@ -1217,9 +1254,11 @@ async function regenerarAudio(modelo) {
         setStepStatus('revision-section', 'done');
         setStepStatus('audio-section', 'active');
         log('🎧 Escucha la locución y apruébala o regenérala');
+        return true;
     } catch (error) {
         mostrarError(`Error generando locución: ${error.message}`,
             () => regenerarAudio(modelo), 'revision-section');
+        return false;
     } finally {
         setButtonDisabled('btn-regenerate-audio-v3', false);
         setButtonDisabled('btn-regenerate-audio-v2', false);
@@ -1269,8 +1308,14 @@ async function recargarAudioDeDrive() {
 // Locución aprobada → elegir carpeta de destino
 async function aprobarAudio() {
     if (!V().audioToken) {
-        alert('No hay locución generada para esta versión');
-        return;
+        const rescatada = await rescatarAudioVariante(state.varianteActiva);
+        if (rescatada) pintarVista();
+        else {
+            alert(`${etiquetaVariante(state.varianteActiva)} todavía no tiene locución.\n\n`
+                + 'Generala desde esta misma pestaña con "Regenerar", o traé la tuya con '
+                + '"Recargar audio desde Drive".');
+            return;
+        }
     }
     setButtonDisabled('btn-approve-audio', true);
     try {
@@ -2340,6 +2385,23 @@ async function cargarDesdeURL() {
     }
 }
 
+// El `paso` del job es GLOBAL: lo comparten las dos variantes. Así que la pestaña B tiene que
+// rehidratarse por etapa, exactamente como la A unas líneas más abajo. Volcarle `job.gemela`
+// entero la dejaba con locución y fragmentos de una etapa que la A ya no tiene — dos pestañas
+// contando historias distintas, y el usuario descubriéndolo recién en el Paso 5.
+// Ojo con el nombre: en el job el guion del segundo video se llama `script`; acá, `guion`.
+const ETAPAS_JOB = ['lectura', 'guion', 'fragmentacion', 'audio', 'completado'];
+function varianteBDesdeJob(job) {
+    const g = job.gemela || {};
+    const etapa = ETAPAS_JOB.indexOf(job.paso);
+    const b = { ...nuevaVarianteB(), metadatos: g.metadatos || null };
+    if (etapa >= 1) b.guion = g.script || '';
+    if (etapa >= 2) b.fragments = g.fragments || null;
+    if (etapa >= 3) { b.audioToken = g.audioToken || null; b.duracion = g.duracion || null; }
+    if (etapa >= 4 && g.driveLink) b.resultado = { driveLink: g.driveLink, fileName: g.fileName };
+    return b;
+}
+
 // Rehidrata state + UI según en qué etapa quedó el job, sin repetir pasos ya hechos
 async function recuperarJobPendiente() {
     if (!jobPendiente) return;
@@ -2358,7 +2420,7 @@ async function recuperarJobPendiente() {
     // viejo (o de un solo video) no trae `gemela` y todo sigue exactamente igual que antes.
     if (job.gemela) {
         state.gemelos = true;
-        state.B = { ...nuevaVarianteB(), ...job.gemela, aprobado: {} };
+        state.B = varianteBDesdeJob(job);
         const chk = document.getElementById('chk-gemelos');
         if (chk) chk.checked = true;
         document.querySelectorAll('[data-tabs]').forEach(t => t.classList.remove('hidden'));
