@@ -1,5 +1,130 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 2026-08-24 — Nombres de famosos: bien escritos (cotejo fonético) y bien pronunciados
+
+Reporte del usuario: *"como suele poner lo que escucha a veces le cambia los nombres de los
+protagonistas"*. Real y con consecuencias en cadena: cuando la fuente es hablada, Gemini
+transcribe **de oído** y los nombres propios salen fonéticos — "Fátima Bosch" vuelve como
+"Fátima Bos", "Nawat" como "Nagua".
+
+**El error no se queda en la crónica**, y eso es lo que lo hace caro: viaja a la locución
+(ElevenLabs lee lo que está escrito), a los subtítulos (en letra grande, todo el video), al
+matching de la carpeta de clips (un nombre mal escrito no encuentra su famoso), al nombre del
+archivo y a los **hashtags**, donde además mata el alcance del video.
+
+### La fuente de verdad no es la web
+
+Son **las 272 carpetas de Drive** que el usuario ya mantiene a mano. Buscar en Google se evaluó y
+se descartó con él: en farándula la web está llena de nombres mal escritos, y sumaría rumor al
+pipeline que justamente está diseñado para no inventar.
+
+### Clave fonética, y por qué comparar letra a letra no sirve
+
+`famosos.js` (nuevo) reduce cada nombre a **cómo suena**: b/v, ll/y, s/z/c, h muda, k/qu/c, w/gu,
+tildes, dobles, y —la regla que resuelve el caso del reporte— **la consonante final atípica que el
+oído castellano se come** ("Bosch" → "Bos", "Nawat" → "Nagua"). Comparando ortografías, "Bos" y
+"Bosch" no se parecen lo suficiente; comparando sonidos, son el mismo nombre.
+
+Dos detalles que costaron una vuelta:
+- **La ñ se aparta antes de quitar tildes**: descompuesta es "n + tilde", así que el barrido de
+  diacríticos la volvía n y hacía de "Peña" y "Pena" el mismo nombre.
+- **`ch` se marca antes de la regla de la h muda** y se restituye después, o "Chávez" terminaba
+  como "cabes".
+
+**Medido contra el catálogo real**: 272 carpetas → **272 claves distintas, 0 colisiones y 0 pares a
+distancia 1**. O sea que el riesgo de auto-corregir al famoso equivocado es nulo con el catálogo de
+hoy. Si algún día aparece un choque, hay que revisar el umbral — el test está listo para
+re-correrlo.
+
+**Confianza alta** (misma clave) se corrige sola y se avisa qué cambió; **media** (un sonido de
+distancia) va como sugerencia, porque con 272 nombres "Camila" y "Camilo" suenan casi igual;
+**sin candidato** se deja como vino con aviso — decisión explícita del usuario: no corta el flujo.
+
+### La corrección se aplica a TODA la lectura
+
+No solo al campo `protagonista`: **el guion se escribe desde la crónica**, y el título y la
+descripción son lo que se publica. Los hashtags se reescriben aparte (van pegados, y meterles el
+nombre con espacios los partiría en dos).
+
+Y **la tabla vive en `data/famosos.json`**, respaldada en Drive igual que `jobs.json` — NO en los
+nombres de las carpetas, que son la llave con la que se buscan los clips: renombrarlas rompería el
+matching de los procesos ya guardados. Cada corrección queda **aprendida** (campo `alias`): la
+próxima vez ese nombre se arregla sin preguntar.
+
+Además, `PROMPTS.acta` suma una regla: **si la fuente trae texto** (caption, título, rótulo en
+pantalla), los nombres se copian de ahí en vez de escribirse de oído. Ahí suelen venir bien.
+
+### Pronunciación por famoso, y el riesgo que traía
+
+Escribir bien no es pronunciar bien: aunque el nombre quede correcto, la voz puede decir mal uno
+extranjero. El campo `decir` de la tabla es lo que se le manda a hablar a ElevenLabs.
+
+⚠️ **El camino limpio está bloqueado por permisos**: los diccionarios de pronunciación del API de
+ElevenLabs dejarían el texto intacto, pero la API key de esta cuenta responde *"missing the
+permission pronunciation_dictionaries_read"*. Si algún día el usuario amplía los permisos de la
+key, ese camino existe y es más prolijo. Mientras tanto la sustitución se hace acá, y no depende
+de permisos ni de qué modelo responda.
+
+⚠️ **Y el riesgo real, que hay que entender antes de tocar esto**: `tiempos.matchTexto()` compara
+el texto de cada fragmento contra los caracteres alineados **letra por letra**. Si se manda a
+hablar "Nagüat" y el fragmento dice "Nawat", el match falla y `alinearFragmentos` devuelve null:
+**cae TODA la locución** al reparto estimado por caracteres, que es como salen los subtítulos
+corridos que el usuario ya sufrió. Por eso el mismo mapa viaja a `alinearFragmentos()` — los dos
+lados comparan la forma **hablada**, y lo que se muestra sigue siendo la **escrita**.
+
+### Dos bugs propios encontrados PROBANDO, no leyendo código
+
+1. **El apellido suelto**: la crónica real que devolvió Gemini decía *"Bos abordó el altercado"* —
+   no repite el nombre completo cada vez. El reemplazo del nombre completo no lo alcanzaba, así que
+   ahora también se parean palabra a palabra (Fatima→Fátima, Bos→Bosch) cuando las dos formas
+   tienen la misma cantidad de palabras. Solo palabras de 3+ letras, para no pisar partículas.
+   Verificado que NO toca "Bosnia", "Bosque" ni "Bosco".
+2. **Las marcas van pegadas**: `agregarMarcas` devuelve `"...directivo Nawat.[fast]Le puso..."`, así
+   que partir por espacios daba el token `Nawat.[fast]Le` y el nombre no se reconocía. Ahora la
+   sustitución usa lookarounds de letra.
+
+### Hallazgo aparte: `agregarMarcas` inventa texto con guiones cortos
+
+Probando con un guion de juguete (2 frases), Gemini **agregó contenido que nadie escribió** ("¡obvio
+no! es que neta ni cómo defender lo indefendible ¡qué oso!...") y fusionó las dos frases quitando el
+punto. Con el guion real de 207 palabras no pasó. **No es un bug de este cambio** —el prompt de
+marcas espera un guion completo— pero explica un modo de falla ya visto: el aviso de "no calza con
+el audio" del 2026-08-18. Si vuelve a aparecer con guiones normales, mirar ahí.
+
+### Verificación
+
+| Qué | Resultado |
+|---|---|
+| Colisiones en las 272 carpetas | 0 claves repetidas, 0 pares a distancia 1 |
+| Nombres reales estropeados como lo haría el oído | **129 recuperados, 0 corregidos MAL**, 1 sin candidato ("Las ñañas") |
+| Falsos positivos que no deben fundirse | Peña/Pena, Camila/Camilo, Daniel/Daniela: distintos |
+| Lectura REAL (Gemini + Drive) | "Fatima Bos" → Fátima Bosch, "Nagua" → Nawat, con crónica, título y hashtags corregidos |
+| Alineación con pronunciación | Sin el mapa: null (cae al estimado). Con el mapa: cuadra exacto, subtítulos con la forma escrita |
+| Locución REAL de 207 palabras | 77.4s, **ningún aviso de desalineación** |
+| Regresión con tabla vacía | Texto intacto, alineación igual, la firma vieja de 3 argumentos sigue andando |
+
+Todo lo de prueba se limpió: la carpeta de insumos de prueba fue a la papelera de Drive, y
+`jobs.json` / `famosos.json` locales quedaron como estaban.
+
+### Decisión de UI que el usuario tomó en el camino
+
+Preguntó por poner **pestañas A/B también en la columna Productos** porque no encontraba el título
+y la descripción del gemelo; al ver que ese bloque ya existía (abajo del de A) **decidió dejarlo
+como está**. Queda anotado el diagnóstico: guion B y audio B **no existen** en Productos (las tres
+casillas se llenan solo con `state.varianteActiva === 'A'`), y si algún día se hacen esas pestañas,
+**el título y la descripción deben quedar FUERA de ellas** — al publicar hacen falta los dos textos
+a la vez.
+
+### Pendiente
+
+- **Escuchar** una locución con un nombre pronunciado a mano: que la alineación no se rompa está
+  medido, pero si "Nagüat" suena mejor que "Nawat" lo juzga el oído del usuario.
+- El **motor de guion con graphify** quedó conversado y fuera de alcance: catálogo de 233 técnicas
+  embebido (302 KB, ~15.6k tokens, cabe de sobra), motor seleccionable en `MOTORES_GUION`, sin
+  elegir ángulo (el motor lo decide), y **sin Python en Railway** — las 5 consultas del grafo son
+  fijas, así que se congelan o se le pasa el catálogo entero a Gemini. Merece su propio plan.
+
+
 ## 2026-08-23 — La pestaña sin locución mostraba (y REPRODUCÍA) la de la otra variante
 
 Reportado con captura: Paso 5, pestaña del video A, el texto decía *"Todavía no se generó la
