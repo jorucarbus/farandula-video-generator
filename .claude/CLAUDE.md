@@ -2378,3 +2378,35 @@ subtítulos desfasados (`624a24a`). Nada nuevo de la Mac desde `c484f18`.
 **Recordatorio operativo**: tras cada deploy, recargar con Cmd/Ctrl + Shift + R (guarda de
 `0d883e8`). Y ojo con los redeploys mientras el usuario tiene material subido — ese fue justo el
 caso de `1dbd7d1`.
+
+### 2026-08-24 (Mac) — Gemelos con sesgo OPUESTO en el motor `grafo`
+
+Pedido del usuario: "si una noticia está a favor del protagonista, en la otra está en contra, así
+los canales presentarán ángulos distintos". Decidido con él: **elige a favor o en contra en el
+Paso 1 y el gemelo toma el contrario**; con `neutral` no hay postura que invertir y queda como
+antes. **Solo el motor `grafo`** (decisión suya) — el de siempre sigue con gemelos del mismo sesgo.
+
+**Dónde se tocó y por qué ahí**: el sesgo NO vive en el guion, vive en la CRÓNICA
+(`sintetizarCronica(actas, sesgo)`), así que basta con darle al gemelo una crónica distinta. Y es
+barato: las actas son sesgo-independientes y ya quedaron cacheadas en `job.fuentes` desde la
+lectura, así que re-sintetizar **no vuelve a descargar ni releer la fuente original** — es
+exactamente el caso que anticipaba el comentario de `PROMPTS.acta`.
+
+`server.js`: dos helpers nuevos (`sesgoOpuesto()`, `cronicaConSesgo()`) y el wiring dentro del
+bloque `if (gemela)` de `/api/generate-script`. El título/descripción del gemelo se generan con SU
+crónica, no con la del primero: si toma la postura contraria, el texto del post tiene que
+acompañarla. Se guarda `gemela.sesgo` para que quede registro de con qué postura salió.
+
+**Degradación** (Regla de robustez): si no hay actas guardadas o falla la re-síntesis, el gemelo
+usa la crónica del primero y sale como antes — avisa por log, nunca se pierde el video.
+
+**Verificado con Gemini real**, misma acta → dos crónicas: a favor da "se vio obligada a cancelar",
+"severa e imprevista afección"; en contra da "público engañado y atrapado", "la versión oficial
+alegó". Protagonista bien detectado en ambas y títulos acordes a cada postura. (De paso: la
+llamada pegó 503 y la cadena de fallback cayó sola a `gemini-3.5-flash` — funcionando como debe.)
+
+**Corregido de paso**: el texto de la UI decía "mismos hechos y mismo ángulo", que con esto pasaba
+a ser falso. Ahora explica la condición (motor por estructura + sesgo no neutral).
+
+**Sin probar de punta a punta**: no se generó un par de videos gemelos completo con esto. Lo
+verificado es la inversión y que las crónicas salen opuestas.

@@ -170,6 +170,34 @@ function audioSigueEnUso(audioPath) {
   return colaRender.rutasProtegidas().some(r => path.basename(r) === base);
 }
 
+// Sesgo contrario, para que los dos canales presenten ángulos opuestos sobre el mismo hecho
+// (pedido del usuario, 2026-08-24). `neutral` no tiene opuesto: no hay postura que invertir, así
+// que devuelve null y el gemelo se queda con la crónica del primero, como hasta ahora.
+function sesgoOpuesto(sesgo) {
+  if (sesgo === 'favor') return 'contra';
+  if (sesgo === 'contra') return 'favor';
+  return null;
+}
+
+// Crónica del gemelo con el sesgo dado a partir de las ACTAS ya extraídas del job. Es barata a
+// propósito: las actas son sesgo-independientes y quedan cacheadas desde la lectura (ver
+// PROMPTS.acta en gemini.js), así que esto NO vuelve a descargar ni releer la fuente original —
+// solo re-sintetiza. Devuelve null si algo falta o falla: el llamador cae a la crónica del
+// primero y el gemelo sale como antes, nunca se pierde el video por esto.
+async function cronicaConSesgo(job, sesgo) {
+  const actas = (job?.fuentes || []).map(f => f.acta).filter(Boolean);
+  if (!actas.length) {
+    console.warn('  ⚠️ El job no tiene actas guardadas: el gemelo usa la crónica del primero');
+    return null;
+  }
+  try {
+    return await gemini.sintetizarCronica(actas, sesgo);
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo sintetizar la crónica ${sesgo} del gemelo (${e.message}), usa la del primero`);
+    return null;
+  }
+}
+
 // Reparto de citas entre gemelos: alternadas por orden de detección (0→A, 1→B, 2→A…). Con una
 // sola cita los dos la comparten: es mejor repetir el testimonio real que dejar un video sin él.
 function citasDeVariante(materialesAdicionales, variante) {
@@ -900,18 +928,34 @@ app.post('/api/generate-script', async (req, res) => {
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
-    // Video gemelo: mismo ángulo y mismos hechos, redacción distinta. Se le pasa el guion A como
-    // "esto es lo que NO podés parecerte", y después se le buscan título y descripción propios
-    // para que los dos posts no salgan con el mismo texto.
+    // Video gemelo: mismos hechos, redacción distinta. Se le pasa el guion A como "esto es lo que
+    // NO podés parecerte", y después se le buscan título y descripción propios para que los dos
+    // posts no salgan con el mismo texto.
+    //
+    // Sesgo opuesto (solo motor `grafo`, pedido del usuario 2026-08-24): si el video A se narró a
+    // favor del protagonista, el gemelo se narra en contra y viceversa, para que los dos canales
+    // presenten ángulos distintos del mismo hecho. Se hace re-sintetizando la crónica desde las
+    // actas ya extraídas (barato, no re-lee la fuente) — el sesgo vive en la crónica, no en el
+    // guion, así que este es el único lugar donde hay que tocarlo. Con `neutral` no hay postura
+    // que invertir y el gemelo sigue con la crónica del primero, como antes.
     let gemelaResultado = null;
     if (gemela) {
       try {
         const citasB = citasDeVariante(materiales, 'B');
-        const scriptB = await gemini.escribirGuion(cronica, angle, angleContent, citasB, script, motorElegido);
+        const opuesto = motorElegido === 'grafo' ? sesgoOpuesto(job?.sesgo) : null;
+        let cronicaB = cronica;
+        if (opuesto) {
+          console.log(`  🔄 Gemelo con sesgo opuesto: "${job.sesgo}" → "${opuesto}" (re-sintetiza la crónica desde las actas)`);
+          cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
+        }
+        const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, script, motorElegido);
         const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
-        const metadatosB = await gemini.variarMetadatos(cronica, scriptB, metadatos || {});
+        // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
+        // texto del post tiene que acompañarla, no repetir el enfoque del primero.
+        const metadatosB = await gemini.variarMetadatos(cronicaB, scriptB, metadatos || {});
         gemelaResultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
-        console.log(`  📝 Guion gemelo: ${palabrasB} palabras — "${metadatosB.titulo}"`);
+        if (opuesto && cronicaB !== cronica) gemelaResultado.sesgo = opuesto;
+        console.log(`  📝 Guion gemelo${gemelaResultado.sesgo ? ` (sesgo ${gemelaResultado.sesgo})` : ''}: ${palabrasB} palabras — "${metadatosB.titulo}"`);
       } catch (e) {
         // Regla de robustez: el video A ya está listo. El usuario sigue con uno solo o reintenta.
         console.warn(`⚠️ No se pudo generar el guion gemelo: ${e.message}`);
