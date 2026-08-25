@@ -95,6 +95,19 @@ revisiones y se puede recuperar una anterior. `jobs.json` es el fileId
 - Paso 6: "Generar &lt;canal de esta pestaña&gt;" + "Generar los dos", con una línea que aclara que el
   hermano no se toca y que **las tomas no se repiten igual**.
 
+### ⏳ Un límite práctico que el desacople hace más probable
+
+`limpiezaInsumos` manda a la papelera la carpeta de insumos del job a las **48h de creada**
+(retención elegida por el usuario el 2026-08-05, configurable con `INSUMOS_RETENCION_HORAS`). Ahí
+viven el `audio.mp3` y el `guion.json` que usa `recuperarAudioDeDrive` para rescatar una locución ya
+pagada.
+
+Ahora que el segundo video se puede dejar para otro día, es fácil volver pasadas las 48h y
+encontrarse con que **hay que regenerar la locución** (gasto de ElevenLabs) porque su respaldo ya se
+fue a la papelera. No es una regresión —pasaba igual al retomar cualquier job viejo— pero antes era
+raro llegar a esa situación y ahora no lo es. Si empieza a molestar, subir `INSUMOS_RETENCION_HORAS`
+es una variable de entorno, no un cambio de código. Decisión del usuario.
+
 ### Lo que solo el usuario puede cerrar
 
 1. **Probar el desacople con una noticia real**: corregir un video B con el A ya subido, de punta a
