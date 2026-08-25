@@ -80,7 +80,7 @@ motor de siempre, los gemelos siguen compartiendo ángulo y postura.
 Pedido del usuario: *"necesito poder ver los dos videos renderizados"*.
 
 El primero se mostraba con reproductor y el gemelo **solo con un link a Drive**, así que para
-mirarlo había que salir de la app. Los dos renders generan preview por igual ( corre
+mirarlo había que salir de la app. Los dos renders generan preview por igual (`previews.set` corre
 en cada uno, y se conservan los 3 más recientes: los dos del par entran) — el dato estaba, no se
 estaba usando.
 
@@ -94,7 +94,7 @@ Verificado en browser real: dos reproductores, los dos cargan (readyState 4, sin
 rótulo de siempre.
 
 **Pendiente relacionado, NO hecho**: la portada JPG sigue siendo solo del primer video. El bloque
-de "elegí la foto" usa , que es uno solo, así que el canal hermano se queda
+de "elegí la foto" usa `state.previewToken`, que es uno solo, así que el canal hermano se queda
 sin su JPG. Si el usuario lo pide, hay que llevar el bloque de portada a la variante activa.
 
 ## 2026-08-24 (noche) — Motor de guion por estructura, sobre el grafo de técnica narrativa

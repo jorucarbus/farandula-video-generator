@@ -77,6 +77,113 @@ async function obtenerDuracion(filePath) {
 }
 
 
+
+// Metadatos de color de un video. Los grabados con iPhone (HEVC) llegan seguido con
+// `color_primaries`/`color_transfer` en **reserved**, que NO es un valor válido: es el 2 de la
+// especificación, "reservado". ffmpeg 6 y 8 lo toleran, pero el 7.0.2 que corre en Railway lo
+// rechaza al montar el grafo de filtros y tira el render entero:
+//
+//   Stream #0:0: Video: hevc ..., yuv420p(tv, reserved/reserved/smpte170m, progressive)
+//   [graph 0 input from stream 0:0] Invalid color range
+//   [vf#0:0] Error reinitializing filters!
+//   Task finished with error code: -22 (Invalid argument)
+//   Nothing was written into output file
+//
+// Caso real (2026-08-25): un solo clip así hizo fallar CUATRO renders seguidos de un canal,
+// mientras el canal hermano salía bien porque la rotación de clips no lo tocaba. Por eso parecía
+// un problema de orden entre los videos gemelos y no lo era.
+// SOLO `reserved`, a propósito. `unknown`/`unspecified` significan "no se sabe", son legítimos y
+// los trae muchísimo material de redes — corregirlos también haría que este arreglo tocara casi
+// todos los clips en vez de los que están de verdad mal. `reserved` es distinto: es un valor que
+// la especificación marca como NO usable, y es el que reventó los renders.
+const VALORES_COLOR_INVALIDOS = new Set(['reserved']);
+
+async function infoColor(filePath) {
+  try {
+    const out = await ffprobe([
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=color_range,color_primaries,color_transfer,color_space',
+      '-of', 'default=noprint_wrappers=1',
+      filePath,
+    ]);
+    // Por CLAVE y no por posición: ffprobe imprime los campos en SU orden, no en el que se piden.
+    // Encontrado verificando este mismo arreglo — el mapeo posicional daba `transfer` donde iba
+    // `space`, y con eso la detección apuntaba al campo equivocado.
+    const campos = {};
+    for (const linea of out.split(/\r?\n/)) {
+      const [k, ...resto] = linea.split('=');
+      if (k) campos[k.trim()] = resto.join('=').trim().toLowerCase();
+    }
+    return {
+      range: campos.color_range || '',
+      primaries: campos.color_primaries || '',
+      transfer: campos.color_transfer || '',
+      space: campos.color_space || '',
+    };
+  } catch {
+    return null;   // si no se puede leer, se trata como sano: mejor intentar que abortar
+  }
+}
+
+// Códigos del estándar (los comparten H.264 y H.265): 1 = bt709.
+const BSF_POR_CODEC = { hevc: 'hevc_metadata', h264: 'h264_metadata' };
+
+async function codecDe(filePath) {
+  try {
+    return (await ffprobe([
+      '-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream=codec_name',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      filePath,
+    ])).trim().toLowerCase();
+  } catch { return ''; }
+}
+
+// Devuelve la ruta del clip a usar: la original si está sana, o una COPIA con los metadatos de
+// color arreglados si están rotos.
+//
+// La corrección se hace en el bitstream con un bit-stream filter y `-c copy`: no recodifica (es
+// casi instantáneo) y, sobre todo, **se puede comprobar con ffprobe que quedó bien** — que es la
+// razón de elegir este camino. La alternativa (pasarle `-color_primaries` como opción de input a
+// cada corte) resultó no verificable: probada en local, el archivo de salida seguía declarando
+// `reserved`, así que no había forma de saber si el decodificador la estaba respetando.
+//
+// Solo se reescriben los campos ROTOS: un `transfer_characteristics` válido se conserva tal cual,
+// para no cambiarle el color a un clip que hoy se ve bien.
+async function fuenteConColorValido(filePath) {
+  const info = await infoColor(filePath);
+  if (!info) return filePath;
+  const rotos = ['primaries', 'transfer', 'space'].filter(k => VALORES_COLOR_INVALIDOS.has(info[k]));
+  if (rotos.length === 0) return filePath;
+
+  const codec = await codecDe(filePath);
+  const bsf = BSF_POR_CODEC[codec];
+  if (!bsf) {
+    console.warn(`  ⚠️ ${path.basename(filePath)} tiene color inválido (${rotos.join(', ')}) pero es ${codec || 'de códec desconocido'}: se usa tal cual`);
+    return filePath;
+  }
+
+  const destino = filePath.replace(/\.[^.]+$/, '') + '_color.mp4';
+  if (fs.existsSync(destino)) return destino;
+
+  const params = [];
+  if (VALORES_COLOR_INVALIDOS.has(info.primaries)) params.push('colour_primaries=1');
+  if (VALORES_COLOR_INVALIDOS.has(info.transfer)) params.push('transfer_characteristics=1');
+  if (VALORES_COLOR_INVALIDOS.has(info.space)) params.push('matrix_coefficients=1');
+
+  try {
+    await ffmpeg(['-y', '-i', filePath, '-c', 'copy', '-bsf:v', `${bsf}=${params.join(':')}`, destino]);
+    console.log(`  🎨 ${path.basename(filePath)}: color inválido (${rotos.join(', ')}) corregido a bt709 sin recodificar`);
+    return destino;
+  } catch (e) {
+    // Regla de robustez: si la corrección falla, se sigue con el original — como venía siendo.
+    console.warn(`  ⚠️ No se pudo corregir el color de ${path.basename(filePath)}: ${e.message}`);
+    try { fs.unlinkSync(destino); } catch {}
+    return filePath;
+  }
+}
+
 // ---- Efectos por clip: zoom (Ken Burns, activo toda la duración) + espejo (hflip) ----
 // Presets (mismos para zoom y espejo): 'todos' | 'alternado' | 'intercalado' | 'ninguno'
 const FPS_EFECTOS = 30;
@@ -319,6 +426,14 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // (fuente de verdad, no la metadata de Drive) y si no cabe, se corre el offset hacia atrás —
   // mismo criterio que ya usa seleccion.js para "video muy corto", solo que con datos reales.
   const duracionesReales = {};
+  // Un clip se revisa (y se corrige) UNA sola vez por render, aunque aparezca en varios cortes.
+  const fuentesPorArchivo = {};
+  async function fuenteCacheada(ruta) {
+    if (!(ruta in fuentesPorArchivo)) {
+      fuentesPorArchivo[ruta] = await fuenteConColorValido(ruta).catch(() => ruta);
+    }
+    return fuentesPorArchivo[ruta];
+  }
   async function duracionRealCacheada(ruta) {
     if (!(ruta in duracionesReales)) {
       duracionesReales[ruta] = await obtenerDuracion(ruta).catch(() => null);
@@ -359,9 +474,11 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
     // y espejarla la vuelve ilegible. El zoom (Ken Burns) sí es seguro, no altera el texto.
     if (!clip.esImagen && decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
 
+    // Una imagen fija no trae metadatos de color de video que corregir.
+    const fuente = clip.esImagen ? archivos[clip.videoId] : await fuenteCacheada(archivos[clip.videoId]);
     const argsSegmento = (vf) => clip.esImagen
-      ? ['-loop', '1', '-i', archivos[clip.videoId], '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath]
-      : ['-ss', offsetEfectivo.toFixed(2), '-i', archivos[clip.videoId], '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath];
+      ? ['-loop', '1', '-i', fuente, '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath]
+      : ['-ss', offsetEfectivo.toFixed(2), '-i', fuente, '-t', necesita.toFixed(3), '-vf', vf, '-an', ...enc, segPath];
 
     try {
       await ffmpeg(argsSegmento(filtros.join(',')));
@@ -554,6 +671,9 @@ module.exports = {
   argsEncoder,
   decidirEfecto,
   filtroZoom,
+  // Exportadas para poder verificar el arreglo del color sin montar un render entero.
+  infoColor,
+  fuenteConColorValido,
   // Exportada para poder medir el resultado real de la cadena de música (corte de silencio +
   // loop + ganancia + fades) sin replicarla en el test — replicar es justo lo que desincronizó
   // la geometría del cartel en su momento.
