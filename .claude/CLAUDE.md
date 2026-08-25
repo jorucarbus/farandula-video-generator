@@ -75,6 +75,71 @@ motor de siempre, los gemelos siguen compartiendo ángulo y postura.
 - **Antes de empezar en la otra máquina**: `git fetch origin --prune` y revisar la divergencia. Hoy
   pasó justamente eso — Windows encontró dos commits de la Mac esperando en el remoto.
 
+### 2026-08-25 (Windows) — Un clip con color `reserved` tumbaba el render entero (NO era el orden A/B)
+
+Reportado con captura: **-22 (Invalid argument) / Nothing was written into output file**, y una
+hipótesis del usuario: *"me parece que si no respeta el orden se crashea, si hace primero la b ya
+no logra hacer la a"*.
+
+**Los datos dicen otra cosa.** `/api/cola` de staging, últimos 4 pares:
+
+| Variante | Canal | Estado |
+|---|---|---|
+| A | Embajadores del Chisme | **error** (siempre, mismo stderr) |
+| B | La Naple | listo (siempre) |
+
+No es el orden: es el **material**. La A toca un clip que la B no toca, porque la rotación de
+`historial.json` reparte archivos distintos a cada video. Vale como recordatorio de método: la
+cola guarda el stderr completo de cada render fallido, y eso alcanzó para descartar la hipótesis
+sin tocar código.
+
+### El clip
+
+`src_1aUouVvdCE2txjy7jVCl8QJ_cledQeGyz.mp4`, un HEVC de iPhone que ffprobe describe como
+`yuv420p(tv, reserved/reserved/smpte170m)`. **`reserved` no es un valor válido de color**: la
+especificación lo marca como no usable. ffmpeg 6 y 8 lo toleran; **el 7.0.2 que corre en Railway lo
+rechaza** al montar el grafo:
+
+```
+[graph 0 input from stream 0:0] Invalid color range
+[vf#0:0] Error reinitializing filters!
+Task finished with error code: -22 (Invalid argument)
+```
+
+### El arreglo, y por qué ESE y no el otro
+
+Antes de cortar, se revisa el color del clip; si tiene campos `reserved`, se usa una **copia** con
+los metadatos corregidos a bt709, hecha en el bitstream con `-bsf:v hevc_metadata` + `-c copy`:
+no recodifica (53 ms, cacheada por render) y **se puede comprobar con ffprobe que quedó bien**.
+
+Ese punto decidió el enfoque. El primer intento fue pasar `-color_primaries` como opción de input
+a cada corte, y **al verificarlo el archivo de salida seguía diciendo `reserved`**: no había forma
+de saber si el decodificador la respetaba. El bsf es verificable y no depende de la versión de
+ffmpeg.
+
+Quirúrgico a propósito:
+- **Solo `reserved`.** `unknown`/`unspecified` significan "no se sabe", son legítimos y los trae
+  muchísimo material de redes: corregirlos también haría que esto tocara casi todos los clips.
+- **Solo los campos rotos**: el `transfer_characteristics` válido del clip (smpte170m) se conserva,
+  para no cambiarle el color a un video que hoy se ve bien.
+- Códec que no sea H.264/HEVC, o bsf que falla → se sigue con el original.
+
+### Verificación
+
+Con el clip REAL bajado de Drive: la detección marca el roto y **no toca uno sano**; la corrección
+deja `bt709/bt709` conservando `smpte170m`, misma duración (15.08s), sin recodificar; la segunda
+llamada reusa la copia (53 ms); y un **render completo local** con ese clip, con zoom + espejo +
+transiciones, salió sin errores.
+
+⚠️ **El crash NO se pudo reproducir en local**: es específico del ffmpeg 7.0.2 de Railway. Se probó
+con el 6.1.1 local y con un **8.1 descargado a propósito** — ninguno falla, ni con efectos, ni en
+ningún tramo del clip. Es el mismo patrón que ya mordió con `zoompan` y `geq`: **funciona local,
+revienta en producción**. La prueba definitiva es reintentar ese render en staging.
+
+**Bug propio encontrado verificando**: `infoColor` mapeaba los campos de ffprobe POR POSICIÓN, y
+ffprobe los imprime en SU orden, no en el que se piden — daba `transfer` donde iba `space`. Ahora
+se parsea por clave.
+
 ### 2026-08-24 (Windows) — El video gemelo ahora se puede VER, no solo abrir en Drive
 
 Pedido del usuario: *"necesito poder ver los dos videos renderizados"*.
