@@ -75,6 +75,28 @@ motor de siempre, los gemelos siguen compartiendo ángulo y postura.
 - **Antes de empezar en la otra máquina**: `git fetch origin --prune` y revisar la divergencia. Hoy
   pasó justamente eso — Windows encontró dos commits de la Mac esperando en el remoto.
 
+### 2026-08-24 (Windows) — El video gemelo ahora se puede VER, no solo abrir en Drive
+
+Pedido del usuario: *"necesito poder ver los dos videos renderizados"*.
+
+El primero se mostraba con reproductor y el gemelo **solo con un link a Drive**, así que para
+mirarlo había que salir de la app. Los dos renders generan preview por igual ( corre
+en cada uno, y se conservan los 3 más recientes: los dos del par entran) — el dato estaba, no se
+estaba usando.
+
+Ahora el bloque del gemelo trae reproductor, nombre de archivo, duración y carpeta destino, igual
+que el primero. Y como quedan dos reproductores en pantalla, en modo gemelos el primer bloque se
+rotula con **su canal** en vez de "Video generado exitosamente" — sin eso no se sabe cuál es cuál.
+Sin gemelos, el texto queda como estaba.
+
+Verificado en browser real: dos reproductores, los dos cargan (readyState 4, sin error), rotulados
+"Chismex Picante" y "Supe Lupe"; y la regresión sin gemelos deja un solo reproductor con el
+rótulo de siempre.
+
+**Pendiente relacionado, NO hecho**: la portada JPG sigue siendo solo del primer video. El bloque
+de "elegí la foto" usa , que es uno solo, así que el canal hermano se queda
+sin su JPG. Si el usuario lo pide, hay que llevar el bloque de portada a la variante activa.
+
 ## 2026-08-24 (noche) — Motor de guion por estructura, sobre el grafo de técnica narrativa
 
 El usuario tenía el generador con graphify funcionando aparte (por CLI) y pidió **las dos opciones
