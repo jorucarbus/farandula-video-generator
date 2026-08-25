@@ -896,10 +896,73 @@ app.post('/api/resintetizar', async (req, res) => {
   }
 });
 
+// Escribe el guion del gemelo a partir del guion del primero. Extraída del endpoint para poder
+// pedirla SOLA (`soloGemela`): rehacer el video B no tiene por qué reescribir el A, que puede estar
+// ya locutado o incluso subido.
+//
+// `scriptA` es la única dependencia real entre los dos videos: entra como "esto es lo que NO podés
+// parecerte". No hace falta que esté aprobado, ni locutado — solo que exista.
+//
+// Sesgo opuesto (solo motor `grafo`, pedido del usuario 2026-08-24): si el video A se narró a favor
+// del protagonista, el gemelo se narra en contra y viceversa, para que los dos canales presenten
+// ángulos distintos del mismo hecho. Se hace re-sintetizando la crónica desde las actas ya
+// extraídas (barato, no re-lee la fuente) — el sesgo vive en la crónica, no en el guion, así que
+// este es el único lugar donde hay que tocarlo. Con `neutral` no hay postura que invertir y el
+// gemelo sigue con la crónica del primero, como antes.
+//
+// Devuelve null si falla: regla de robustez, el video A no se cae por culpa del gemelo.
+async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorElegido, materiales, metadatos, scriptA }) {
+  try {
+    const citasB = citasDeVariante(materiales, 'B');
+    const opuesto = motorElegido === 'grafo' ? sesgoOpuesto(job?.sesgo) : null;
+    let cronicaB = cronica;
+    if (opuesto) {
+      console.log(`  🔄 Gemelo con sesgo opuesto: "${job.sesgo}" → "${opuesto}" (re-sintetiza la crónica desde las actas)`);
+      cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
+    }
+    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, scriptA, motorElegido);
+    const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
+    // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
+    // texto del post tiene que acompañarla, no repetir el enfoque del primero.
+    const metadatosB = await gemini.variarMetadatos(cronicaB, scriptB, metadatos || {});
+    const resultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
+    if (opuesto && cronicaB !== cronica) resultado.sesgo = opuesto;
+    console.log(`  📝 Guion gemelo${resultado.sesgo ? ` (sesgo ${resultado.sesgo})` : ''}: ${palabrasB} palabras — "${metadatosB.titulo}"`);
+    return resultado;
+  } catch (e) {
+    // Regla de robustez: el video A ya está listo. El usuario sigue con uno solo o reintenta.
+    console.warn(`⚠️ No se pudo generar el guion gemelo: ${e.message}`);
+    return null;
+  }
+}
+
+// Guion nuevo del gemelo = sus asignaciones y su locución dejan de valer. Antes esto quedaba
+// colgado (`{ ...gemela, ...resultado }` conservaba `fragments` y `audioToken` de un guion que ya
+// no existía) y solo no se notaba porque el `paso` global del job los ocultaba al rehidratar. Con
+// los dos videos avanzando por separado hay que limpiarlo de verdad.
+function gemelaConGuionNuevo(previa, resultado) {
+  const { fragments, audioToken, duracion, modelo, ...resto } = previa || {};
+  return { ...resto, ...resultado };
+}
+
+// Respalda en Drive el guion de una variante. No se espera (fire-and-forget): Drive caído no puede
+// frenar el pipeline, y el guion ya quedó en el job.
+function respaldarGuionEnDrive(job, variante, datos) {
+  if (!job?.carpetaInsumoId) return;
+  if (variante === 'A') {
+    driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'guion.json', JSON.stringify(datos, null, 2))
+      .catch(e => console.warn(`⚠️ No se pudo respaldar guion.json en Drive: ${e.message}`));
+    return;
+  }
+  destinoInsumo(job, 'B')
+    .then(d => d.carpetaId && driveHelper.guardarEnInsumo(d.carpetaId, `guion${d.sufijo}.json`, JSON.stringify(datos, null, 2)))
+    .catch(e => console.warn(`⚠️ No se pudo respaldar el guion del gemelo en Drive: ${e.message}`));
+}
+
 // ETAPA 2: Generar Guion
 app.post('/api/generate-script', async (req, res) => {
   try {
-    const { cronica, angle, angleContent, jobId, gemela, metadatos, motor } = req.body;
+    const { cronica, angle, angleContent, jobId, gemela, metadatos, motor, soloGemela } = req.body;
 
     // Motor de guion (router `MOTORES_GUION` de gemini.js). `grafo` elige él mismo la estructura
     // narrativa a partir del catálogo de técnicas, así que en ese modo NO hace falta ángulo — es
@@ -916,6 +979,31 @@ app.post('/api/generate-script', async (req, res) => {
     const job = jobId ? jobStore.obtenerJob(jobId) : null;
     const materiales = job?.materialesAdicionales || [];
 
+    // Rehacer SOLO el video B. El guion del primero se toma del job tal cual está —no se
+    // reescribe— y el del gemelo se escribe contra él. Es lo que permite corregir un video sin
+    // arrastrar al hermano, que puede estar ya locutado o subido.
+    if (soloGemela) {
+      const scriptA = job?.script;
+      if (!scriptA) {
+        return res.status(400).json({ error: 'No hay guion del primer video guardado: generá los dos juntos' });
+      }
+      console.log(`✍️ Regenerando SOLO el guion del gemelo (${motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`})...`);
+      const soloB = await escribirGuionGemelo({
+        job, cronica, angle, angleContent, motorElegido, materiales, metadatos, scriptA,
+      });
+      if (!soloB) {
+        return res.status(500).json({ error: 'No se pudo escribir el guion del gemelo' });
+      }
+      if (jobId) {
+        try {
+          // Solo se toca `gemela`. Ni `script` ni `paso`: el video A queda exactamente como estaba.
+          const actualizado = jobStore.actualizarJob(jobId, { gemela: gemelaConGuionNuevo(job.gemela, soloB) });
+          respaldarGuionEnDrive(actualizado, 'B', soloB);
+        } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
+      }
+      return res.json({ status: 'success', script: scriptA, palabras: job.palabras, gemela: soloB });
+    }
+
     // Si el usuario adjuntó entrevistas al inicio, el guionista tiene que saber qué frases se van
     // a escuchar con voz real para dejarles lugar (entrada + retoma) en vez de que la cita caiga
     // en mitad de una idea. Solo texto: barato, no toca el archivo.
@@ -928,54 +1016,18 @@ app.post('/api/generate-script', async (req, res) => {
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
-    // Video gemelo: mismos hechos, redacción distinta. Se le pasa el guion A como "esto es lo que
-    // NO podés parecerte", y después se le buscan título y descripción propios para que los dos
-    // posts no salgan con el mismo texto.
-    //
-    // Sesgo opuesto (solo motor `grafo`, pedido del usuario 2026-08-24): si el video A se narró a
-    // favor del protagonista, el gemelo se narra en contra y viceversa, para que los dos canales
-    // presenten ángulos distintos del mismo hecho. Se hace re-sintetizando la crónica desde las
-    // actas ya extraídas (barato, no re-lee la fuente) — el sesgo vive en la crónica, no en el
-    // guion, así que este es el único lugar donde hay que tocarlo. Con `neutral` no hay postura
-    // que invertir y el gemelo sigue con la crónica del primero, como antes.
-    let gemelaResultado = null;
-    if (gemela) {
-      try {
-        const citasB = citasDeVariante(materiales, 'B');
-        const opuesto = motorElegido === 'grafo' ? sesgoOpuesto(job?.sesgo) : null;
-        let cronicaB = cronica;
-        if (opuesto) {
-          console.log(`  🔄 Gemelo con sesgo opuesto: "${job.sesgo}" → "${opuesto}" (re-sintetiza la crónica desde las actas)`);
-          cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
-        }
-        const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, script, motorElegido);
-        const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
-        // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
-        // texto del post tiene que acompañarla, no repetir el enfoque del primero.
-        const metadatosB = await gemini.variarMetadatos(cronicaB, scriptB, metadatos || {});
-        gemelaResultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
-        if (opuesto && cronicaB !== cronica) gemelaResultado.sesgo = opuesto;
-        console.log(`  📝 Guion gemelo${gemelaResultado.sesgo ? ` (sesgo ${gemelaResultado.sesgo})` : ''}: ${palabrasB} palabras — "${metadatosB.titulo}"`);
-      } catch (e) {
-        // Regla de robustez: el video A ya está listo. El usuario sigue con uno solo o reintenta.
-        console.warn(`⚠️ No se pudo generar el guion gemelo: ${e.message}`);
-      }
-    }
+    // Video gemelo: mismos hechos, redacción distinta (ver `escribirGuionGemelo`).
+    const gemelaResultado = gemela
+      ? await escribirGuionGemelo({ job, cronica, angle, angleContent, motorElegido, materiales, metadatos, scriptA: script })
+      : null;
 
     if (jobId) {
       try {
         const cambios = { paso: 'guion', script, palabras };
-        if (gemelaResultado) cambios.gemela = { ...(job?.gemela || {}), ...gemelaResultado };
+        if (gemelaResultado) cambios.gemela = gemelaConGuionNuevo(job?.gemela, gemelaResultado);
         const actualizado = jobStore.actualizarJob(jobId, cambios);
-        if (actualizado.carpetaInsumoId) {
-          driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'guion.json', JSON.stringify({ script, palabras }, null, 2))
-            .catch(e => console.warn(`⚠️ No se pudo respaldar guion.json en Drive: ${e.message}`));
-          if (gemelaResultado) {
-            destinoInsumo(actualizado, 'B')
-              .then(d => d.carpetaId && driveHelper.guardarEnInsumo(d.carpetaId, `guion${d.sufijo}.json`, JSON.stringify(gemelaResultado, null, 2)))
-              .catch(e => console.warn(`⚠️ No se pudo respaldar el guion del gemelo en Drive: ${e.message}`));
-          }
-        }
+        respaldarGuionEnDrive(actualizado, 'A', { script, palabras });
+        if (gemelaResultado) respaldarGuionEnDrive(actualizado, 'B', gemelaResultado);
       } catch (e) { console.warn(`⚠️ No se pudo actualizar job ${jobId}: ${e.message}`); }
     }
 

@@ -220,6 +220,7 @@
                 <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-guion" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
                     <button class="btn btn-primary" id="btn-regenerate-guion" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
+                    <button class="btn btn-primary hidden" id="btn-regenerate-solo-gemelo" onclick="regenerarSoloGemelo()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar solo este guion</button>
                     <button class="btn btn-secondary" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
                 </div>
                 <p class="hint">
@@ -429,9 +430,15 @@
                     </div>
                 </div>
 
-                <button class="btn btn-success" id="btn-generate-video" onclick="handleGenerateVideo()">
-                    <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
-                </button>
+                <div class="btn-row">
+                    <button class="btn btn-success" id="btn-generate-video" onclick="handleGenerateVideo()">
+                        <span class="icon-slot" data-icon="rocketLaunch"></span> Generar video completo
+                    </button>
+                    <button class="btn btn-primary hidden" id="btn-generate-ambos" onclick="handleGenerateAmbos()">
+                        <span class="icon-slot" data-icon="checks"></span> Generar los dos
+                    </button>
+                </div>
+                <p class="hint hidden" id="hint-generar-variante"></p>
             </div>
 
             </div><!-- /.steps-grid -->
