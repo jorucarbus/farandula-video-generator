@@ -1724,9 +1724,19 @@ function mostrarResultadoGemelo(videoData, error) {
     caja.className = videoData ? 'banner-ok mt-md' : 'banner-danger mt-md';
     caja.id = 'resultado-gemelo';
     if (videoData) {
+        // Con reproductor, igual que el primero: el usuario necesita VER los dos videos antes de
+        // publicarlos, y hasta acá el gemelo solo mostraba un link a Drive — para mirarlo había que
+        // salir de la app y abrirlo allá.
+        const player = videoData.previewUrl
+            ? `<video controls playsinline class="result-video-player" src="${videoData.previewUrl}"></video>`
+            : '<p class="hint">(sin vista previa: el video igual quedó subido a Drive)</p>';
         caja.innerHTML = `
-            <p><strong>${icon('checkCircle')} ${etiquetaVariante('B')}: ${videoData.fileName}</strong></p>
-            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Abrir en Google Drive</a></p>` : ''}
+            <p><strong>${icon('checkCircle')} ${etiquetaVariante('B')}</strong></p>
+            ${player}
+            <p>${icon('pencilSimple')} <code>${videoData.fileName}</code></p>
+            ${videoData.duration ? `<p>${icon('hourglass')} Duración: ${videoData.duration}s</p>` : ''}
+            ${videoData.folderName ? `<p>${icon('folderOpen')} Carpeta destino: ${videoData.folderName}</p>` : ''}
+            ${videoData.driveLink ? `<p><a href="${videoData.driveLink}" target="_blank">${icon('link')} Ver en Google Drive</a></p>` : ''}
             <p class="hint">Título del post: ${metaVariante('B').titulo || '(el mismo del primero)'}</p>`;
     } else {
         caja.innerHTML = `<p><strong>⚠️ El video de ${etiquetaVariante('B')} no se pudo generar</strong></p>
@@ -1788,7 +1798,7 @@ function showResult(videoData) {
 
     resultInfo.innerHTML = `
         ${playerHtml}
-        <p><strong>${icon('checkCircle')} Video generado exitosamente</strong> (sesgo: ${nombresSesgo[state.sesgo]})</p>
+        <p><strong>${icon('checkCircle')} ${state.gemelos ? etiquetaVariante('A') : 'Video generado exitosamente'}</strong> (sesgo: ${nombresSesgo[state.sesgo]})</p>
         <p>${icon('folderOpen')} Carpeta destino: ${videoData.folderName}</p>
         <p>${icon('pencilSimple')} Nombre del archivo: <code>${videoData.fileName}</code></p>
         <p>${icon('hourglass')} Duración: ${videoData.duration}s</p>
