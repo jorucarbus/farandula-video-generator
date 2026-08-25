@@ -1,6 +1,132 @@
 # Claude Code Setup — Farandula Video Generator
 
-## 🔴 CIERRE 2026-08-24 — leer esto primero (supersede todos los cierres anteriores)
+## 🔴 CIERRE 2026-08-25 — leer esto primero (supersede todos los cierres anteriores)
+
+Noche de trabajo autorizada por el usuario, sobre un solo pedido suyo: **poder corregir UN video
+gemelo sin tener que repetir el otro**. Se desacoplaron los dos videos y, de paso, salieron dos
+bugs que el acoplamiento tapaba y un riesgo de pérdida de datos que ya estaba mordiendo.
+
+| Repo | Rama | SHA | Estado |
+|---|---|---|---|
+| `farandula-video-generator` | `test-persistencia` | `a6fc5a5` | local = remoto, desplegado en staging |
+| `generador-guion-graphify` | `main` | `b7cb077` | sin cambios hoy |
+
+### Lo que pedía el usuario, en sus palabras
+
+> "estoy atascado solo quiero corregir un video B, pero me obliga a repetir el video A... si acepto
+> la asignacion de un solo video debo poder llegar hasta el final"
+
+Su hipótesis era que el acoplamiento servía para que no se repitieran las tomas entre canales.
+**No era así**, y conviene tenerlo claro antes de tocar nada:
+
+- La asignación (Paso 4) solo decide **qué famoso** va en cada párrafo. **Qué clip** se usa se
+  decide recién en el render, dentro de `seleccion.planificarClips()`.
+- La rotación vive en `historial.json`: por famoso, **global y permanente**, no del par A/B. Y la
+  cola renderiza de a uno para que dos renders no lean el historial antes de que el otro lo
+  actualice (ver el comentario de cabecera de `colaRender.js`).
+- O sea: **las tomas no se repiten aunque los dos videos se hagan con días de diferencia**. El
+  orden de encolado no tiene nada que ver.
+
+### Qué entró (2 commits)
+
+| # | Qué | Commit |
+|---|---|---|
+| 1 | Cada video gemelo avanza y se genera por separado | `b21988c` |
+| 2 | El servidor local ya no pisa el estado compartido en Drive | `a6fc5a5` |
+
+#### 1. El desacople (`b21988c`)
+
+Eran **tres candados, todos de interfaz**, ninguno una dependencia real:
+
+- `marcarPasoVariante` frenaba el avance hasta que las dos variantes aprobaran el paso, y saltaba
+  solo a la otra pestaña. Ahora marca, avisa en el registro y sigue. El punto de color de la
+  pestaña conserva el aviso: **te avisa, no te frena**.
+- `lockFrom` bloqueaba en pantalla los pasos de las dos variantes y borraba lo aprobado de ambas.
+  Ahora el estado de los pasos 3 a 6 es **propio de cada video** (`pasos` dentro de cada variante,
+  restaurado por `pintarVista` al cambiar de pestaña). Los pasos 1 y 2 siguen compartidos, que es
+  lo correcto: la lectura y el ángulo valen para los dos.
+- El render exigía el destino de ambos y encolaba los dos juntos. Ahora el botón genera **el video
+  de la pestaña activa** ("Generar &lt;canal&gt;") y al lado quedó **"Generar los dos"** para el flujo
+  de siempre. Si uno falla, el otro sigue su camino.
+
+Además, **"Regenerar solo este guion"** en la pestaña del gemelo: `soloGemela: true` en
+`/api/generate-script` escribe el guion B contra el guion A **ya guardado**, sin reescribirlo y sin
+tocar el `paso` del job.
+
+⚠️ **La única dependencia real entre los dos videos** es esa: el guion de B se escribe contra el de
+A ("esto es lo que NO podés parecerte"). No hace falta que el de A esté aprobado ni locutado, solo
+que exista. De ahí en adelante son independientes.
+
+#### 2. Dos desfases que el acoplamiento tapaba
+
+- Reescribir el guion del gemelo dejaba colgados sus `fragments` y su `audioToken` viejos
+  (`{ ...gemela, ...resultado }` los conservaba). No se notaba porque el `paso` global del job los
+  ocultaba al rehidratar. Ahora `gemelaConGuionNuevo()` los limpia en el origen.
+- Al retomar un proceso, el gemelo se rehidrataba **acotado por el `paso` global del primero** y
+  perdía su propio avance: su pestaña se abría bloqueada aunque tuviera guion y locución. Ahora
+  sale de sus propios datos (`pasosSegunDatos`).
+
+#### 3. El riesgo de pérdida de datos (`a6fc5a5`) — leer esto
+
+`jobs.json`, `historial.json`, `cola.json` y `famosos.json` se respaldan **al mismo nombre en la
+misma carpeta de Drive** desde local, staging y producción. Y `driveCache.restaurar()` **no baja
+nada si el archivo local ya existe con contenido**. Resultado: la máquina de casa nunca ve lo que
+hicieron las otras — arranca con su copia vieja y la sube encima.
+
+**Pasó de verdad esta noche**: levantar el servidor local para probar dejó el respaldo de
+`jobs.json` con 4 jobs de prueba en lugar de los **11 reales**. Se recuperó desde las revisiones de
+Drive (`drive.revisions.list` + `revisions.get`) y el respaldo quedó sano — pero si staging hubiera
+reiniciado antes, el historial se habría ido con él.
+
+Arreglado: desde local esos cuatro archivos **ya no se respaldan**. Existen para que Railway
+sobreviva un redeploy (disco efímero); el disco local no lo es, así que respaldar desde ahí no
+aporta nada y solo puede destruir. El material adicional se sigue subiendo desde donde sea.
+
+💡 **Si alguna vez falta un job o el historial de tomas se ve raro**: el archivo en Drive guarda
+revisiones y se puede recuperar una anterior. `jobs.json` es el fileId
+`1lb-zMBFWfsQN1rwoZDe-CasphjW5a6wF`.
+
+### Cómo quedó la pantalla
+
+- Pestaña del primero: "Aprobar y continuar", "Regenerar (mismo ángulo)" (reescribe **los dos**),
+  "Cambiar ángulo".
+- Pestaña del gemelo: "Regenerar (mismo ángulo)" se **esconde** y aparece **"Regenerar solo este
+  guion"**, para que no se confundan.
+- Paso 6: "Generar &lt;canal de esta pestaña&gt;" + "Generar los dos", con una línea que aclara que el
+  hermano no se toca y que **las tomas no se repiten igual**.
+
+### Lo que solo el usuario puede cerrar
+
+1. **Probar el desacople con una noticia real**: corregir un video B con el A ya subido, de punta a
+   punta. Verificado en browser real contra el servidor (el A queda intacto: guion, locución, pasos
+   y video ya subido), pero el juicio de si el flujo se siente bien es suyo.
+2. Sigue pendiente de antes: escuchar la música a **-20 dB**, escuchar una pronunciación cargada a
+   mano, comparar los dos motores de guion, y un par de gemelos completo con sesgo opuesto.
+
+### Pendientes de fondo (sin tocar hoy, a propósito)
+
+1. **Merge `test-persistencia` → `main`.** Producción sigue en `624a24a` (17 de agosto) y ya le
+   faltan **30 commits**. **Abierto desde el 25 de julio**, sigue siendo el riesgo más grande del
+   proyecto. Recordar que **el usuario trabaja contra STAGING**.
+2. `/api/exportar` (modo Insumos) sigue sin cola ni gemelos. No es regresión.
+3. Publicación automática a Facebook: proyecto aparte.
+4. El usuario todavía tiene que revisar y limpiar a mano las carpetas viejas de Drive
+   (`renders`, `insumos para edicion`).
+5. `farandula-video-family` sigue sin desplegar, y el código duplicado entre repos sigue creciendo.
+6. La portada JPG del video gemelo: sigue habiendo solo la del primero (`state.previewToken` es uno
+   solo). No lo pidió nadie todavía.
+
+### Recordatorios operativos
+
+- Tras cada deploy, recargar con **Ctrl/Cmd + Shift + R**. Si no, el server responde 400 pidiéndolo
+  (guarda de `0d883e8`).
+- **Antes de empezar en la otra máquina**: `git fetch origin --prune` y revisar la divergencia.
+- ⚠️ **Levantar el servidor local ya es seguro** para el estado compartido (arreglado en `a6fc5a5`),
+  pero seguí sin apuntar pruebas locales contra datos de producción.
+
+---
+
+## CIERRE 2026-08-24 (superado por el de arriba, se conserva por contexto)
 
 Día trabajado desde las **dos máquinas**: Windows (fix de locución, nombres de famosos, motor de
 guion nuevo) y Mac (sesgo opuesto en gemelos, auditoría de la música). Todo pusheado y desplegado
