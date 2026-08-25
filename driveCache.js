@@ -54,12 +54,29 @@ async function restaurar(localPath, nombreDrive) {
   }
 }
 
+// Archivos de ESTADO COMPARTIDO: local, staging y producción respaldan todos al mismo nombre en
+// la misma carpeta de Drive, así que el último que escribe pisa a los demás. Y `restaurar()` no
+// baja nada si el archivo local ya existe con contenido, así que la máquina de casa nunca ve lo
+// que hicieron las otras: arranca con SU copia vieja y la sube encima.
+//
+// Eso ya pasó de verdad: levantar el servidor local para una prueba dejó el respaldo de jobs.json
+// con 4 jobs de prueba en lugar de los 11 reales (recuperado desde las revisiones de Drive). Con
+// cola.json el problema es todavía peor y por eso colaRender ya filtra por entorno.
+//
+// Estos archivos existen para que Railway sobreviva un redeploy — su disco es efímero. El disco
+// local NO lo es, así que respaldarlos desde local no aporta nada y solo puede destruir. Los
+// archivos de material adicional sí se suben desde donde sea: son de un job puntual, no pisan
+// estado de nadie.
+const ESTADO_COMPARTIDO = new Set(['jobs.json', 'historial.json', 'cola.json', 'famosos.json']);
+const EN_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_NAME);
+
 // Respalda (crea o actualiza) un archivo local en la carpeta caché de Drive.
 // Fire-and-forget: nunca debe tumbar el flujo principal si Drive falla.
 // mimeType: 'application/json' por defecto (jobs.json/historial.json, los 2 usos originales);
 // los archivos binarios (material adicional: audio/video/imagen) pasan el suyo real.
 async function respaldar(localPath, nombreDrive, mimeType = 'application/json') {
   try {
+    if (!EN_RAILWAY && ESTADO_COMPARTIDO.has(nombreDrive)) return;
     if (!fs.existsSync(localPath)) return;
     const media = { mimeType, body: fs.createReadStream(localPath) };
     const archivo = await buscarArchivo(nombreDrive);
