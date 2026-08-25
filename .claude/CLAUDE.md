@@ -2,68 +2,78 @@
 
 ## 🔴 CIERRE 2026-08-24 — leer esto primero (supersede todos los cierres anteriores)
 
-Sesión larga en Windows. **Todo pusheado y desplegado en staging**; nada quedó a medias.
+Día trabajado desde las **dos máquinas**: Windows (fix de locución, nombres de famosos, motor de
+guion nuevo) y Mac (sesgo opuesto en gemelos, auditoría de la música). Todo pusheado y desplegado
+en staging; nada quedó a medias.
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `4d720fe` | local = remoto, desplegado y verificado en staging |
+| `farandula-video-generator` | `test-persistencia` | `767adc0` | local = remoto, desplegado en staging |
 | `generador-guion-graphify` | `main` | `b7cb077` | **repo NUEVO**, ver abajo |
 
-### ⚠️ Lo primero para la otra máquina: hay un repo nuevo
+### ⚠️ Lo primero: hay un repo nuevo
 
 `generador-guion-graphify` **ya no vive en `G:\Mi unidad\`** (Google Drive). Ahora es un repo
-propio: `github.com/jorucarbus/generador-guion-graphify` (privado), y en esta máquina está en
+propio: `github.com/jorucarbus/generador-guion-graphify` (privado), y en Windows está en
 `D:\claude pro apps\generador-guion-graphify`.
 
 Se movió porque el sync de Drive corrompe archivos por la carrera de escritura —ya había pasado
 con `npm install`— y un `.git` a medio escribir es peor que un `node_modules` roto.
 
-Para trabajarlo en la Mac: `git clone`, `npm install`, y un `.env` con `GEMINI_API_KEY`.
-**No hace falta tener graphify instalado** salvo que se quiera reconstruir el grafo.
+Para trabajarlo en la otra máquina: `git clone`, `npm install`, y un `.env` con `GEMINI_API_KEY`.
+**No hace falta tener graphify instalado** salvo que se quiera reconstruir el grafo; el
+`graph.json` viaja en el repo. La app **no importa ese código**: solo consume
+`catalogo-tecnicas.json`, que se regenera con `node exportar-catalogo.js` y se copia.
 
-⚠️ En Windows, git en `D:` pide `git config --global --add safe.directory '<ruta>'` (exFAT no
-registra propietario). Ya está puesto para los dos repos de acá.
+⚠️ Git en `D:` (Windows) pide `git config --global --add safe.directory '<ruta>'` — exFAT no
+registra propietario. Ya está puesto para los dos repos de esa máquina.
 
-### Qué entró en esta sesión (3 tandas, cada una con su entrada arriba)
+### Qué entró hoy (5 tandas, cada una con su entrada detallada más abajo)
 
-1. **Fix de la locución cruzada entre pestañas** (`034129b`) — el reportado con captura: la pestaña
-   del video A decía "no hay locución" mientras el reproductor sonaba con la del B. Cuatro causas,
-   de la raíz al síntoma. Incluye rescate automático de la locución desde el proceso guardado, para
-   no volver a gastar una de ElevenLabs por un desfase de estado local.
-2. **Nombres de famosos** (`342dd2d`) — cotejo fonético contra las 272 carpetas de Drive, con
-   corrección en toda la lectura (crónica, título, hashtags), aprendizaje de alias, y pronunciación
-   por famoso que llega a ElevenLabs sin romper la alineación de subtítulos.
-3. **Motor de guion por estructura** (`7c3daee`) — el generador con graphify entró en la app como
-   motor `grafo` de `MOTORES_GUION`, con selector en el Paso 2 y el de siempre de default.
+| # | Qué | Commit | Dónde |
+|---|---|---|---|
+| 1 | Fix de la locución cruzada entre pestañas (el del screenshot) | `034129b` | Windows |
+| 2 | Nombres de famosos: cotejo fonético + pronunciación por famoso | `342dd2d` | Windows |
+| 3 | Motor de guion por estructura (grafo) + selector en el Paso 2 | `7c3daee` | Windows |
+| 4 | Gemelos con **sesgo opuesto** en el motor `grafo` | `970c698` | Mac |
+| 5 | Música: default de -18 a **-20 dB** tras auditar el emparejado | `767adc0` | Mac |
 
-### Lo que le toca al usuario, y nadie más puede cerrar
+**El motor `grafo` quedó con DOS diferenciadores entre gemelos**, que se suman: la **estructura**
+narrativa (la elige el motor, y para el segundo video tiene que apartarse de la del primero) y
+ahora el **sesgo** (si el primero va a favor del protagonista, el hermano va en contra). Con el
+motor de siempre, los gemelos siguen compartiendo ángulo y postura.
 
-- **Escuchar** una locución con una pronunciación cargada a mano ("Nawat" → "Nagüat"). Que la
-  alineación NO se rompe está medido; si suena mejor lo decide su oído.
-- **Comparar los dos motores de guion** sobre la misma noticia. Que los gemelos salen más distintos
-  está medido (16% de vocabulario común contra 46%); si son *mejores* es criterio suyo.
-- Los guiones del grafo salen ~200 palabras contra ~215 del motor de siempre: videos ~4 segundos
-  más cortos. Si le molesta, subir `PALABRAS_MIN` en `gemini.js`.
+### Lo que solo el usuario puede cerrar (nadie más decide esto)
 
-### Pendientes de fondo (sin tocar en esta sesión, a propósito)
+1. **Escuchar la música al nuevo -20 dB.** Está medido que la separación con la voz queda en ~18 dB
+   —el nivel que él mismo aprobó el 14/08— pero no se generó un video completo con el default nuevo.
+2. **Escuchar una locución con pronunciación cargada a mano** ("Nawat" → "Nagüat"). Que la
+   alineación de subtítulos NO se rompe está medido; si suena mejor lo decide su oído.
+3. **Comparar los dos motores de guion** sobre la misma noticia. Que los gemelos salen más
+   distintos está medido (16% de vocabulario común contra 46%); si son *mejores* es criterio suyo.
+4. **Un par de gemelos completo con sesgo opuesto**, de punta a punta. Lo verificado es que las dos
+   crónicas salen opuestas, no el video final.
+
+### Pendientes de fondo (sin tocar hoy, a propósito)
 
 1. **Merge `test-persistencia` → `main`.** Producción sigue en `624a24a` (17 de agosto) y le faltan
-   **24 commits**: videos gemelos, cola de renderizado, estructura nueva de Drive, música
-   emparejada por LUFS, nombres de famosos y el motor de guion nuevo. **La brecha lleva abierta
-   desde el 25 de julio.** Sigue siendo el riesgo más grande del proyecto — y hay que recordar que
-   **el usuario trabaja contra STAGING**, así que producción no es lo que él ve.
+   **27 commits**: gemelos, cola de renderizado, estructura nueva de Drive, música emparejada por
+   LUFS, nombres de famosos, motor de guion nuevo y sesgo opuesto. **Abierto desde el 25 de julio**,
+   y sigue siendo el riesgo más grande del proyecto. Recordar que **el usuario trabaja contra
+   STAGING**, así que producción no es lo que él ve todos los días.
 2. `/api/exportar` (modo Insumos) sigue sin cola ni gemelos. No es regresión.
-3. La publicación automática a Facebook: proyecto aparte, solo quedó preparada la forma (carpeta
+3. Publicación automática a Facebook: proyecto aparte; acá solo quedó preparada la forma (carpeta
    plana por canal + la hoja como cola).
 4. El usuario todavía tiene que revisar y limpiar a mano las carpetas viejas de Drive
    (`renders`, `insumos para edicion`).
 5. `farandula-video-family` sigue sin desplegar, y el código duplicado entre repos sigue creciendo.
 
-### Recordatorio operativo
+### Recordatorios operativos
 
-Tras cada deploy, recargar con **Ctrl/Cmd + Shift + R**. Si no, el server responde 400 pidiéndolo
-(guarda de `0d883e8`, puesta justamente porque ese error costó una sesión entera de diagnóstico).
-
+- Tras cada deploy, recargar con **Ctrl/Cmd + Shift + R**. Si no, el server responde 400 pidiéndolo
+  (guarda de `0d883e8`, puesta porque ese error costó una sesión entera de diagnóstico).
+- **Antes de empezar en la otra máquina**: `git fetch origin --prune` y revisar la divergencia. Hoy
+  pasó justamente eso — Windows encontró dos commits de la Mac esperando en el remoto.
 
 ## 2026-08-24 (noche) — Motor de guion por estructura, sobre el grafo de técnica narrativa
 
