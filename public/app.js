@@ -44,21 +44,24 @@ const CLAVES_POR_PASO = {
 //
 // La columna "Productos" y el panel de resultado siguen reflejando el primer video (decisión del
 // usuario de no partirlos en A/B), así que solo se limpian cuando el paso que se rehace es suyo.
-function lockFrom(stepId) {
+function lockFrom(stepId, v = state.varianteActiva) {
     const idx = STEP_ORDER.indexOf(stepId);
     if (idx === -1) return;
     if (typeof invalidarPasos === 'function' && CLAVES_POR_PASO[stepId]) {
-        invalidarPasos(CLAVES_POR_PASO[stepId]);
+        invalidarPasos(CLAVES_POR_PASO[stepId], v);
     }
-    const esA = state.varianteActiva === 'A';
+    const esA = v === 'A';
     for (let i = idx; i < STEP_ORDER.length; i++) {
-        setStepStatus(STEP_ORDER[i], 'locked');
+        const paso = STEP_ORDER[i];
+        // Los pasos 3 a 6 son de cada video; los 1 y 2 son compartidos y se pintan sin más.
+        if (PASOS_POR_VARIANTE.includes(paso)) setPasoDeVariante(v, paso, 'locked');
+        else setStepStatus(paso, 'locked');
         if (!esA) continue;
-        if (STEP_ORDER[i] === 'guion-section') resetProductoSlot('producto-guion');
-        if (STEP_ORDER[i] === 'audio-section') resetProductoSlot('producto-audio');
-        if (STEP_ORDER[i] === 'destination-section') resetProductoSlot('producto-final');
+        if (paso === 'guion-section') resetProductoSlot('producto-guion');
+        if (paso === 'audio-section') resetProductoSlot('producto-audio');
+        if (paso === 'destination-section') resetProductoSlot('producto-final');
     }
-    V().resultado = null;
+    V(v).resultado = null;
     pintarResultados();
 }
 
@@ -416,6 +419,21 @@ function actualizarBotonesVariante() {
     const enGemelo = gemelos && activa === 'B';
     document.getElementById('btn-regenerate-solo-gemelo')?.classList.toggle('hidden', !enGemelo);
     document.getElementById('btn-regenerate-guion')?.classList.toggle('hidden', enGemelo);
+
+    // Y ahora lo que de verdad separa los dos canales: cada botón se apaga solo si LA PESTAÑA
+    // ABIERTA está ocupada en esa tarea. Que el hermano esté generando su locución ya no deja
+    // muerto el botón de este.
+    const ocupadaEn = t => estaOcupada(activa, t);
+    setButtonDisabled('btn-approve-guion', ocupadaEn('guion'));
+    setButtonDisabled('btn-regenerate-guion', ocupadaEn('guion'));
+    setButtonDisabled('btn-regenerate-solo-gemelo', ocupadaEn('guion'));
+    setButtonDisabled('btn-confirm-assignments', ocupadaEn('audio'));
+    setButtonDisabled('btn-regenerate-audio-v3', ocupadaEn('audio'));
+    setButtonDisabled('btn-regenerate-audio-v2', ocupadaEn('audio'));
+    setButtonDisabled('btn-recargar-audio', ocupadaEn('audio'));
+    setButtonDisabled('btn-approve-audio', ocupadaEn('audio'));
+    setButtonDisabled('btn-generate-video', ocupadaEn('render'));
+    setButtonDisabled('btn-generate-ambos', ocupacion.A.has('render') || ocupacion.B.has('render'));
 }
 
 // El panel de resultado muestra los DOS videos a la vez (el primero arriba, el gemelo en su caja):
@@ -537,12 +555,12 @@ function tituloParaCartel(v) {
 //
 // Lo único que de verdad ataba los dos videos es que el guion del B se escribe contra el del A; de
 // ahí en adelante son independientes, incluida la rotación de tomas (ver `handleGenerateVideo`).
-function marcarPasoVariante(clave, mensajeFalta) {
-    const d = V();
+function marcarPasoVariante(clave, mensajeFalta, v = state.varianteActiva) {
+    const d = V(v);
     d.aprobado = { ...(d.aprobado || {}), [clave]: true };
     actualizarTabs();
     if (!state.gemelos) return true;
-    const otra = otraVariante();
+    const otra = otraVariante(v);
     if (!V(otra).aprobado?.[clave]) log(`⏳ Pendiente en ${etiquetaVariante(otra)}: ${mensajeFalta}`);
     return true;
 }
@@ -648,6 +666,41 @@ function setStepStatus(stepId, status, recordar = true) {
     el.dataset.status = status;
     actualizarStepBadge(el, status);
     if (recordar && status === 'active') el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+}
+
+// Marca un paso DE UNA VARIANTE CONCRETA. Es la versión que hay que usar después de un `await`:
+// para entonces el usuario pudo haberse cambiado de pestaña, y `setStepStatus` a secas escribiría
+// el resultado en el video equivocado. Ese era el "se desconfigura" que reportó el usuario, con los
+// puntos de las pestañas saltando de color.
+//
+// Solo pinta la pantalla si esa variante es la que se está viendo; si no, se guarda callado y
+// aparece cuando el usuario abra esa pestaña.
+function setPasoDeVariante(v, stepId, status) {
+    const d = V(v);
+    d.pasos = { ...(d.pasos || {}), [stepId]: status };
+    if (v === state.varianteActiva) setStepStatus(stepId, status);
+    else actualizarTabs();
+}
+
+// Qué está haciendo cada video AHORA MISMO. Los controles son un solo juego en el DOM (no se
+// duplican a propósito), así que sin esto deshabilitar el botón mientras trabaja un canal lo
+// deshabilitaba también para el otro: el usuario apretaba en un canal y el hermano quedaba
+// inservible hasta que el primero terminara.
+//
+// Con este registro, el botón se deshabilita según lo que esté haciendo LA PESTAÑA ABIERTA. Si el
+// canal A está generando su locución y te pasás al B, los botones del B están vivos.
+const ocupacion = { A: new Set(), B: new Set() };
+
+function ocupar(v, tarea) {
+    ocupacion[v].add(tarea);
+    actualizarBotonesVariante();
+}
+function desocupar(v, tarea) {
+    ocupacion[v].delete(tarea);
+    actualizarBotonesVariante();
+}
+function estaOcupada(v, tarea) {
+    return ocupacion[v]?.has(tarea) || false;
 }
 
 // Productos del job actual (columna derecha): opacos hasta que existan, se "encienden" al estar listos.
@@ -1298,27 +1351,29 @@ async function aprobarGuion() {
         alert('El guion está vacío');
         return;
     }
-    const d = V();
+    // Canal dueño de esta aprobación, fijado antes del primer `await`.
+    const v = state.varianteActiva;
+    const d = V(v);
     d.guion = texto;
-    if (state.varianteActiva === 'A') renderProductoGuion(texto);
-    log(`✅ Guion aprobado (${etiquetaVariante(state.varianteActiva)})`);
+    if (v === 'A') renderProductoGuion(texto);
+    log(`✅ Guion aprobado (${etiquetaVariante(v)})`);
 
-    setButtonDisabled('btn-approve-guion', true);
+    ocupar(v, 'guion');
     try {
         // Rehacer la aprobación (guion editado) invalida audio/destino ya hechos
         d.audioToken = null;
         d.selectedDestFolder = null;
-        invalidarPasos(['asignaciones', 'audio']);
-        lockFrom('revision-section');
+        invalidarPasos(['asignaciones', 'audio'], v);
+        lockFrom('revision-section', v);
 
-        showProgress(`${icon('folderOpen')} Asignando carpetas (${etiquetaVariante(state.varianteActiva)})...`);
-        log('📂 Asignando carpetas a los párrafos...');
+        showProgress(`${icon('folderOpen')} Asignando carpetas (${etiquetaVariante(v)})...`);
+        log(`📂 Asignando carpetas a los párrafos de ${etiquetaVariante(v)}...`);
         updateProgress(52);
         const result = await apiCall(cfg().asignar, 'POST', {
             [cfg().asignarParam]: d.guion,
             protagonista: state.sourceData?.protagonista,
             jobId: state.jobId,
-            variante: state.varianteActiva,
+            variante: v,
         });
         d.fragments = result[cfg().parrafosKey];
         d.avisoReconstruccion = result.avisoReconstruccion || null;
@@ -1326,17 +1381,17 @@ async function aprobarGuion() {
         // versiones eligen entre las mismas carpetas y comparten las fotos/videos de apoyo.
         state.carpetas = result.carpetas;
         state.materialesAdicionales = result.materialesDisponibles || [];
-        renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
+        if (v === state.varianteActiva) renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
         hideProgress();
-        marcarPasoVariante('guion', 'todavía falta revisar y aprobar su guion.');
-        setStepStatus('guion-section', 'done');
-        setStepStatus('revision-section', 'active');
+        marcarPasoVariante('guion', 'todavía falta revisar y aprobar su guion.', v);
+        setPasoDeVariante(v, 'guion-section', 'done');
+        setPasoDeVariante(v, 'revision-section', 'active');
     } catch (error) {
-        mostrarError(`Error asignando carpetas: ${error.message}`,
+        mostrarError(`Error asignando las carpetas de ${etiquetaVariante(v)}: ${error.message}`,
             () => aprobarGuion(), 'guion-section');
     } finally {
-        setButtonDisabled('btn-approve-guion', false);
+        desocupar(v, 'guion');
     }
 }
 
@@ -1498,75 +1553,75 @@ async function refrescarCarpetas() {
 
 // Confirmar asignaciones → generar locución para aprobación
 async function confirmarAsignaciones() {
-    setButtonDisabled('btn-confirm-assignments', true);
-    try {
-        // `regenerarAudio` atrapa su propio error para poder ofrecer "reintentar", así que hay que
-        // mirar lo que devuelve: si la locución falló, marcar el paso mandaba al usuario a la otra
-        // pestaña y esta variante seguía adelante SIN locución — y el problema recién aparecía en
-        // el Paso 5, lejos de donde se originó.
-        if (!await regenerarAudio('eleven_v3')) return;
-        marcarPasoVariante('asignaciones', 'todavía faltan revisar sus asignaciones.');
-    } finally {
-        setButtonDisabled('btn-confirm-assignments', false);
-    }
+    // La variante se fija ACÁ y no se vuelve a leer: si el usuario se pasa a la otra pestaña
+    // mientras esto trabaja, el resultado tiene que anotarse igual en el canal que lo pidió.
+    const v = state.varianteActiva;
+    // `regenerarAudio` atrapa su propio error para poder ofrecer "reintentar", así que hay que
+    // mirar lo que devuelve: si la locución falló, marcar el paso dejaba a esta variante
+    // avanzando SIN locución — y el problema recién aparecía en el Paso 5, lejos de su origen.
+    if (!await regenerarAudio('eleven_v3', v)) return;
+    marcarPasoVariante('asignaciones', 'todavía faltan revisar sus asignaciones.', v);
 }
 
-// Generar (o regenerar) la locución y mostrarla para aprobación
-async function regenerarAudio(modelo) {
-    setButtonDisabled('btn-regenerate-audio-v3', true);
-    setButtonDisabled('btn-regenerate-audio-v2', true);
+// Generar (o regenerar) la locución y mostrarla para aprobación.
+// `v` es el canal dueño de esta locución, fijado por quien llama; si no viene, el de la pestaña
+// abierta en este instante.
+async function regenerarAudio(modelo, v = state.varianteActiva) {
+    const d = V(v);
+    ocupar(v, 'audio');
     try {
         // Rehacer la locución invalida el destino ya elegido
-        const d = V();
         d.selectedDestFolder = null;
-        invalidarPasos(['audio']);
-        lockFrom('destination-section');
+        invalidarPasos(['audio'], v);
+        lockFrom('destination-section', v);
 
-        showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(state.varianteActiva)} (${modelo})...`);
-        log(`🎙️ Generando locución (${modelo}) — ${etiquetaVariante(state.varianteActiva)}...`);
+        showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(v)} (${modelo})...`);
+        log(`🎙️ Generando locución (${modelo}) — ${etiquetaVariante(v)}...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
             [cfg().audioParam]: d.fragments,
             modelo: modelo,
             jobId: state.jobId,
-            variante: state.varianteActiva,
+            variante: v,
         });
         d.audioToken = result.audioToken;
         d.duracion = result.duracion;
 
-        document.getElementById('audio-info').textContent =
-            `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
-        const player = document.getElementById('audio-player');
-        // La URL del audio es relativa al backend activo (importante en modo insumos)
-        player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
-        player.load();
-        if (state.varianteActiva === 'A') renderProductoAudio(player.src);
+        // La pantalla solo se toca si el usuario está mirando ESTE canal. Si se fue al hermano, sus
+        // datos ya quedaron guardados y aparecen cuando vuelva.
+        if (v === state.varianteActiva) {
+            document.getElementById('audio-info').textContent =
+                `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
+            const player = document.getElementById('audio-player');
+            // La URL del audio es relativa al backend activo (importante en modo insumos)
+            player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
+            player.load();
+        }
+        if (v === 'A') renderProductoAudio(apiBase() + result.audioUrl + '?t=' + Date.now());
 
         hideProgress();
-        actualizarTabs();
-        setStepStatus('revision-section', 'done');
-        setStepStatus('audio-section', 'active');
-        log('🎧 Escucha la locución y apruébala o regenérala');
+        setPasoDeVariante(v, 'revision-section', 'done');
+        setPasoDeVariante(v, 'audio-section', 'active');
+        log(`🎧 Locución de ${etiquetaVariante(v)} lista: escuchala y aprobala`);
         return true;
     } catch (error) {
         // Que el pedido falle NO significa que la locución no se haya hecho: si la respuesta se
         // perdió en el camino (corte del gateway, timeout), el servidor igual la generó y la
         // guardó en el job — y ya está paga. Antes de dar error y hacerle gastar otra, se busca.
-        const rescatada = await rescatarAudioVariante(state.varianteActiva);
+        const rescatada = await rescatarAudioVariante(v);
         if (rescatada) {
             hideProgress();
-            pintarVista();
-            setStepStatus('revision-section', 'done');
-            setStepStatus('audio-section', 'active');
-            log('♻️ La locución sí se había generado: se recuperó del proceso guardado');
+            if (v === state.varianteActiva) pintarVista();
+            setPasoDeVariante(v, 'revision-section', 'done');
+            setPasoDeVariante(v, 'audio-section', 'active');
+            log(`♻️ La locución de ${etiquetaVariante(v)} sí se había generado: se recuperó del proceso guardado`);
             return true;
         }
-        mostrarError(`Error generando locución: ${error.message}`,
-            () => regenerarAudio(modelo), 'revision-section');
+        mostrarError(`Error generando la locución de ${etiquetaVariante(v)}: ${error.message}`,
+            () => regenerarAudio(modelo, v), 'revision-section');
         return false;
     } finally {
-        setButtonDisabled('btn-regenerate-audio-v3', false);
-        setButtonDisabled('btn-regenerate-audio-v2', false);
+        desocupar(v, 'audio');
     }
 }
 
@@ -1577,79 +1632,88 @@ async function recargarAudioDeDrive() {
         alert('No hay un proceso activo con carpeta en Drive');
         return;
     }
-    setButtonDisabled('btn-recargar-audio', true);
+    const v = state.varianteActiva;
+    const d = V(v);
+    ocupar(v, 'audio');
     try {
         // Cambiar la locución invalida el destino ya elegido
-        V().selectedDestFolder = null;
-        invalidarPasos(['audio']);
-        lockFrom('destination-section');
+        d.selectedDestFolder = null;
+        invalidarPasos(['audio'], v);
+        lockFrom('destination-section', v);
 
-        showProgress(`${icon('arrowsClockwise')} Recargando audio desde Drive...`);
-        log('♻️ Recargando audio desde Drive...');
+        showProgress(`${icon('arrowsClockwise')} Recargando el audio de ${etiquetaVariante(v)} desde Drive...`);
+        log(`♻️ Recargando el audio de ${etiquetaVariante(v)} desde Drive...`);
         updateProgress(65);
-        const result = await apiCall('/recargar-audio', 'POST', { jobId: state.jobId, variante: state.varianteActiva });
-        V().audioToken = result.audioToken;
-        V().duracion = result.duracion;
+        const result = await apiCall('/recargar-audio', 'POST', { jobId: state.jobId, variante: v });
+        d.audioToken = result.audioToken;
+        d.duracion = result.duracion;
 
-        document.getElementById('audio-info').textContent =
-            `Duración: ${result.duracion}s | Origen: Drive`;
-        const player = document.getElementById('audio-player');
-        player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
-        player.load();
-        renderProductoAudio(player.src);
+        const url = apiBase() + result.audioUrl + '?t=' + Date.now();
+        if (v === state.varianteActiva) {
+            document.getElementById('audio-info').textContent =
+                `Duración: ${result.duracion}s | Origen: Drive`;
+            const player = document.getElementById('audio-player');
+            player.src = url;
+            player.load();
+        }
+        if (v === 'A') renderProductoAudio(url);
 
         hideProgress();
-        setStepStatus('revision-section', 'done');
-        setStepStatus('audio-section', 'active');
-        log('🎧 Audio de Drive cargado. Escúchalo y apruébalo.');
+        setPasoDeVariante(v, 'revision-section', 'done');
+        setPasoDeVariante(v, 'audio-section', 'active');
+        log(`🎧 Audio de Drive cargado para ${etiquetaVariante(v)}. Escuchalo y aprobalo.`);
     } catch (error) {
-        mostrarError(`Error recargando audio: ${error.message}`,
+        mostrarError(`Error recargando el audio de ${etiquetaVariante(v)}: ${error.message}`,
             () => recargarAudioDeDrive(), 'audio-section');
     } finally {
-        setButtonDisabled('btn-recargar-audio', false);
+        desocupar(v, 'audio');
     }
 }
 
 // Locución aprobada → elegir carpeta de destino
 async function aprobarAudio() {
-    if (!V().audioToken) {
-        const rescatada = await rescatarAudioVariante(state.varianteActiva);
-        if (rescatada) pintarVista();
-        else {
-            alert(`${etiquetaVariante(state.varianteActiva)} todavía no tiene locución.\n\n`
+    const v = state.varianteActiva;
+    if (!V(v).audioToken) {
+        const rescatada = await rescatarAudioVariante(v);
+        if (rescatada && v === state.varianteActiva) pintarVista();
+        else if (!rescatada) {
+            alert(`${etiquetaVariante(v)} todavía no tiene locución.\n\n`
                 + 'Generala desde esta misma pestaña con "Regenerar", o traé la tuya con '
                 + '"Recargar audio desde Drive".');
             return;
         }
     }
-    setButtonDisabled('btn-approve-audio', true);
+    ocupar(v, 'audio');
     try {
-        log(`✅ Locución aprobada (${etiquetaVariante(state.varianteActiva)})`);
-        marcarPasoVariante('audio', 'todavía falta escuchar y aprobar su locución.');
+        log(`✅ Locución aprobada (${etiquetaVariante(v)})`);
+        marcarPasoVariante('audio', 'todavía falta escuchar y aprobar su locución.', v);
         await loadDestinationFolders();
-        setStepStatus('audio-section', 'done');
-        setStepStatus('destination-section', 'active');
+        setPasoDeVariante(v, 'audio-section', 'done');
+        setPasoDeVariante(v, 'destination-section', 'active');
         // Prefill del titular del cartel con el TÍTULO de la lectura (no con `nombreCorto`, que es
         // la base del nombre de archivo) — editable, y sin pisar si el usuario ya escribió algo.
         const portadaTitularEl = document.getElementById('portada-titular');
-        if (portadaTitularEl && !portadaTitularEl.value.trim()) {
-            portadaTitularEl.value = tituloParaCartel(state.varianteActiva);
-            V().titularCartel = portadaTitularEl.value;
+        if (v === state.varianteActiva && portadaTitularEl && !portadaTitularEl.value.trim()) {
+            portadaTitularEl.value = tituloParaCartel(v);
+            V(v).titularCartel = portadaTitularEl.value;
             actualizarPortadaDiseno();
         }
     } finally {
-        setButtonDisabled('btn-approve-audio', false);
+        desocupar(v, 'audio');
     }
 }
 
 // RECHAZO: regenerar con el mismo ángulo
 async function regenerarGuion() {
-    setButtonDisabled('btn-regenerate-guion', true);
+    // Reescribe los DOS guiones, así que ocupa a los dos canales mientras corre.
+    ocupar('A', 'guion');
+    ocupar('B', 'guion');
     try {
-        log('🔄 Regenerando guion (mismo ángulo)...');
+        log('🔄 Regenerando los dos guiones (mismo ángulo)...');
         await handleGenerateScript();
     } finally {
-        setButtonDisabled('btn-regenerate-guion', false);
+        desocupar('A', 'guion');
+        desocupar('B', 'guion');
     }
 }
 
@@ -1662,14 +1726,14 @@ async function regenerarSoloGemelo() {
         alert('Todavía no hay guion del primer video. Generá los dos juntos primero.');
         return;
     }
-    setButtonDisabled('btn-regenerate-solo-gemelo', true);
+    ocupar('B', 'guion');
     try {
         const d = V('B');
         // Rehacer el guion del gemelo invalida SUS asignaciones y SU locución; el primero no se toca.
         d.fragments = null;
         d.audioToken = null;
         d.selectedDestFolder = null;
-        lockFrom('guion-section');
+        lockFrom('guion-section', 'B');
 
         showProgress(`${icon('pencilSimple')} Regenerando el guion de ${etiquetaVariante('B')}...`);
         log(`🔄 Regenerando solo el guion de ${etiquetaVariante('B')} (el del primero queda como está)...`);
@@ -1689,17 +1753,17 @@ async function regenerarSoloGemelo() {
         d.metadatos = result.gemela.metadatos;
         d.aprobado = {};
         pintarLecturaGemela();
-        pintarVista();
+        if (state.varianteActiva === 'B') pintarVista();
         log(`✅ Guion de ${etiquetaVariante('B')}: ${result.gemela.palabras} palabras — "${result.gemela.metadatos?.titulo || ''}"`);
 
         hideProgress();
-        setStepStatus('guion-section', 'active');
+        setPasoDeVariante('B', 'guion-section', 'active');
         log('➡️ Revisá este guion: aprobá, editá o volvé a regenerarlo');
     } catch (error) {
         mostrarError(`Error regenerando el guion del gemelo: ${error.message}`,
             () => regenerarSoloGemelo(), 'guion-section');
     } finally {
-        setButtonDisabled('btn-regenerate-solo-gemelo', false);
+        desocupar('B', 'guion');
     }
 }
 
@@ -1832,30 +1896,24 @@ async function encolarVariante(v) {
     return respuesta.renderId;
 }
 
-// Variantes con un render encolado o corriendo AHORA. Existe para dos cosas: no encolar dos veces
-// el mismo video de un doble clic, y saber que "ya está en camino" sin tener la pantalla tomada.
-const rendersEnVuelo = new Set();
-
 // Sigue un render hasta que termina, sin bloquear la pantalla. El usuario puede irse a la otra
 // pestaña y mandar el hermano mientras este se cocina.
 async function seguirRender(v, renderId) {
     try {
         const res = await esperarRender(renderId, etiquetaVariante(v), false);
-        const d = V(v);
-        d.resultado = res;
+        V(v).resultado = res;
         // El paso queda hecho para ESE video, no para el que se esté mirando: si se encolaron los
         // dos desde la pestaña del primero, el hermano también avanza.
-        d.pasos = { ...(d.pasos || {}), 'destination-section': 'done' };
+        setPasoDeVariante(v, 'destination-section', 'done');
         log(`🎉 ${etiquetaVariante(v)} listo: ${res.fileName}`);
         pintarResultados();
-        if (v === state.varianteActiva) setStepStatus('destination-section', 'done');
     } catch (e) {
         log(`❌ ${etiquetaVariante(v)} falló: ${e.message}`);
         if (v === 'B') mostrarResultadoGemelo(null, e.message);
         else mostrarError(`El video de ${etiquetaVariante(v)} falló: ${e.message}`,
             () => generarVideos([v]), 'destination-section');
     } finally {
-        rendersEnVuelo.delete(v);
+        desocupar(v, 'render');
     }
 }
 
@@ -1898,15 +1956,16 @@ async function generarVideos(variantes) {
                 + '\n\nElegila desde la pestaña de ese video.');
             return;
         }
-        const yaEnCola = pedidas.filter(v => rendersEnVuelo.has(v));
+        const yaEnCola = pedidas.filter(v => estaOcupada(v, 'render'));
         if (yaEnCola.length) {
             alert(`Ya está en la cola: ${yaEnCola.map(etiquetaVariante).join(', ')}.\n\n`
                 + 'Mirá el panel de la cola para ver en qué puesto va.');
             return;
         }
 
-        setButtonDisabled('btn-generate-video', true);
-        setButtonDisabled('btn-generate-ambos', true);
+        // Cada canal queda ocupado en 'render' desde que se manda hasta que termina. Eso apaga SU
+        // botón (no el del hermano) y evita mandarlo dos veces.
+        for (const v of pedidas) ocupar(v, 'render');
         iniciarPanelCola();
         const varianteOriginal = state.varianteActiva;
         const ids = [];
@@ -1917,23 +1976,19 @@ async function generarVideos(variantes) {
 
             // El cartel se dibuja en el canvas COMPARTIDO dentro de encolarVariante, así que hay
             // que encolar de a una y en orden, nunca en paralelo.
-            for (const v of pedidas) {
-                ids.push({ v, id: await encolarVariante(v) });
-                rendersEnVuelo.add(v);
-            }
+            for (const v of pedidas) ids.push({ v, id: await encolarVariante(v) });
             hideProgress();
         } catch (error) {
             mostrarError(`Error encolando ${pedidas.length === 1 ? 'el video' : 'los videos'}: ${error.message}`,
                 () => generarVideos(pedidas), 'destination-section');
         } finally {
-            // El botón se libera acá, con el video YA en la cola — no al final del render. Antes se
-            // soltaba recién cuando terminaba de renderizar, así que para mandar el segundo video
-            // había que esperar minutos mirando el primero: el acoplamiento que el usuario reportó
-            // seguía vivo justo en el último paso.
+            // Los que NO llegaron a la cola se liberan acá; los que sí quedan ocupados hasta que
+            // `seguirRender` los vea terminar. Antes el botón se soltaba recién al final del render
+            // entero, y para mandar el segundo video había que esperar minutos mirando el primero.
+            const encoladas = new Set(ids.map(x => x.v));
+            for (const v of pedidas) if (!encoladas.has(v)) desocupar(v, 'render');
             state.varianteActiva = varianteOriginal;
             pintarVista();
-            setButtonDisabled('btn-generate-video', false);
-            setButtonDisabled('btn-generate-ambos', false);
         }
 
         // El seguimiento va SIN await: la cola ya los renderiza de a uno y el panel muestra el
@@ -1942,7 +1997,10 @@ async function generarVideos(variantes) {
         return;
     }
 
-    setButtonDisabled('btn-generate-video', true);
+    // Mismo registro de ocupación que el camino de gemelos: si el botón se apagara con
+    // `setButtonDisabled` a secas, el próximo repintado de botones lo volvería a encender en mitad
+    // del render y se podría mandar dos veces.
+    ocupar('A', 'render');
     try {
         showProgress(MODO === 'video' ? `${icon('rocketLaunch')} Generando video...` : `${icon('rocketLaunch')} Exportando insumos...`);
         log(MODO === 'video' ? '🚀 Iniciando generación de video...' : '🚀 Iniciando exportación de insumos...');
@@ -2002,7 +2060,7 @@ async function generarVideos(variantes) {
         mostrarError(`Error en ${MODO === 'video' ? 'la generación del video' : 'la exportación'}: ${error.message}`,
             () => handleGenerateVideo(), 'destination-section');
     } finally {
-        setButtonDisabled('btn-generate-video', false);
+        desocupar('A', 'render');
     }
 }
 
