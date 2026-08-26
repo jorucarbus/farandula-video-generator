@@ -250,10 +250,35 @@ function toggleGemelos(activo) {
 }
 
 // Nombre visible de cada pestaña: el canal destino si ya se eligió, si no "Video A"/"Video B".
+// Nombre visible de una variante. Se busca en tres lados, de más firme a más flojo:
+//
+// 1. La carpeta de destino ya elegida (Paso 6) — es la verdad final.
+// 2. El canal elegido en el Paso 1 (y su hermano, para la otra variante). Esto existe desde el
+//    principio del proceso, así que los botones pueden decir "Aprobar guion de La Naple" ya en el
+//    Paso 3 en vez del anónimo "Video B".
+// 3. "Video A" / "Video B", si no hay ninguna de las dos.
 function etiquetaVariante(v) {
     const dest = V(v).selectedDestFolder;
     const carpeta = (state.carpetasDestino || []).find(f => f.id === dest);
-    return carpeta ? carpeta.name : `Video ${v}`;
+    if (carpeta) return carpeta.name;
+
+    const canalA = canalesMap[document.getElementById('canal-select')?.value] || null;
+    if (canalA) {
+        if (v === 'A') return canalA;
+        const hermana = buscarCarpetaGemela(canalA, Object.entries(canalesMap).map(([id, name]) => ({ id, name })));
+        if (hermana) return hermana.name;
+    }
+    return `Video ${v}`;
+}
+
+// Reescribe el texto de un botón conservando su icono (que vive en un <span> aparte).
+function textoBoton(id, texto) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    const slot = btn.querySelector('.icon-slot');
+    btn.innerHTML = '';
+    if (slot) btn.appendChild(slot);
+    btn.appendChild(document.createTextNode(' ' + texto));
 }
 
 function actualizarTabs() {
@@ -267,6 +292,9 @@ function actualizarTabs() {
             btn.querySelector('.variante-punto').dataset.estado = estadoVariantePaso(v, paso);
         });
     });
+    // Los botones llevan el nombre del canal, así que se renombran junto con las pestañas: un solo
+    // lugar del que acordarse cuando cambia el destino, el canal del Paso 1 o la pestaña abierta.
+    actualizarBotonesVariante();
 }
 
 function estadoVariantePaso(v, paso) {
@@ -342,41 +370,52 @@ function pintarVista() {
     actualizarTabs();
 }
 
-// Los botones dicen sobre QUÉ video actúan. Con gemelos apagado nada de esto se muestra y los
-// textos quedan como siempre.
+// CADA BOTÓN DICE A QUÉ CANAL PERTENECE. Pedido explícito del usuario: no quiere deducir de la
+// pestaña sobre qué video está actuando — quiere leerlo en el botón antes de apretarlo.
+//
+// No se duplican los controles en el DOM (dos juegos de botones serían el doble de superficie para
+// desincronizarse, el bug que ya costó una semana con la geometría del cartel). En vez de eso, los
+// mismos botones se renombran con el canal de la pestaña abierta, que es lo que el usuario necesita
+// ver. Con gemelos apagado, todos los textos vuelven a ser los de siempre.
 function actualizarBotonesVariante() {
     const gemelos = state.gemelos && MODO === 'video';
     const activa = state.varianteActiva;
+    const canal = gemelos ? etiquetaVariante(activa) : null;
+    const otro = gemelos ? etiquetaVariante(otraVariante()) : null;
+    // `de` para textos cortos: "Aprobar guion de La Naple"
+    const de = canal ? ` de ${canal}` : '';
 
-    // Paso 6: "Generar video completo" hace el de la pestaña; "Generar los dos" aparece al lado.
-    const btnUno = document.getElementById('btn-generate-video');
-    const btnAmbos = document.getElementById('btn-generate-ambos');
+    // Paso 3 — guion
+    textoBoton('btn-approve-guion', canal ? `Aprobar guion${de} y continuar` : 'Aprobar y continuar');
+    textoBoton('btn-regenerate-guion', canal ? 'Regenerar los dos guiones' : 'Regenerar (mismo ángulo)');
+    textoBoton('btn-regenerate-solo-gemelo', `Regenerar solo el guion${de}`);
+
+    // Paso 4 — asignaciones
+    textoBoton('btn-confirm-assignments', canal ? `Confirmar asignaciones${de}` : 'Confirmar asignaciones');
+
+    // Paso 5 — locución
+    textoBoton('btn-approve-audio', canal ? `Aprobar locución${de}` : 'Aprobar locución');
+    textoBoton('btn-regenerate-audio-v3', canal ? `Regenerar locución${de} (v3)` : 'Regenerar (v3, actúa marcas)');
+
+    // Paso 6 — video
+    textoBoton('btn-generate-video', canal ? `Generar ${canal}` : 'Generar video completo');
+
+    // Solo con gemelos: el botón de hacer los dos y el aviso de que el hermano no se toca.
+    document.getElementById('btn-generate-ambos')?.classList.toggle('hidden', !gemelos);
     const hintGen = document.getElementById('hint-generar-variante');
-    if (btnUno) {
-        const etiqueta = gemelos ? `Generar ${etiquetaVariante(activa)}` : 'Generar video completo';
-        const slot = btnUno.querySelector('.icon-slot');
-        btnUno.innerHTML = '';
-        if (slot) btnUno.appendChild(slot);
-        btnUno.appendChild(document.createTextNode(' ' + etiqueta));
-    }
-    btnAmbos?.classList.toggle('hidden', !gemelos);
     if (hintGen) {
         hintGen.classList.toggle('hidden', !gemelos);
         if (gemelos) {
-            hintGen.textContent = `Se genera solo ${etiquetaVariante(activa)}. `
-                + `${etiquetaVariante(otraVariante())} no se toca — podés hacerlo después desde su pestaña, `
-                + 'las tomas no se repiten igual.';
+            hintGen.textContent = `Se genera solo ${canal}. ${otro} no se toca — podés hacerlo `
+                + 'después desde su pestaña, las tomas no se repiten igual.';
         }
     }
 
-    // Paso 3: rehacer el guion del gemelo sin reescribir el del primero.
-    const btnSolo = document.getElementById('btn-regenerate-solo-gemelo');
-    const btnRegen = document.getElementById('btn-regenerate-guion');
+    // "Regenerar los dos guiones" reescribe A y B; con el gemelo abierto se esconde para que no se
+    // confunda con el de al lado, que respeta al hermano.
     const enGemelo = gemelos && activa === 'B';
-    btnSolo?.classList.toggle('hidden', !enGemelo);
-    // Con el gemelo abierto, "Regenerar (mismo ángulo)" reescribe los DOS: se esconde para que el
-    // botón de al lado no se confunda con él.
-    btnRegen?.classList.toggle('hidden', enGemelo);
+    document.getElementById('btn-regenerate-solo-gemelo')?.classList.toggle('hidden', !enGemelo);
+    document.getElementById('btn-regenerate-guion')?.classList.toggle('hidden', enGemelo);
 }
 
 // El panel de resultado muestra los DOS videos a la vez (el primero arriba, el gemelo en su caja):
