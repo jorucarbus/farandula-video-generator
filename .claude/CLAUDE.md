@@ -119,7 +119,7 @@ es una variable de entorno, no un cambio de código. Decisión del usuario.
 ### Pendientes de fondo (sin tocar hoy, a propósito)
 
 1. **Merge `test-persistencia` → `main`.** Producción sigue en `624a24a` (17 de agosto) y ya le
-   faltan **30 commits**. **Abierto desde el 25 de julio**, sigue siendo el riesgo más grande del
+   faltan **36 commits**. **Abierto desde el 25 de julio**, sigue siendo el riesgo más grande del
    proyecto. Recordar que **el usuario trabaja contra STAGING**.
 2. `/api/exportar` (modo Insumos) sigue sin cola ni gemelos. No es regresión.
 3. Publicación automática a Facebook: proyecto aparte.
