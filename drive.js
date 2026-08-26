@@ -147,10 +147,46 @@ async function listarVideos(folderId) {
 // clip (caché compartido a propósito) podían chocar: el segundo veía el archivo "ya existe"
 // mientras el primero todavía lo estaba descargando, y ffmpeg leía un mp4 truncado
 // ("Nothing was written into output file... received no packets", crash -22).
+// Fallos que vale la pena reintentar: Drive corta con 403 (cuota) o 429 cuando se le piden varios
+// archivos a la vez, y con 5xx cuando el que tiene un mal momento es él. Todos pasan solos. Un 404
+// —el clip no existe— no se reintenta: sería esperar por algo que nunca va a estar.
+const CODIGOS_REINTENTABLES = new Set([403, 429, 500, 502, 503, 504]);
+const INTENTOS_DESCARGA = 3;
+
+function vaARendir(e) {
+  // Corte a mitad de la transferencia. Va primero porque muchas veces llega como un Error pelado
+  // ("socket hang up") sin `code` ni status: mirando solo el código no se reintentaba nunca, y es
+  // justo el fallo que un reintento arregla — el archivo quedó incompleto, no hay nada que perder.
+  if (e?.corteDeDescarga) return true;
+  const codigo = e?.code || e?.response?.status;
+  if (CODIGOS_REINTENTABLES.has(Number(codigo))) return true;
+  return ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE', 'ENOTFOUND'].includes(e?.code);
+}
+
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
 async function descargarVideo(fileId, destDir) {
   const destPath = path.join(destDir, `src_${fileId}.mp4`);
   if (fs.existsSync(destPath)) return destPath; // caché
 
+  let ultimo = null;
+  for (let intento = 1; intento <= INTENTOS_DESCARGA; intento++) {
+    try {
+      return await intentarDescarga(fileId, destDir, destPath);
+    } catch (e) {
+      ultimo = e;
+      if (!vaARendir(e) || intento === INTENTOS_DESCARGA) break;
+      // Espera creciente con una pizca de azar: si varias descargas chocan con la cuota a la vez,
+      // el jitter evita que vuelvan todas juntas en el mismo instante y la vuelvan a chocar.
+      const pausa = Math.round(1000 * Math.pow(2, intento - 1) * (1 + Math.random() * 0.3));
+      console.warn(`  ⏳ Descarga de ${fileId} falló (${e.code || e.message}); reintento ${intento + 1}/${INTENTOS_DESCARGA} en ${pausa} ms`);
+      await esperar(pausa);
+    }
+  }
+  throw ultimo;
+}
+
+async function intentarDescarga(fileId, destDir, destPath) {
   const tmpPath = path.join(destDir, `.tmp-src_${fileId}-${process.pid}-${crypto.randomBytes(4).toString('hex')}.mp4`);
 
   const res = await getDrive().files.get(
@@ -161,9 +197,17 @@ async function descargarVideo(fileId, destDir) {
   try {
     await new Promise((resolve, reject) => {
       const out = fs.createWriteStream(tmpPath);
-      res.data.pipe(out);
+      // El stream de ENTRADA también puede fallar (conexión cortada, corte de Drive a mitad del
+      // archivo). Sin este listener ese error no lo escuchaba nadie: 'finish' nunca llegaba y la
+      // promesa quedaba colgada para siempre, con el render clavado detrás.
+      const cortado = (e) => {
+        e.corteDeDescarga = true;   // pasó con la transferencia ya empezada: siempre vale reintentar
+        reject(e);
+      };
+      res.data.on('error', cortado);
+      out.on('error', cortado);
       out.on('finish', resolve);
-      out.on('error', reject);
+      res.data.pipe(out);
     });
     fs.renameSync(tmpPath, destPath); // atómico: destPath solo aparece completo
   } catch (e) {

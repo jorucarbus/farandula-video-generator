@@ -198,6 +198,25 @@ async function cronicaConSesgo(job, sesgo) {
   }
 }
 
+// Cuántas descargas de Drive van a la vez. Ni 1 (era esperar la red 30 veces seguidas) ni "todas"
+// (comparten el mismo enlace, así que la ganancia se aplana enseguida, y encima Drive corta por
+// cuota). Entre 6 y 8 se satura el enlace en la práctica; 6 deja aire para lo demás.
+const DESCARGAS_EN_PARALELO = 6;
+
+// Corre `tarea` sobre todos los items, con como mucho `tope` a la vez. Si una falla, se cancela el
+// conjunto (Promise.all) — igual que antes, cuando la primera descarga rota abortaba el render.
+async function enTandas(items, tope, tarea) {
+  if (!items.length) return;
+  const pendientes = [...items];
+  const obreros = Array.from({ length: Math.min(tope, pendientes.length) }, async () => {
+    while (pendientes.length) {
+      const item = pendientes.shift();
+      await tarea(item);
+    }
+  });
+  await Promise.all(obreros);
+}
+
 // Reparto de citas entre gemelos: alternadas por orden de detección (0→A, 1→B, 2→A…). Con una
 // sola cita los dos la comparten: es mejor repetir el testimonio real que dejar un video sin él.
 function citasDeVariante(materialesAdicionales, variante) {
@@ -1479,12 +1498,22 @@ async function renderizarVideo(params, renderId) {
 
     // 4. Descargar los videos únicos del plan — los materiales adicionales ya están en disco
     // local (subidos por el usuario), se saltan de la descarga de Drive.
-    console.log(`⬇️ [${renderId}] Descargando clips...`);
+    //
+    // En paralelo con tope: un video usa 20-30 clips distintos y bajarlos de a uno era esperar la
+    // red 30 veces seguidas. El tope existe porque "todos a la vez" NO es más rápido —comparten el
+    // mismo enlace y la ganancia se aplana— y además hace que Drive corte por cuota. Con 6 se
+    // captura casi todo el beneficio sin provocarlo; los 403 que igual aparezcan los absorbe el
+    // reintento de `driveHelper.descargarVideo`.
     const archivos = {};
     for (const m of materialesPorFragmento.values()) archivos[m.archivoId] = m.archivoPath;
-    for (const videoId of [...new Set(clipsValidos.map(c => c.videoId))]) {
-      if (archivos[videoId]) continue;
+    const porBajar = [...new Set(clipsValidos.map(c => c.videoId))].filter(id => !archivos[id]);
+    console.log(`⬇️ [${renderId}] Descargando ${porBajar.length} clips (de a ${DESCARGAS_EN_PARALELO})...`);
+    const arranque = Date.now();
+    await enTandas(porBajar, DESCARGAS_EN_PARALELO, async (videoId) => {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
+    });
+    if (porBajar.length) {
+      console.log(`  ✅ ${porBajar.length} clips listos en ${((Date.now() - arranque) / 1000).toFixed(1)}s`);
     }
 
     // 5. Subtítulos (Fase 6): palabra por palabra resaltada, timing real si el audio aprobado
