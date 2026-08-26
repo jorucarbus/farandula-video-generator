@@ -525,7 +525,10 @@ let colaTimer = null;
 
 // Sondea un render hasta que termina. Reemplaza a la espera del pedido HTTP largo: ahora el
 // servidor responde al instante con un id y el trabajo se hace en la cola, de a uno.
-async function esperarRender(renderId, etiqueta) {
+// `conBarra` en false = seguir en segundo plano: el registro y el panel de la cola informan igual,
+// pero la barra de progreso NO se toma la pantalla. Con dos videos en vuelo esa barra además se
+// pisaba entre sí, contando dos historias a la vez.
+async function esperarRender(renderId, etiqueta, conBarra = true) {
     let ultimoEstado = null;
     while (true) {
         const t = await apiCall(`/render/${renderId}`, 'GET');
@@ -534,10 +537,10 @@ async function esperarRender(renderId, etiqueta) {
             if (t.estado === 'en_cola') log(`⏳ ${etiqueta}: en cola, puesto ${t.posicion} de ${t.enEspera}`);
             if (t.estado === 'renderizando') log(`🎞️ ${etiqueta}: renderizando...`);
         }
-        if (t.estado === 'en_cola') {
+        if (conBarra && t.estado === 'en_cola') {
             showProgress(`${icon('listChecks')} ${etiqueta}: en cola (puesto ${t.posicion} de ${t.enEspera})`);
             updateProgress(55);
-        } else if (t.estado === 'renderizando') {
+        } else if (conBarra && t.estado === 'renderizando') {
             showProgress(`${icon('rocketLaunch')} ${etiqueta}: renderizando...`);
             updateProgress(80);
         }
@@ -1756,6 +1759,33 @@ async function encolarVariante(v) {
     return respuesta.renderId;
 }
 
+// Variantes con un render encolado o corriendo AHORA. Existe para dos cosas: no encolar dos veces
+// el mismo video de un doble clic, y saber que "ya está en camino" sin tener la pantalla tomada.
+const rendersEnVuelo = new Set();
+
+// Sigue un render hasta que termina, sin bloquear la pantalla. El usuario puede irse a la otra
+// pestaña y mandar el hermano mientras este se cocina.
+async function seguirRender(v, renderId) {
+    try {
+        const res = await esperarRender(renderId, etiquetaVariante(v), false);
+        const d = V(v);
+        d.resultado = res;
+        // El paso queda hecho para ESE video, no para el que se esté mirando: si se encolaron los
+        // dos desde la pestaña del primero, el hermano también avanza.
+        d.pasos = { ...(d.pasos || {}), 'destination-section': 'done' };
+        log(`🎉 ${etiquetaVariante(v)} listo: ${res.fileName}`);
+        pintarResultados();
+        if (v === state.varianteActiva) setStepStatus('destination-section', 'done');
+    } catch (e) {
+        log(`❌ ${etiquetaVariante(v)} falló: ${e.message}`);
+        if (v === 'B') mostrarResultadoGemelo(null, e.message);
+        else mostrarError(`El video de ${etiquetaVariante(v)} falló: ${e.message}`,
+            () => generarVideos([v]), 'destination-section');
+    } finally {
+        rendersEnVuelo.delete(v);
+    }
+}
+
 // Genera el video de la pestaña que se está viendo. Con gemelos activos ya NO arrastra al hermano:
 // el usuario puede corregir un video suelto y llegar con él hasta el final.
 //
@@ -1795,11 +1825,18 @@ async function generarVideos(variantes) {
                 + '\n\nElegila desde la pestaña de ese video.');
             return;
         }
+        const yaEnCola = pedidas.filter(v => rendersEnVuelo.has(v));
+        if (yaEnCola.length) {
+            alert(`Ya está en la cola: ${yaEnCola.map(etiquetaVariante).join(', ')}.\n\n`
+                + 'Mirá el panel de la cola para ver en qué puesto va.');
+            return;
+        }
+
         setButtonDisabled('btn-generate-video', true);
         setButtonDisabled('btn-generate-ambos', true);
         iniciarPanelCola();
         const varianteOriginal = state.varianteActiva;
-        let alguno = false;
+        const ids = [];
         try {
             volcarVista();
             showProgress(`${icon('rocketLaunch')} Encolando ${pedidas.length === 1 ? etiquetaVariante(pedidas[0]) : 'los dos videos'}...`);
@@ -1807,38 +1844,28 @@ async function generarVideos(variantes) {
 
             // El cartel se dibuja en el canvas COMPARTIDO dentro de encolarVariante, así que hay
             // que encolar de a una y en orden, nunca en paralelo.
-            const ids = [];
-            for (const v of pedidas) ids.push({ v, id: await encolarVariante(v) });
-
-            for (const { v, id } of ids) {
-                try {
-                    const res = await esperarRender(id, etiquetaVariante(v));
-                    const d = V(v);
-                    d.resultado = res;
-                    // El paso queda hecho para ESE video, no para el que se esté mirando: si se
-                    // encolaron los dos desde la pestaña del primero, el hermano también avanza.
-                    d.pasos = { ...(d.pasos || {}), 'destination-section': 'done' };
-                    alguno = true;
-                    log(`🎉 ${etiquetaVariante(v)} listo: ${res.fileName}`);
-                    pintarResultados();
-                } catch (e) {
-                    log(`❌ ${etiquetaVariante(v)} falló: ${e.message}`);
-                    if (v === 'B') mostrarResultadoGemelo(null, e.message);
-                    else mostrarError(`El video de ${etiquetaVariante(v)} falló: ${e.message}`,
-                        () => generarVideos([v]), 'destination-section');
-                }
+            for (const v of pedidas) {
+                ids.push({ v, id: await encolarVariante(v) });
+                rendersEnVuelo.add(v);
             }
-
             hideProgress();
         } catch (error) {
-            mostrarError(`Error generando ${pedidas.length === 1 ? 'el video' : 'los videos gemelos'}: ${error.message}`,
+            mostrarError(`Error encolando ${pedidas.length === 1 ? 'el video' : 'los videos'}: ${error.message}`,
                 () => generarVideos(pedidas), 'destination-section');
         } finally {
+            // El botón se libera acá, con el video YA en la cola — no al final del render. Antes se
+            // soltaba recién cuando terminaba de renderizar, así que para mandar el segundo video
+            // había que esperar minutos mirando el primero: el acoplamiento que el usuario reportó
+            // seguía vivo justo en el último paso.
             state.varianteActiva = varianteOriginal;
             pintarVista();
             setButtonDisabled('btn-generate-video', false);
             setButtonDisabled('btn-generate-ambos', false);
         }
+
+        // El seguimiento va SIN await: la cola ya los renderiza de a uno y el panel muestra el
+        // avance, así que no hay razón para tener la pantalla tomada mientras tanto.
+        for (const { v, id } of ids) seguirRender(v, id);
         return;
     }
 
