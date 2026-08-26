@@ -2,14 +2,31 @@
 
 ## 🔴 CIERRE 2026-08-25 — leer esto primero (supersede todos los cierres anteriores)
 
-Noche de trabajo autorizada por el usuario, sobre un solo pedido suyo: **poder corregir UN video
-gemelo sin tener que repetir el otro**. Se desacoplaron los dos videos y, de paso, salieron dos
-bugs que el acoplamiento tapaba y un riesgo de pérdida de datos que ya estaba mordiendo.
+Día largo, sobre un solo pedido del usuario: **poder corregir UN video gemelo sin tener que repetir
+el otro**. Fueron DOS tandas — la primera de noche (el desacople), la segunda con el usuario
+probando y reportando lo que seguía roto. La segunda es la que encontró el problema de fondo.
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `a6fc5a5` | local = remoto, desplegado en staging |
+| `farandula-video-generator` | `test-persistencia` | `0c23a10` | local = remoto, desplegado en staging |
 | `generador-guion-graphify` | `main` | `b7cb077` | sin cambios hoy |
+
+### ⚠️ LO MÁS IMPORTANTE DEL DÍA (si solo se lee una cosa, que sea esto)
+
+**Los controles de la pantalla son UN SOLO juego en el DOM, compartido por las dos pestañas.** No se
+duplican a propósito (dos juegos = el doble de superficie para desincronizarse, el bug que costó una
+semana con la geometría del cartel). De ahí salen dos trampas que ya mordieron y volverán a morder:
+
+1. **Apagar un botón lo apaga para los dos canales.** `setButtonDisabled` actúa sobre el único
+   botón que existe. Por eso ahora hay un registro `ocupacion.A` / `ocupacion.B` y los botones se
+   apagan según lo que hace **la pestaña abierta**, nunca la otra.
+2. **Leer `state.varianteActiva` DESPUÉS de un `await` es un bug.** Para entonces el usuario pudo
+   cambiar de pestaña y el resultado se anota en el canal equivocado. **Toda operación async fija su
+   variante antes del primer `await`** y usa `setPasoDeVariante(v, ...)` en lugar de
+   `setStepStatus`. Si se agrega una operación nueva al flujo, tiene que seguir esa regla.
+
+Estas dos son la causa de lo que el usuario describió como *"aplasto y no me deja aplastar en el
+otro canal"* y *"el primer canal se desconfigura, los indicadores pasan de verde a rojo"*.
 
 ### Lo que pedía el usuario, en sus palabras
 
@@ -27,12 +44,30 @@ Su hipótesis era que el acoplamiento servía para que no se repitieran las toma
 - O sea: **las tomas no se repiten aunque los dos videos se hagan con días de diferencia**. El
   orden de encolado no tiene nada que ver.
 
-### Qué entró (2 commits)
+### Qué entró (8 commits de código, en dos tandas)
+
+**Primera tanda — el desacople (de noche, sin el usuario)**
 
 | # | Qué | Commit |
 |---|---|---|
 | 1 | Cada video gemelo avanza y se genera por separado | `b21988c` |
 | 2 | El servidor local ya no pisa el estado compartido en Drive | `a6fc5a5` |
+
+**Segunda tanda — con el usuario probando (acá salió lo de fondo)**
+
+| # | Qué | Commit |
+|---|---|---|
+| 3 | El botón de generar se libera al encolar, no al terminar el render | `9354fdd` |
+| 4 | Un pedido sin respuesta ya no deja el botón muerto | `f87b4fc` |
+| 5 | Cada botón dice a qué canal pertenece | `54cfb48` |
+| 6 | Clips de a 6 en paralelo, con reintentos ante cortes de Drive | `c0139b6` |
+| 7 | **Los dos canales dejan de pisarse — botones y estado por variante de verdad** | `0c23a10` |
+
+⚠️ **El commit 5 fue un error de lectura mío y conviene no repetirlo.** El usuario pidió "botón por
+canal" y yo entendí *ponerle el nombre del canal al botón*. Su respuesta: *"cuando quería un botón
+para cada canal no me refería a lo estético"*. Lo que pedía era **independencia funcional**, que es
+lo que entró recién en el commit 7. El renombrado igual quedó porque ayuda a leer la pantalla, pero
+no resolvía nada por sí solo.
 
 #### 1. El desacople (`b21988c`)
 
@@ -88,12 +123,96 @@ revisiones y se puede recuperar una anterior. `jobs.json` es el fileId
 
 ### Cómo quedó la pantalla
 
-- Pestaña del primero: "Aprobar y continuar", "Regenerar (mismo ángulo)" (reescribe **los dos**),
-  "Cambiar ángulo".
-- Pestaña del gemelo: "Regenerar (mismo ángulo)" se **esconde** y aparece **"Regenerar solo este
-  guion"**, para que no se confundan.
-- Paso 6: "Generar &lt;canal de esta pestaña&gt;" + "Generar los dos", con una línea que aclara que el
-  hermano no se toca y que **las tomas no se repiten igual**.
+**Cada botón lleva el nombre del canal de la pestaña abierta**, desde el Paso 1 (antes decía
+"Video B" hasta el Paso 6). `etiquetaVariante` lo busca en tres lados: la carpeta de destino ya
+elegida, el canal del Paso 1 (y su hermano vía `GEMELAS`), o "Video A"/"Video B" como último
+recurso. Con gemelos apagado, todos los textos vuelven a los de siempre.
+
+| Paso | Texto con gemelos |
+|---|---|
+| 3 | "Aprobar guion **de La Naple** y continuar" |
+| 3 | "**Regenerar los dos guiones**" (antes "Regenerar (mismo ángulo)" — se renombró porque nadie adivinaba que reescribía ambos) |
+| 3, solo en el gemelo | "Regenerar solo el guion **de La Naple**" (y el de arriba se esconde, para que no se confundan) |
+| 4 | "Confirmar asignaciones **de La Naple**" |
+| 5 | "Aprobar locución **de La Naple**" / "Regenerar locución **de La Naple** (v3)" |
+| 6 | "Generar **La Naple**" + "Generar los dos" |
+
+Los botones se renombran dentro de `actualizarBotonesVariante()`, que llama `actualizarTabs()` — un
+solo lugar del que acordarse cuando cambia el destino, el canal del Paso 1 o la pestaña abierta.
+
+### La segunda tanda, en detalle
+
+Cada uno salió de que el usuario probara y describiera con precisión qué veía. **Pedirle la
+secuencia exacta (qué apretó, en qué orden, qué pasó después) fue lo que destrabó el diagnóstico**
+— con "no funciona" no se llegaba.
+
+#### 3. El botón atado al render entero (`9354fdd`)
+
+*"una vez que terminó el renderizado del primer video recién me dejó presionar el botón"*.
+
+`generarVideos` soltaba el botón en su `finally`, o sea **después de esperar el render completo**
+(minutos). Encolar y esperar ahora están separados: el botón se libera con el video ya en la cola y
+`seguirRender` sigue cada uno en segundo plano. Los renders **siguen yendo de a uno** — eso no
+cambió, es lo que evita que las tomas se repitan.
+
+#### 4. Pedidos que quedaban colgados para siempre (`f87b4fc`)
+
+Captura del usuario: "Confirmar asignaciones" apagado y sin responder.
+
+`apiCall` hacía `fetch` **sin techo de espera**. Si la respuesta se perdía —el gateway corta los
+pedidos largos, y locutar 20+ párrafos tarda— la promesa no se resolvía NI fallaba: quedaba colgada,
+y con ella el `finally` que rehabilita el botón. Única salida: recargar.
+
+Explica también un síntoma anterior: la pantalla decía "todavía no se generó la locución" **mientras
+el servidor sí la tenía** (los 71s del video B). Se generó; el navegador nunca se enteró.
+
+Ahora: `AbortController` con techo de 5 min, y `regenerarAudio` **busca la locución en el job antes
+de dar error** — si ya se generó, la rescata en vez de hacerle pagar otra.
+
+#### 6. Descargas de clips en paralelo (`c0139b6`)
+
+Pregunta del usuario: *"¿y no puede bajar todos a la vez? se supone que es una conexión súper
+rápida"*. Los 20-30 clips se bajaban de a uno.
+
+**Medido con clips reales (12 archivos, 41 MB): 7,0s de a uno contra 2,0s de a 6 — 3,4x.**
+
+Por qué 6 y no todos: comparten el mismo enlace (la ganancia se aplana enseguida) y pedirle 30
+archivos juntos a Drive invita a que corte por cuota.
+
+Lo que más vale de este commit no es la velocidad: **`drive.js` no tenía NINGÚN reintento**. Un 403
+por cuota tumbaba el render entero, y eso ya pasaba bajando de a uno. Ahora hasta 3 intentos con
+espera creciente y jitter ante 403/429/5xx y cortes; un 404 no se reintenta.
+
+Y apareció **otro cuelgue escondido**, hermano del #4 pero del lado del servidor: el stream de
+entrada no tenía listener de `error`. Una descarga cortada a mitad no emitía `finish` ni fallaba —
+promesa colgada para siempre, con el render clavado detrás. Si alguna vez aparece un render eterno
+sin error, mirar ahí primero.
+
+#### 7. La separación real de los canales (`0c23a10`)
+
+Ver el bloque de arriba (⚠️ LO MÁS IMPORTANTE DEL DÍA). Alcanzó a ocho operaciones: `aprobarGuion`,
+`confirmarAsignaciones`, `regenerarAudio`, `recargarAudioDeDrive`, `aprobarAudio`,
+`regenerarSoloGemelo`, `regenerarGuion` y `generarVideos`. `lockFrom`, `invalidarPasos` y
+`marcarPasoVariante` reciben la variante explícita. `rendersEnVuelo` se fusionó con `ocupacion`.
+
+**Cómo se verificó** (vale como patrón para el próximo cambio de este tipo): interceptando `fetch`
+para que el servidor conteste **cuando yo quiera**, y forzando el cruce exacto — los dos canales
+trabajando a la vez y terminando **al revés** del orden en que se mandaron. Cada locución cayó en su
+canal (60s y 71s), pasos correctos, indicadores sin saltar.
+
+### 📺 Los canales y su emparejamiento (pregunta del usuario)
+
+El usuario preguntó si "Embajadores del Chisme / La Naple" era un default. **No**: son sus 4 canales
+reales, emparejados en el mapa `GEMELAS` (`public/app.js`), que ya existía desde los gemelos.
+
+| Canal | Hermano |
+|---|---|
+| Embajadores del Chisme | La Naple |
+| Chismex Picante | Supe Lupe |
+
+⚠️ Dos cosas: el mapa está **duplicado** (en `public/app.js` y en `server.js:103`), así que tocar uno
+sin el otro los deja discrepando. Y si se **agrega o renombra** un canal, ese par deja de
+reconocerse: no rompe nada (avisa y se elige a mano) pero se pierde el automatismo.
 
 ### ⏳ Un límite práctico que el desacople hace más probable
 
@@ -110,17 +229,21 @@ es una variable de entorno, no un cambio de código. Decisión del usuario.
 
 ### Lo que solo el usuario puede cerrar
 
-1. **Probar el desacople con una noticia real**: corregir un video B con el A ya subido, de punta a
-   punta. Verificado en browser real contra el servidor (el A queda intacto: guion, locución, pasos
-   y video ya subido), pero el juicio de si el flujo se siente bien es suyo.
-2. Sigue pendiente de antes: escuchar la música a **-20 dB**, escuchar una pronunciación cargada a
+1. **Probar el cruce que falló, con una noticia real**: mandar un canal, pasarse al otro mientras
+   trabaja, y mandarlo también. Verificado en browser forzando ese cruce exacto, pero el que sabe si
+   se siente bien es él. **Es lo primero que hay que preguntarle al retomar.**
+2. **Corregir un video B con el A ya subido**, de punta a punta.
+3. Sigue pendiente de antes: escuchar la música a **-20 dB**, escuchar una pronunciación cargada a
    mano, comparar los dos motores de guion, y un par de gemelos completo con sesgo opuesto.
 
 ### Pendientes de fondo (sin tocar hoy, a propósito)
 
 1. **Merge `test-persistencia` → `main`.** Producción sigue en `624a24a` (17 de agosto) y ya le
-   faltan **36 commits**. **Abierto desde el 25 de julio**, sigue siendo el riesgo más grande del
+   faltan **40 commits**. **Abierto desde el 25 de julio**, sigue siendo el riesgo más grande del
    proyecto. Recordar que **el usuario trabaja contra STAGING**.
+   ⚠️ Además, la URL de producción que figura acá (`farandula-insumos-production.up.railway.app`)
+   responde **404 en todo**: o el servicio se apagó o cambió de nombre. Hoy la única app viva es
+   staging. El usuario lo confirmó — solo conoce y usa `test-persistencia`.
 2. `/api/exportar` (modo Insumos) sigue sin cola ni gemelos. No es regresión.
 3. Publicación automática a Facebook: proyecto aparte.
 4. El usuario todavía tiene que revisar y limpiar a mano las carpetas viejas de Drive
@@ -132,10 +255,17 @@ es una variable de entorno, no un cambio de código. Decisión del usuario.
 ### Recordatorios operativos
 
 - Tras cada deploy, recargar con **Ctrl/Cmd + Shift + R**. Si no, el server responde 400 pidiéndolo
-  (guarda de `0d883e8`).
+  (guarda de `0d883e8`). Los estáticos ya van con `Cache-Control: no-cache`, pero el JS que la
+  pestaña abierta ya cargó no se cambia solo — **si el usuario dice "sigue pasando", lo primero es
+  confirmar que recargó**, y lo segundo mirar el `last-modified` de `/app.js` en staging para saber
+  a qué hora levantó el contenedor.
 - **Antes de empezar en la otra máquina**: `git fetch origin --prune` y revisar la divergencia.
 - ⚠️ **Levantar el servidor local ya es seguro** para el estado compartido (arreglado en `a6fc5a5`),
   pero seguí sin apuntar pruebas locales contra datos de producción.
+- 🔍 **Para diagnosticar sin adivinar**: `GET /api/jobs` y `GET /api/cola` de staging (con
+  `x-api-key`) dicen el estado real de cada video —guion, fragmentos, locución, archivo— y las horas
+  exactas. Cotejar esas horas contra la del deploy resolvió sola una confusión entera: lo que el
+  usuario había probado era la versión anterior.
 
 ---
 
