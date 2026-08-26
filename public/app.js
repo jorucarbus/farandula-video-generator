@@ -822,13 +822,26 @@ function updateProgress(percent) {
     document.getElementById('progress-text').textContent = percent + '%';
 }
 
+// Techo de espera de CUALQUIER pedido. Sin esto, un `fetch` cuya respuesta se pierde en el camino
+// (el gateway corta los pedidos largos, y generar una locución de 20+ párrafos tarda) no se resuelve
+// NI falla: queda colgado para siempre. Y con él, el `finally` que vuelve a habilitar el botón —
+// que es exactamente cómo el usuario terminó con "Confirmar asignaciones" muerto y teniendo que
+// recargar la página.
+//
+// 5 minutos es holgado a propósito: cubre lo más lento que sigue siendo síncrono (leer un video en
+// el Paso 1, generar una locución larga). El render ya no pasa por acá — va por la cola.
+const TIMEOUT_PEDIDO_MS = 5 * 60 * 1000;
+
 async function apiCall(endpoint, method = 'GET', data = null) {
+    const control = new AbortController();
+    const reloj = setTimeout(() => control.abort(), TIMEOUT_PEDIDO_MS);
     const options = {
         method,
         headers: {
             'Content-Type': 'application/json',
             'x-api-key': API_KEY,
         },
+        signal: control.signal,
     };
 
     if (data) {
@@ -849,9 +862,18 @@ async function apiCall(endpoint, method = 'GET', data = null) {
         }
         return await response.json();
     } catch (error) {
+        if (error.name === 'AbortError') {
+            const claro = new Error('El servidor tardó demasiado en contestar. '
+                + 'Puede que el trabajo se haya hecho igual: fijate antes de repetirlo.');
+            console.error('API timeout:', endpoint);
+            log(`⏱️ ${endpoint}: sin respuesta tras ${TIMEOUT_PEDIDO_MS / 60000} minutos`);
+            throw claro;
+        }
         console.error('API Error:', error);
         log(`❌ Error: ${error.message}`);
         throw error;
+    } finally {
+        clearTimeout(reloj);
     }
 }
 
@@ -1488,6 +1510,18 @@ async function regenerarAudio(modelo) {
         log('🎧 Escucha la locución y apruébala o regenérala');
         return true;
     } catch (error) {
+        // Que el pedido falle NO significa que la locución no se haya hecho: si la respuesta se
+        // perdió en el camino (corte del gateway, timeout), el servidor igual la generó y la
+        // guardó en el job — y ya está paga. Antes de dar error y hacerle gastar otra, se busca.
+        const rescatada = await rescatarAudioVariante(state.varianteActiva);
+        if (rescatada) {
+            hideProgress();
+            pintarVista();
+            setStepStatus('revision-section', 'done');
+            setStepStatus('audio-section', 'active');
+            log('♻️ La locución sí se había generado: se recuperó del proceso guardado');
+            return true;
+        }
         mostrarError(`Error generando locución: ${error.message}`,
             () => regenerarAudio(modelo), 'revision-section');
         return false;
