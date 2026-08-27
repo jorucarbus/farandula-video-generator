@@ -2810,3 +2810,74 @@ usuario ya había aprobado.
 
 **Sin verificar**: no se generó un video completo con el default nuevo — la medición es de la
 cadena real de `prepararMusica()`, no de un render de punta a punta. Falta el oído del usuario.
+
+### 2026-08-25 (Mac) — Diseño: variedad de guiones y escudo antibloqueo (SIN código todavía)
+
+Conversación de diseño, a pedido del usuario ("responde, no escribas código todavía"). Queda acá
+porque son decisiones y búsquedas ya hechas: repetirlas cuesta tiempo y tokens.
+
+**1. Gemelos del motor `grafo` se parecen en neutral.** El usuario: "solo parecen parafraseado".
+Causa: la estructura cambia el ORDEN en que se cuenta, no QUÉ se cuenta. Con sesgo neutral los dos
+gemelos comparten la misma crónica — mismos hechos, mismo énfasis, mismo encuadre — así que
+parafraseo es el techo. `elegirEstructura()` ya obliga a nombrar la estructura del hermano y a
+abrir desde otro grupo del catálogo, y aun así no alcanza, porque mueve el envase.
+**Dos palancas**: (a) débil — imponer en CÓDIGO la exclusión del grupo del hermano en vez de
+pedírselo al modelo; (b) fuerte — cambiar de qué habla cada video, que vive en la crónica. **Eso ya
+está construido** (sesgo opuesto, `970c698`) pero apagado en neutral por decisión del usuario.
+Recomendación pendiente de su respuesta: que neutral reparta favor/contra entre los gemelos.
+
+**2. Repetición de frases — CAUSA ENCONTRADA, es literal.** El usuario notó "le salió el tiro por
+la culata" repetido. La regla 5 de `PROMPTS.guion` trae CUATRO ejemplos fijos: *"lo hundió",
+"quedó expuesto", "se le cayó la mentira", "la jugada le salió mal"*. El modelo los copia en vez
+de inspirarse. Segunda fuente: `guionEvitar` solo compara contra el gemelo del MISMO job — entre
+noticias de días distintos no hay memoria de qué frases ya salieron.
+**Solución acordada**: glosario durable + **rotación** (mostrarle 5-8 al azar por llamada, no el
+catálogo entero — si no, se repiten 200 en vez de 4 y suena a recetario) + **memoria entre videos**,
+reusando el patrón de `historial.json` que ya rota clips por famoso.
+
+**3. Jerga actual: DESCARTADA por el usuario, con razón.** Se investigó (agosto 2026: "farmear
+aura", "six seven", "sigma", "lache"). Dos problemas: vida útil de meses, y **no son neutras** —
+"six seven" viene de un rapero de EE.UU., "lache" es caló. Chocan con el requisito del usuario de
+no confundir a ningún público. Su conclusión: *"puede ser una piedra en el zapato a futuro"*.
+⚠️ **Y una trampa en las fuentes**: los listicles de "frases virales para TikTok" están llenos de
+engagement bait ("nadie habla de esto", "no vas a creer") que el propio prompt ya prohíbe Y que
+TikTok penaliza con menos alcance. **No construir el glosario desde ahí.**
+
+**4. Minar los videos viejos: DESCARTADO, y el usuario tiene razón.** Se propuso sacar el glosario
+de los guiones que funcionaron. Su objeción: *"queda corto, porque estaba encerrado en pocas frases"*
+— o sea, la muestra está contaminada por el mismo problema que se quiere arreglar. Aprender de ahí
+reforzaría el pozo. **El registro arranca desde cero, curado, y la retroalimentación empieza ahora.**
+
+**5. Dónde va el informe de rendimiento: la HOJA DEL PUBLICADOR** (`55b1446`), que ya tiene una fila
+por video con `Publicado el` y `Link del post` — el usuario ya vuelve a esa fila después de publicar,
+así que una columna nueva se cuelga de un hábito existente. Como guarda el `jobId`, cada fila queda
+atada a su guion. **Advertencia dicha al usuario**: con guiones de 200 palabras, atribuirle el éxito
+a una frase es estadísticamente débil por mucho tiempo — sirve para SU criterio, no para que el
+sistema aprenda solo.
+
+**6. Escudo antibloqueo de TikTok.** El usuario reportó que **le borraron un hashtag**.
+- **No existe lista oficial de palabras prohibidas.** Se buscó; TikTok no publica una. Las que
+  circulan son inferencia de creadores. **No codificar folklore.**
+- Lo que SÍ es oficial y pega en farándula: afirmaciones no verificadas sobre personas reales,
+  acusaciones de delito como hecho, acoso, y engagement bait (baja alcance por sí solo).
+- **Fuga concreta**: los hashtags salen del prompt `lectura` ("exactamente 5 hashtags estratégicos")
+  — Gemini los inventa **sin ninguna lista de qué es seguro** y nadie los revisa.
+- **El filtro fuerte NO es de palabras, es de AFIRMACIONES**: "le fue infiel" vs "habría sido
+  infiel, según X" usan casi las mismas palabras y tienen riesgo distinto. Atribuir y matizar
+  protege sin apagar el tono.
+- **Dónde iría**: una pasada de revisión sobre el guion TERMINADO, común a los dos motores, no
+  parcheando cada prompt (tres lugares que se desincronizan — el patrón que ya costó caro con la
+  geometría del cartel).
+- ⚠️ **Riesgo estructural que ninguna lista cubre**: los videos usan voz sintética (obligación de
+  declarar IA desde 2026) y clips de terceros (puntaje de contenido original). Es de otra
+  naturaleza; el escudo debería contemplarlo como capa aparte.
+
+**ORDEN ACORDADO** (cambiado sobre la marcha: el escudo subió al primer puesto porque un video
+bloqueado vale CERO y los strikes se acumulan, mientras que uno repetitivo igual funciona):
+1. Escudo antibloqueo — empezando por hashtags y título/descripción, que es donde ya dolió.
+2. Columna de rendimiento en la hoja del publicador — chica, y cuanto antes arranque más datos junta.
+3. Registro durable de frases con rotación y memoria.
+
+**BLOQUEADO ESPERANDO AL USUARIO**: qué hashtag le borraron. Cambia el diagnóstico — temático
+(los hashtags salen del ángulo picante de la crónica), restringido conocido (alcanza una lista de
+exclusión), o genérico sobreusado (puede no ser castigo sino saturación).
