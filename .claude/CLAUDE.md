@@ -2881,3 +2881,19 @@ bloqueado vale CERO y los strikes se acumulan, mientras que uno repetitivo igual
 **BLOQUEADO ESPERANDO AL USUARIO**: qué hashtag le borraron. Cambia el diagnóstico — temático
 (los hashtags salen del ángulo picante de la crónica), restringido conocido (alcanza una lista de
 exclusión), o genérico sobreusado (puede no ser castigo sino saturación).
+
+**Corrección al punto 6 (2026-08-25, mismo día)**: la entrada de arriba quedaba "bloqueada
+esperando al usuario" sobre qué hashtag le borraron. **TikTok no se lo dijo** — no hay aviso. Dos
+consecuencias:
+
+- **Se puede averiguar igual con datos propios**: la hoja guarda por video `Descripción + Hashtags`
+  (lo que generó la app, con los 5) y `Link del post`. Comparar una contra el caption vivo da el
+  que falta.
+- **Eso generaliza a algo MEJOR que una lista negra adivinada**: como las dos columnas existen para
+  todos los videos, el sistema puede detectar las bajas solo y armar una lista de exclusión **con
+  evidencia real de esta cuenta**, en vez de folklore de foros. La parte cara es leer el caption
+  vivo (puede pedir sesión del usuario o pegado a mano); el mecanismo sirve igual manual.
+- **Y NO bloquea el escudo**: el grupo de hashtags peligroso se deduce del mismo principio de
+  afirmaciones — `#infiel`, `#estafadora`, `#mentirosa` acusan a una persona real con su nombre al
+  lado. Lo seguro es descriptivo: famoso, tema, marca del canal. Aparte, los mega-tags genéricos
+  (`#parati`) no acusan pero son señal de engagement bait.
