@@ -1,5 +1,36 @@
 # Plan: gemelos que se diferencian de verdad — contexto, encuadres y comentarios
 
+## ⚠️ Leer primero: esto se cruza con el diseño hecho desde la Mac
+
+El mismo día, desde la otra máquina, se trabajó el mismo síntoma ("los guiones se parecen") y se
+llegó a la MISMA causa raíz por otro camino: **con sesgo neutral los dos gemelos comparten la misma
+crónica**, así que el parafraseo es el techo (ver la entrada `2026-08-25 (Mac)` en `CLAUDE.md`).
+
+**Atacan capas distintas del mismo problema y NO se pisan:**
+
+| | Qué ataca | Estado |
+|---|---|---|
+| Diseño de la Mac | Que se repitan las **frases** (léxico) + escudo antibloqueo | Con orden ya acordado con el usuario |
+| **Este plan** | Que los dos guiones cuenten **lo mismo** (contenido y encuadre) | Nuevo, sin ejecutar |
+
+⚠️ **La Mac encontró una causa que este plan NO cubre y que es mucho más barata de arreglar**: la
+regla 5 de `PROMPTS.guion` trae CUATRO ejemplos fijos ("lo hundió", "quedó expuesto", "se le cayó la
+mentira", "la jugada le salió mal") y el modelo los copia literalmente. **Eso se arregla antes que
+nada de este plan**, y probablemente explique buena parte de la sensación de repetición.
+
+**Palanca barata que la Mac ya propuso** y que este plan reemplazaría por algo mejor: que el sesgo
+neutral reparta favor/contra entre los gemelos. Es de una línea y usa lo que ya existe (`970c698`).
+Los encuadres periodísticos de la Fase 2 son superiores —no obligan a tomar postura para
+diferenciarse— pero cuestan más. **Si hace falta un resultado ya, esa es la vía rápida.**
+
+**Orden acordado con el usuario en la Mac** (este plan no está en esa lista todavía):
+1. Escudo antibloqueo — un video bloqueado vale cero y los strikes se acumulan.
+2. Columna de rendimiento en la hoja del publicador.
+3. Registro durable de frases con rotación y memoria entre videos.
+
+**Y hay algo bloqueado esperando al usuario**: qué hashtag le borró TikTok. Cambia el diagnóstico del
+escudo.
+
 ## Contexto
 
 El usuario notó que los dos guiones gemelos se parecen demasiado, y su diagnóstico fue correcto:
