@@ -1156,9 +1156,22 @@ app.post('/api/generate-script', async (req, res) => {
     // En modo gemelo cada video recibe SUS citas (repartidas), no todas.
     const citasA = citasDeVariante(materiales, 'A');
 
+    // Si la lectura propuso dos encuadres, el PRIMERO es de este video. Se re-sintetiza su crónica
+    // igual que la del gemelo: si no, la pantalla diría que este canal se cuenta con un encuadre que
+    // en realidad no se aplica, y solo el hermano quedaría diferenciado.
+    //
+    // Solo cuando hay gemelo: con un video solo no hay de qué diferenciarse, y la crónica que el
+    // usuario revisó en el Paso 1 es la que corresponde usar tal cual.
+    const encuadreA = gemela ? job?.encuadres?.encuadres?.[0] : null;
+    let cronicaA = cronica;
+    if (encuadreA) {
+      console.log(`  🎯 Este video con su encuadre: "${encuadreA.titulo}" (${encuadreA.marco})`);
+      cronicaA = (await cronicaConEncuadre(job, encuadreA)) || cronica;
+    }
+
     const comoElige = motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`;
     console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
-    const script = await gemini.escribirGuion(cronica, angle, angleContent, citasA, null, motorElegido);
+    const script = await gemini.escribirGuion(cronicaA, angle, angleContent, citasA, null, motorElegido);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
