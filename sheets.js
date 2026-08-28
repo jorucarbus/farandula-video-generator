@@ -17,9 +17,14 @@ const ENCABEZADOS = [
   'Fecha', 'Título', 'Descripción + Hashtags', 'Protagonista', 'Canal',
   'Nombre archivo', 'Link fuente', 'Link render', 'Dinero generado', 'Status', 'Guion',
   'Tipo', 'Destino', 'ID noticia', 'Archivo en Drive', 'Publicado el', 'Link del post',
+  // Rendimiento: las llena el USUARIO a mano después de publicar, en la misma fila a la que ya
+  // vuelve para pegar el link del post. Se cuelga de un hábito que ya existe en vez de pedirle uno
+  // nuevo. Con guiones de 200 palabras, atribuirle el éxito a una frase concreta es débil por
+  // mucho tiempo: esto sirve para SU criterio, no para que el sistema aprenda solo.
+  'Vistas', 'Qué funcionó',
 ];
-const NUM_COLS = ENCABEZADOS.length;       // 17 → columna Q
-const ULTIMA_COL = 'Q';
+const NUM_COLS = ENCABEZADOS.length;       // 19 → columna S
+const ULTIMA_COL = 'S';
 
 let sheetsClient = null;
 
@@ -72,8 +77,8 @@ const COLOR = {
   amarillo: { red: 1, green: 0.851, blue: 0.239 },
   verde:    { red: 0.722, green: 0.949, blue: 0.545 },
 };
-const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155, 350, 80, 110, 150, 150, 110, 130]; // px por columna A..Q
-const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER'];
+const ANCHOS = [92, 220, 330, 125, 135, 250, 120, 120, 115, 155, 350, 80, 110, 150, 150, 110, 130, 90, 260]; // px por columna A..S
+const ALINEAR = ['CENTER','LEFT','LEFT','LEFT','CENTER','LEFT','CENTER','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER','CENTER','LEFT','CENTER','CENTER','CENTER','LEFT'];
 const FILAS_CAPACIDAD = 200; // formatea header + 199 filas por adelantado
 
 async function formatearHoja() {
@@ -180,6 +185,8 @@ async function registrarVideo(datos) {
         datos.archivoDriveId || '',
         '', // Publicado el (lo llena el publicador)
         '', // Link del post (lo llena el publicador)
+        '', // Vistas (lo llena el usuario a mano)
+        '', // Qué funcionó (lo llena el usuario a mano)
       ]],
     },
   });
@@ -213,6 +220,8 @@ async function leerHistorial(limite = 20) {
     archivoDriveId: f[14] || '',
     publicadoEl: f[15] || '',
     linkPost: f[16] || '',
+    vistas: f[17] || '',
+    queFunciono: f[18] || '',
   }));
 }
 
