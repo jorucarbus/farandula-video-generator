@@ -13,6 +13,7 @@ const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const tiempos = require('./tiempos');
+const encuadres = require('./encuadres');
 const subtitulos = require('./subtitulos');
 const musica = require('./musica');
 const jobStore = require('./jobStore');
@@ -184,6 +185,42 @@ function sesgoOpuesto(sesgo) {
 // PROMPTS.acta en gemini.js), así que esto NO vuelve a descargar ni releer la fuente original —
 // solo re-sintetiza. Devuelve null si algo falta o falla: el llamador cae a la crónica del
 // primero y el gemelo sale como antes, nunca se pierde el video por esto.
+// Pide los dos encuadres y los guarda en el job. Degrada en silencio: si el modelo falla o los
+// hechos no dan para dos ángulos honestos, el job queda sin encuadres y todo sigue como antes.
+async function proponerEncuadres(job, fuentesDelJob) {
+  try {
+    const propuesta = await encuadres.proponerDos(gemini, (fuentesDelJob || []).map(f => f.acta));
+    const cuantos = propuesta.encuadres.length;
+    if (propuesta.suficiente && cuantos >= 2) {
+      console.log(`  🎯 Dos encuadres: "${propuesta.encuadres[0].titulo}" (${propuesta.encuadres[0].marco}) y "${propuesta.encuadres[1].titulo}" (${propuesta.encuadres[1].marco})`);
+    } else {
+      console.log(`  🎯 El material solo da para ${cuantos} encuadre(s): los gemelos se diferencian como antes`);
+    }
+    return jobStore.actualizarJob(job.jobId, { encuadres: propuesta });
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudieron proponer encuadres (${e.message}); los gemelos se diferencian como antes`);
+    return job;
+  }
+}
+
+// Crónica del gemelo con OTRO ENCUADRE, desde las mismas actas. Igual de barata que la de sesgo
+// —las actas ya están extraídas y son solo texto— y por la misma razón: no vuelve a tocar la fuente
+// original. La diferencia con el sesgo es qué cambia: el sesgo mueve la postura, el encuadre mueve
+// de qué habla el video.
+async function cronicaConEncuadre(job, encuadre) {
+  const actas = (job?.fuentes || []).map(f => f.acta).filter(Boolean);
+  if (!actas.length) {
+    console.warn('  ⚠️ El job no tiene actas guardadas: el gemelo usa la crónica del primero');
+    return null;
+  }
+  try {
+    return await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(encuadre));
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo sintetizar la crónica del gemelo con el encuadre "${encuadre.titulo}" (${e.message}), usa la del primero`);
+    return null;
+  }
+}
+
 async function cronicaConSesgo(job, sesgo) {
   const actas = (job?.fuentes || []).map(f => f.acta).filter(Boolean);
   if (!actas.length) {
@@ -846,6 +883,14 @@ app.post('/api/read', async (req, res) => {
       job = jobStore.actualizarJob(job.jobId, { sesgo: sesgoElegido, fuentes: todasLasFuentes, ...result });
     }
 
+    // Dos puntos de entrada distintos a la misma noticia, uno por video gemelo. Se calculan acá y no
+    // al escribir el guion porque el usuario tiene que poder verlos y cambiarlos en el Paso 1, antes
+    // de que decidan nada. Es una llamada de texto, barata.
+    //
+    // Nunca tumba la lectura: si falla o el material no da para dos, el job sigue sin encuadres y
+    // los gemelos se diferencian como hasta ahora.
+    job = await proponerEncuadres(job, todasLasFuentes);
+
     // Guardar la lectura en Drive (carpeta de insumos) — incluye TODAS las actas acumuladas.
     driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: todasLasFuentes, ...result }, null, 2))
       .catch(e => console.warn(`⚠️ No se pudo respaldar lectura.json en Drive: ${e.message}`));
@@ -868,6 +913,7 @@ app.post('/api/read', async (req, res) => {
       nombreCorto: result.nombreCorto,
       tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
       nombresDetectados,   // [{leido, sugerido, carpeta, confianza, decir}] — para confirmar en el Paso 1
+      encuadres: job.encuadres || null,   // los dos puntos de entrada propuestos (null si no se pudo)
     });
   } catch (error) {
     console.error('Error lectura:', error);
@@ -915,6 +961,69 @@ app.post('/api/resintetizar', async (req, res) => {
   }
 });
 
+// ENRIQUECER CONTEXTO: busca en la web alrededor de la noticia y suma lo encontrado como UNA FUENTE
+// MÁS del job. Entra por el mismo camino que las fuentes que carga el usuario, así que la crónica no
+// necesita saber que esta vino de otro lado.
+//
+// Es opcional y se pide a mano desde el Paso 1: cuesta ~2 minutos y no toda noticia lo necesita.
+// Cuando termina, re-sintetiza la crónica para que el material nuevo entre de verdad — si no, el
+// contexto quedaría guardado sin efecto sobre el guion.
+app.post('/api/enriquecer', async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    if (!job.fuentes || !job.fuentes.length) {
+      return res.status(400).json({ error: 'Este proceso no tiene fuentes guardadas: hay que leer la fuente primero' });
+    }
+    if (job.fuentes.some(f => f.acta?.origen === 'web')) {
+      return res.status(400).json({ error: 'Esta noticia ya está enriquecida' });
+    }
+
+    const hechos = job.fuentes.map(f => f.acta?.hechos).filter(Boolean).join('\n\n');
+    const personas = [...new Set(job.fuentes.flatMap(f => f.acta?.personas || []))];
+    console.log(`🔎 Enriqueciendo contexto de ${jobId} (${personas.join(', ') || 'sin personas detectadas'})...`);
+
+    const contexto = await gemini.enriquecerContexto(hechos, personas);
+    console.log(`  🔎 ${contexto.consultas.length} búsqueda(s), ${contexto.citas.length} fuente(s)`);
+
+    const acta = gemini.actaDeContexto(contexto);
+    if (!acta) {
+      console.log('  ℹ️ La búsqueda no encontró contexto útil: el job queda como estaba');
+      return res.json({ status: 'sin_resultados', contexto, cronica: job.cronica });
+    }
+
+    // El contexto entra como una fuente más, marcada. `type: 'web'` la distingue en la lista del
+    // Paso 1 y evita que se la confunda con algo que cargó el usuario.
+    const fuentes = [...job.fuentes, { type: 'web', content: '(búsqueda automática)', acta, tipoReal: 'contexto-web' }];
+    const cronicaBase = await gemini.sintetizarCronica(fuentes.map(f => f.acta), job.sesgo || 'neutral');
+    const { result, nombresDetectados } = await revisarNombres(cronicaBase, fuentes.map(f => f.acta));
+
+    const actualizado = jobStore.actualizarJob(jobId, { fuentes, ...result });
+    driveHelper.guardarEnInsumo(actualizado.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes, ...result }, null, 2))
+      .catch(e => console.warn(`⚠️ No se pudo respaldar lectura.json en Drive: ${e.message}`));
+
+    res.json({
+      status: 'success',
+      jobId,
+      contexto,
+      nombresDetectados,
+      cronica: result.cronica,
+      titulo: result.titulo,
+      descripcion: result.descripcion,
+      protagonista: result.protagonista,
+      secundario: result.secundario,
+      accion: result.accion,
+      nombreCorto: result.nombreCorto,
+      tono: result.tono,
+    });
+  } catch (error) {
+    console.error('Error enriqueciendo contexto:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Escribe el guion del gemelo a partir del guion del primero. Extraída del endpoint para poder
 // pedirla SOLA (`soloGemela`): rehacer el video B no tiene por qué reescribir el A, que puede estar
 // ya locutado o incluso subido.
@@ -933,11 +1042,24 @@ app.post('/api/resintetizar', async (req, res) => {
 async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorElegido, materiales, metadatos, scriptA }) {
   try {
     const citasB = citasDeVariante(materiales, 'B');
-    const opuesto = motorElegido === 'grafo' ? sesgoOpuesto(job?.sesgo) : null;
     let cronicaB = cronica;
-    if (opuesto) {
-      console.log(`  🔄 Gemelo con sesgo opuesto: "${job.sesgo}" → "${opuesto}" (re-sintetiza la crónica desde las actas)`);
-      cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
+
+    // PRIMERO el encuadre, que es la palanca fuerte: cambia DE QUÉ habla el video, no solo desde qué
+    // postura. Si la lectura propuso dos, el gemelo se queda con el segundo y re-sintetiza su propia
+    // crónica desde las mismas actas. Sin esto los dos guiones salen del mismo texto y el parafraseo
+    // es su techo — que es justo lo que el usuario notó.
+    const encuadreB = job?.encuadres?.encuadres?.[1];
+    if (encuadreB) {
+      console.log(`  🎯 Gemelo con otro encuadre: "${encuadreB.titulo}" (${encuadreB.marco})`);
+      cronicaB = (await cronicaConEncuadre(job, encuadreB)) || cronica;
+    } else {
+      // Sin encuadres, la palanca de antes: sesgo invertido, que solo aplica si el usuario eligió
+      // favor o contra (con neutral no hay postura que invertir).
+      const opuesto = motorElegido === 'grafo' ? sesgoOpuesto(job?.sesgo) : null;
+      if (opuesto) {
+        console.log(`  🔄 Gemelo con sesgo opuesto: "${job.sesgo}" → "${opuesto}" (re-sintetiza la crónica desde las actas)`);
+        cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
+      }
     }
     const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, scriptA, motorElegido);
     const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
@@ -945,8 +1067,13 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
     // texto del post tiene que acompañarla, no repetir el enfoque del primero.
     const metadatosB = await gemini.variarMetadatos(cronicaB, scriptB, metadatos || {});
     const resultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
-    if (opuesto && cronicaB !== cronica) resultado.sesgo = opuesto;
-    console.log(`  📝 Guion gemelo${resultado.sesgo ? ` (sesgo ${resultado.sesgo})` : ''}: ${palabrasB} palabras — "${metadatosB.titulo}"`);
+    if (cronicaB !== cronica) {
+      if (encuadreB) resultado.encuadre = encuadreB;
+      else resultado.sesgo = sesgoOpuesto(job?.sesgo);
+    }
+    const comoSeDiferencia = resultado.encuadre ? `encuadre ${resultado.encuadre.marco}`
+      : (resultado.sesgo ? `sesgo ${resultado.sesgo}` : 'misma crónica');
+    console.log(`  📝 Guion gemelo (${comoSeDiferencia}): ${palabrasB} palabras — "${metadatosB.titulo}"`);
     return resultado;
   } catch (e) {
     // Regla de robustez: el video A ya está listo. El usuario sigue con uno solo o reintenta.

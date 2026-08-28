@@ -78,7 +78,7 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], motorGuion: 'gemini', gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, pasos: {}, carpetasDestino: [] };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], encuadres: null, motorGuion: 'gemini', gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, pasos: {}, carpetasDestino: [] };
     renderFuentesLista();
     renderMaterialesLista();
     sessionStorage.removeItem('farandula_job_id');
@@ -148,6 +148,7 @@ let state = {
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
     materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
     nombresDetectados: [],    // [{leido, sugerido, carpeta, confianza, decir}] — cotejo contra las carpetas de Drive
+    encuadres: null,          // {suficiente, encuadres:[{marco,titulo,instruccion}], porque} — de qué va cada video
     motorGuion: 'gemini',     // 'gemini' (elijo el ángulo) | 'grafo' (la estructura la elige el grafo)
     // Videos gemelos (ver el bloque de abajo). Apagado por defecto: con `gemelos: false` nada de
     // esto se ejecuta y el flujo es exactamente el de siempre.
@@ -767,8 +768,127 @@ function pintarLectura(result) {
     document.getElementById('res-descripcion').textContent = result.descripcion || '';
     document.getElementById('res-cronica').textContent = result.cronica || '';
     if (Array.isArray(result.nombresDetectados)) state.nombresDetectados = result.nombresDetectados;
+    if (result.encuadres !== undefined) state.encuadres = result.encuadres;
     pintarNombres();
+    pintarEncuadres();
     revealLectura();
+}
+
+// Los dos puntos de entrada a la noticia, uno por canal.
+//
+// Se muestran acá, en la lectura, porque deciden DE QUÉ va cada video: la crónica del gemelo se
+// re-sintetiza con el segundo, así que verlos recién con el guion escrito sería tarde.
+//
+// Si el material solo dio para uno, se dice — forzar el segundo produce relleno, y el usuario tiene
+// que saber que ahí conviene agregar otra fuente o buscar contexto.
+function pintarEncuadres() {
+    const caja = document.getElementById('encuadres-section');
+    const lista = document.getElementById('encuadres-lista');
+    const hint = document.getElementById('encuadres-hint');
+    if (!caja || !lista) return;
+
+    const datos = state.encuadres;
+    const propuestos = datos?.encuadres || [];
+    if (!propuestos.length) {
+        caja.classList.add('hidden');
+        return;
+    }
+    caja.classList.remove('hidden');
+
+    const etiquetaCanal = i => (state.gemelos ? etiquetaVariante(i === 0 ? 'A' : 'B') : `Enfoque ${i + 1}`);
+    lista.innerHTML = propuestos.map((e, i) => `
+        <div class="nombre-fila">
+            <div>
+                <strong>${etiquetaCanal(i)}</strong>
+                <span class="hint"> · ${e.marco}</span>
+                <p><strong>${e.titulo || ''}</strong></p>
+                <p class="hint pre-wrap">${e.instruccion || ''}</p>
+            </div>
+        </div>
+    `).join('');
+
+    if (datos.suficiente && propuestos.length >= 2) {
+        hint.textContent = datos.porque
+            ? `${datos.porque} Cada canal cuenta los mismos hechos entrando por un lado distinto.`
+            : 'Cada canal cuenta los mismos hechos entrando por un lado distinto.';
+    } else {
+        hint.textContent = 'El material alcanza para un solo enfoque honesto. Los dos videos van a '
+            + 'parecerse. Si querés diferenciarlos, agregá otra fuente o buscá contexto en la web (Paso 1).';
+    }
+}
+
+// Buscar contexto en la web y sumarlo como una fuente más.
+//
+// Se pide a mano, nunca solo: tarda un par de minutos y no toda noticia lo necesita. Lo que trae se
+// MUESTRA con sus fuentes — el usuario tiene que poder auditar de dónde salió cada cosa antes de
+// que eso llegue a un video sobre una persona real.
+async function enriquecerContexto() {
+    if (!state.jobId) {
+        alert('Primero leé la fuente de la noticia.');
+        return;
+    }
+    setButtonDisabled('btn-enriquecer', true);
+    const caja = document.getElementById('contexto-resultado');
+    try {
+        showProgress(`${icon('bookOpen')} Buscando contexto en la web (tarda un par de minutos)...`);
+        log('🔎 Buscando antecedentes y reacciones posteriores en la web...');
+        updateProgress(30);
+
+        const r = await apiCall('/enriquecer', 'POST', { jobId: state.jobId });
+
+        if (r.status === 'sin_resultados') {
+            log('ℹ️ La búsqueda no encontró contexto útil: la noticia queda como estaba');
+            if (caja) {
+                caja.classList.remove('hidden');
+                caja.innerHTML = '<p class="hint">No se encontró contexto adicional para esta noticia. '
+                    + 'Podés seguir igual, o agregar otra fuente a mano.</p>';
+            }
+            hideProgress();
+            return;
+        }
+
+        // La crónica cambió: se repinta la lectura entera (incluye los nombres recotejados).
+        pintarLectura(r);
+        state.fuentes.push({ type: 'web', content: '(búsqueda automática)', tipoReal: 'contexto-web',
+            fuenteResumen: 'contexto encontrado en la web' });
+        renderFuentesLista();
+        pintarContexto(r.contexto);
+        log(`✅ Contexto agregado: ${r.contexto.consultas.length} búsqueda(s), ${r.contexto.citas.length} fuente(s)`);
+        hideProgress();
+    } catch (error) {
+        mostrarError(`Error buscando contexto: ${error.message}`,
+            () => enriquecerContexto(), 'fuente-section');
+    } finally {
+        setButtonDisabled('btn-enriquecer', false);
+    }
+}
+
+// Lo que trajo la búsqueda, con sus fuentes a la vista. Que se pueda auditar es parte del diseño:
+// esto alimenta guiones sobre personas reales.
+function pintarContexto(c) {
+    const caja = document.getElementById('contexto-resultado');
+    if (!caja || !c) return;
+    const bloque = (titulo, texto) => texto
+        ? `<p class="mt-sm"><strong>${titulo}</strong></p><p class="pre-wrap">${texto}</p>` : '';
+    const fuentes = (c.citas || []).length
+        ? `<p class="hint mt-sm"><strong>Fuentes consultadas:</strong> `
+          + c.citas.map(x => `<a href="${x.url}" target="_blank">${x.titulo || 'fuente'}</a>`).join(' · ')
+          + '</p>'
+        : '';
+    const busquedas = (c.consultas || []).length
+        ? `<p class="hint">Buscó: ${c.consultas.map(q => `“${q}”`).join(', ')}</p>` : '';
+    caja.classList.remove('hidden');
+    caja.innerHTML = `<div class="banner-info">
+        <p><strong>${icon('bookOpen')} Contexto encontrado</strong></p>
+        ${bloque('Antes de esto:', c.antecedentes)}
+        ${bloque('Después de esto:', c.posterior)}
+        ${bloque('Quién es quién:', c.quienEsQuien)}
+        ${busquedas}
+        ${fuentes}
+        <p class="hint mt-sm">Esto entra como contexto para escribir, no como hechos nuevos de la noticia:
+        el guion sigue afirmando solo lo que dicen tus fuentes. Revisá que lo de arriba sea correcto —
+        si algo no cuadra, editá la crónica antes de seguir.</p>
+    </div>`;
 }
 
 // Nombres de la noticia, cotejados contra las carpetas de Drive.
@@ -1021,6 +1141,14 @@ function renderFuentesLista() {
     `).join('');
     wrap.classList.toggle('hidden', state.fuentes.length === 0);
     btnProcesar.classList.toggle('hidden', state.fuentes.length === 0);
+
+    // Buscar contexto en la web: aparece recién cuando ya hay una lectura hecha (necesita los
+    // hechos para saber qué buscar) y se esconde si esta noticia ya se enriqueció.
+    const yaEnriquecida = state.fuentes.some(f => f.type === 'web' || f.tipoReal === 'contexto-web');
+    const enriquecerWrap = document.getElementById('enriquecer-wrap');
+    if (enriquecerWrap) {
+        enriquecerWrap.classList.toggle('hidden', !state.jobId || !state.sourceData?.cronica || yaEnriquecida);
+    }
 
     if (state.fuentes.length === 0) {
         btn.innerHTML = `${icon('bookOpen')} Leer y procesar`;
@@ -2906,6 +3034,7 @@ async function recuperarJobPendiente() {
     state.fuentes = job.fuentes || (job.fuente ? [job.fuente] : []);
     state.sesgo = job.sesgo || job.fuente?.sesgo || 'neutral';
     state.materialesAdicionales = job.materialesAdicionales || [];
+    state.encuadres = job.encuadres || null;   // de qué va cada video (se propuso en la lectura)
     renderMaterialesLista();
 
     // Job de videos gemelos: se repuebla la segunda pestaña con lo que ese video ya tenía. Un job
@@ -2933,6 +3062,7 @@ async function recuperarJobPendiente() {
     document.getElementById('res-titulo').textContent = job.titulo || '';
     document.getElementById('res-descripcion').textContent = job.descripcion || '';
     document.getElementById('res-cronica').textContent = job.cronica || '';
+    pintarEncuadres();
     revealLectura();
     renderFuentesLista();
     setStepStatus('fuente-section', 'done');

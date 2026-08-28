@@ -112,6 +112,18 @@
                     <button class="btn btn-success hidden" id="btn-procesar-fuentes" onclick="procesarFuentes()">
                         <span class="icon-slot" data-icon="checkCircle"></span> Ya, procesar fuentes
                     </button>
+
+                    <div class="hidden mt-sm" id="enriquecer-wrap">
+                        <button class="btn btn-secondary" id="btn-enriquecer" onclick="enriquecerContexto()">
+                            <span class="icon-slot" data-icon="bookOpen"></span> Buscar contexto en la web
+                        </button>
+                        <p class="hint">
+                            Busca antecedentes (qué pasó antes entre ellos) y lo posterior (respuestas, desmentidas)
+                            y los suma como una fuente más. Tarda un par de minutos. Sirve sobre todo cuando la
+                            fuente es corta: sin material extra, los dos videos gemelos terminan pareciéndose.
+                        </p>
+                        <div class="hidden" id="contexto-resultado"></div>
+                    </div>
                 </div>
 
                 <div class="form-group" id="materiales-wrap">
@@ -465,6 +477,17 @@
                         <span class="icon-slot" data-icon="check"></span> Guardar nombres
                     </button>
                     <p class="hint" id="nombres-estado"></p>
+                </div>
+
+                <!-- Los dos puntos de entrada a la noticia, uno por canal. Van acá, en la lectura,
+                     porque deciden DE QUÉ va cada video: verlos después del guion sería tarde. -->
+                <div id="encuadres-section" class="nombres-section hidden">
+                    <div class="nombres-head">
+                        <span class="icon-slot" data-icon="target"></span>
+                        <strong>Cómo se va a contar en cada canal</strong>
+                    </div>
+                    <p class="hint" id="encuadres-hint"></p>
+                    <div id="encuadres-lista"></div>
                 </div>
 
                 <!-- Solo visible en modo gemelos: sin esto, con dos juegos de título/descripción en
