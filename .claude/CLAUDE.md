@@ -1,6 +1,117 @@
 # Claude Code Setup — Farandula Video Generator
 
-## 🔴 CIERRE 2026-08-25 — leer esto primero (supersede todos los cierres anteriores)
+## 🔴 CIERRE 2026-08-27 — variedad de guiones, IMPLEMENTADO (supersede lo anterior)
+
+El usuario pidió ejecutar todo el diseño de variedad "sin preguntarme nada, con todos los permisos
+en automático". Entraron **4 commits de código**. Trabajado en `test-persistencia`, desplegado en
+staging.
+
+| Repo | Rama | SHA | Estado |
+|---|---|---|---|
+| `farandula-video-generator` | `test-persistencia` | `c235f7e` | local = remoto |
+
+### El diagnóstico del usuario era correcto
+
+> "capaz el problema de que se parezcan los guiones es que toman de una sola crónica de la primera
+> lectura... capaz sería bueno que la primera lectura proponga dos textos"
+
+Confirmado en el código: `sesgoOpuesto('neutral')` devuelve `null` **y neutral es el default**, y
+además la palanca solo se activaba con el motor `grafo`. O sea: en la mayoría de los videos los dos
+guiones salían de **la misma crónica**, y el parafraseo era su techo.
+
+### Qué entró
+
+| # | Qué | Commit |
+|---|---|---|
+| 1 | Registro de expresiones con rotación, memoria entre videos y regla de atribución | `ca3c649` |
+| 2 | Contexto desde la web y dos encuadres, uno por canal | `5a2e8a0` |
+| 3 | Columnas de rendimiento en la hoja del publicador | `c235f7e` |
+
+#### 1. Las cuatro frases fijas (`ca3c649`) — la causa más barata, encontrada desde la Mac
+
+La regla 5 de `PROMPTS.guion` traía CUATRO ejemplos fijos y el modelo **los copiaba literal**. Ahora
+hay `expresiones.js`: 45 expresiones en 8 grupos por FUNCIÓN narrativa, de las que se le muestran
+**7 por llamada**, repartidas entre grupos y priorizando las que hace más tiempo no salen.
+
+⚠️ **La rotación es el punto, no el tamaño del catálogo.** Pasarle las 45 juntas cambia un problema
+por otro: suena a recetario y se repiten 45 en vez de 4. Mismo mecanismo que ya rota clips por
+famoso, en el mismo `historial.json`.
+
+También entró la **memoria entre videos**: se guardan las últimas 12 aperturas y entran al prompt
+como "así arrancaron los últimos, no repitas eso". `guionEvitar` solo cubría al gemelo del mismo job.
+
+Y la **regla 8, de atribución**: acusaciones y rumores van matizados ("ella lo acusa de" en vez de
+"le fue infiel"). Es lo único del escudo antibloqueo que no podía esperar — protege de lo grave
+(afirmaciones sobre personas reales) y además es cómo se escribe bien una nota de farándula.
+
+**Medido con Gemini real, 4 noticias**: las cuatro frases viejas aparecen **0 de 4**; **0 aperturas
+repetidas**; cada guion usó expresiones distintas y uno escribió las suyas.
+
+#### 2. Contexto web + dos encuadres (`5a2e8a0`) — la palanca de fondo
+
+**Contexto** (`/api/enriquecer`, botón opcional en el Paso 1): Gemini busca en Google antecedentes,
+lo posterior y quién es quién, y eso entra como **una fuente más** del job. Antecedente y posterior
+van **separados**: lo posterior puede contradecir a la fuente original.
+
+**Encuadres** (`encuadres.js`): la lectura propone **dos puntos de entrada de familias distintas**
+(marcos del framing periodístico + protagonista alterno + cronología), y el gemelo re-sintetiza su
+crónica con el segundo.
+
+⚠️ **La regla de que sean marcos distintos se verifica EN CÓDIGO, no se le pide al modelo** — con la
+estructura del motor `grafo` ya se aprendió que pedírselo no alcanza.
+
+**LA INVARIANTE, escrita en los dos prompts**: lo que trae la web es CONTEXTO, nunca hechos nuevos
+que el guion pueda afirmar. Sobre personas reales, inventar no es un problema de estilo.
+
+**Verificado con búsquedas reales**: para la noticia de Miss Universo trajo el incidente previo
+completo Y una gestión de orden de arresto POSTERIOR que la fuente no tenía —un video entero que hoy
+no existiría— con 7 fuentes citadas. Y con una noticia pobre (un solo hecho), **se negó a inventar
+el segundo ángulo**, textual: *"forzar un segundo marco implicaría inventar polémicas, antecedentes
+o impactos que no están en el texto"*.
+
+💰 **Costo**: 5.000 búsquedas gratis al mes en la familia 3.x (la que usa el proyecto). A ~100
+noticias mensuales, ni se roza el cupo.
+
+#### 3. Rendimiento en la hoja (`c235f7e`)
+
+Dos columnas al final (**Vistas**, **Qué funcionó**), que llena el usuario a mano en la misma fila a
+la que ya vuelve para pegar el link del post. ⚠️ Al tocar la hoja hay que mantener alineadas
+**cuatro** listas: `ENCABEZADOS`, `ANCHOS`, `ALINEAR` y la fila de `registrarVideo()` — ahora 19
+cada una, `ULTIMA_COL = 'S'`.
+
+### ⚠️ Lo que NO se hizo, y por qué
+
+**Los comentarios de YouTube y Facebook** (tercer eje del plan). Necesitan credenciales que solo el
+usuario puede generar: habilitar YouTube Data API v3 en su Google Cloud, y un token de página de
+Meta. **TikTok quedó descartado**: no tiene endpoint público de comentarios, ni siquiera para los
+videos propios — solo la Research API, para académicos. Y es probablemente donde más comentarios
+tiene.
+
+Su pedido, que sigue en pie para cuando pase las llaves: **líneas temáticas, nunca citas**. Su
+ejemplo — *"ese artista antes decía otra cosa"* — habilita el mejor mecanismo del plan: **el
+comentario da la pista, la búsqueda web la verifica, y solo lo verificado se puede afirmar.**
+
+### Orden acordado con el usuario (cambiado por él)
+
+El escudo antibloqueo estaba primero; el usuario lo mandó al final (*"creo que el hashtag y el escudo
+es mejor trabajarlo al final"*) y se coincidió: el daño real hasta ahora es **un hashtag borrado**,
+no un video bajado ni un strike. Lo urgente del escudo (la atribución) ya entró en `ca3c649`.
+
+⚠️ **Lo que cambiaría ese orden**: si empiezan a borrarle más cosas o llega un strike, el escudo sube
+solo al primer puesto. El usuario buscó qué hashtag le borraron y **no pudo encontrarlo** — ese hilo
+quedó cerrado por decisión suya.
+
+### Lo que solo el usuario puede cerrar
+
+1. **Leer dos guiones gemelos de la misma noticia** y decir si ahora se sienten distintos. Que salen
+   más variados está medido; si son *mejores* es criterio suyo.
+2. **Probar el botón de contexto** en una noticia real y revisar que lo que trae sea correcto.
+3. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
+
+---
+
+
+## CIERRE 2026-08-25 (superado por el de arriba, se conserva por contexto)
 
 Día largo, sobre un solo pedido del usuario: **poder corregir UN video gemelo sin tener que repetir
 el otro**. Fueron DOS tandas — la primera de noche (el desacople), la segunda con el usuario
