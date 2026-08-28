@@ -22,6 +22,7 @@
 // y copiar el archivo acá.
 const fs = require('fs');
 const path = require('path');
+const expresiones = require('./expresiones');
 
 const CATALOGO_PATH = path.join(__dirname, 'catalogo-tecnicas.json');
 
@@ -157,7 +158,9 @@ ${cronica}
 ${estructura.tecnica}
 === FIN DE LA ESTRUCTURA ===
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados con la ESTRUCTURA NARRATIVA indicada. No copies el texto de la estructura en el guion: úsalo solo para decidir la apertura, el orden de la revelación y el cierre.${gemini.bloqueDeCitas(citas)}${gemini.bloqueDeEvitar(guionEvitar)}${nota ? `
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados con la ESTRUCTURA NARRATIVA indicada. No copies el texto de la estructura en el guion: úsalo solo para decidir la apertura, el orden de la revelación y el cierre.
+
+REGISTRO: ${expresiones.bloqueDeTono()}${expresiones.bloqueDeAperturas()}${gemini.bloqueDeCitas(citas)}${gemini.bloqueDeEvitar(guionEvitar)}${nota ? `
 
 ${nota}` : ''}`;
 

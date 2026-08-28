@@ -1,5 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
+const expresiones = require('./expresiones');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -43,6 +44,12 @@ const TAREAS = {
   citas:         { nombre: 'citas',         cadena: CADENAS.mecanico },
   materiales:    { nombre: 'materiales',    cadena: CADENAS.mecanico },
   tecnica:       { nombre: 'técnica',       cadena: CADENAS.mecanico },
+  // Búsqueda web: tarea de investigación, no de redacción. Va por la cadena creativa porque tiene
+  // que decidir QUÉ buscar y qué descartar, no solo rellenar un formato.
+  contexto:      { nombre: 'contexto web',  cadena: CADENAS.creativo },
+  // Elegir los dos puntos de entrada a la noticia: decide de qué va cada video, así que va por la
+  // cadena creativa igual que el guion.
+  encuadres:     { nombre: 'encuadres',     cadena: CADENAS.creativo },
 };
 
 // Prompts maestros
@@ -117,16 +124,20 @@ INSTRUCCIONES CRÍTICAS:
 2. Efecto Bucle Perfecto: La última frase debe conectar orgánicamente con la primera POR LA IDEA, nunca por las palabras. PROHIBIDO repetir la primera frase (ni completa ni sus primeras palabras) al final. La última frase deja una pregunta o tensión abierta que la primera frase del guion parece responder al reiniciarse el video — con vocabulario totalmente distinto.
 3. Apertura de Impacto Directo: Cero introducciones. Arranca con el clímax del escándalo EN LA PRIMERA FRASE.
 4. Ritmo: Alterna frases cortas e incisivas (2-5 palabras) con medianas explicativas (10-15 palabras). Mantén tensión constante.
-5. Tono: Lenguaje de farándula real ("lo hundió", "quedó expuesto", "se le cayó la mentira", "la jugada le salió mal"). NUNCA uses muletillas de IA como "increíble", "impactante", "no vas a creer".
+5. Tono: Lenguaje de farándula real, directo y coloquial, en español neutro que se entienda igual en cualquier país de América Latina. NUNCA uses muletillas de IA como "increíble", "impactante", "no vas a creer". Con cada guion recibes algunas expresiones del registro como referencia de TONO: son para calibrar cómo suena, no un menú del que copiar.
 6. DESARROLLO: El cuerpo debe revelar datos jugosos en el medio y prometer la peor parte al final, pero cumplir la promesa.
 7. FORMATO: UN BLOQUE DE TEXTO CORRIDO. Sin saltos de línea, sin etiquetas, sin negritas. Solo texto limpio con comas, puntos y signos de exclamación.
+8. ATRIBUIR LO QUE NO ESTÁ PROBADO. Todo lo que sea acusación, rumor o versión de una parte va atribuido y matizado: "según ella", "habría", "lo acusan de", "trascendió que". Solo se afirma en seco lo que el MATERIAL BASE da por hecho comprobado.
+   Ejemplo: "le fue infiel" (afirmación) → "ella lo acusa de haberle sido infiel" (atribución).
+   Esto NO baja el tono ni quita filo: la misma frase pega igual y deja de ser una acusación tuya.
 
 PROHIBIDO:
 - Frases incompletas o cortadas.
 - Palabras inventadas o neologismos.
 - Explicar el contexto antes del clímax (arranca directo en la acción).
 - Párrafos separados (TODO en un solo párrafo).
-- Numerar, listar o contar palabras en la salida: entrega SOLO el texto del guion.`,
+- Numerar, listar o contar palabras en la salida: entrega SOLO el texto del guion.
+- Presentar como hecho probado un delito, una infidelidad o cualquier acusación que el MATERIAL BASE no dé por confirmada.`,
 
   marcas: `Rol: Senior Audio Engineer & Prompting Strategist para ElevenLabs v3.
 
@@ -157,13 +168,13 @@ Un solo bloque con el guion fragmentado saturado de etiquetas. Nunca el nombre d
 
 // Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
 // Marca el error con _geminiTemporal para que callGemini sepa si vale la pena caer al siguiente modelo.
-async function intentarModelo(modelo, prompt, userParts, configExtra) {
+async function intentarModelo(modelo, prompt, userParts, configExtra, herramientas = null) {
   // Pocos reintentos por modelo: como hay cadena de fallback, conviene saltar rápido
   // al siguiente modelo en vez de insistir mucho en uno saturado.
   const MAX_INTENTOS = 2;
   for (let intento = 1; intento <= MAX_INTENTOS; intento++) {
     try {
-      const response = await axios.post(`${GEMINI_BASE}/${modelo}:generateContent?key=${GEMINI_API_KEY}`, {
+      const cuerpo = {
         contents: [
           {
             parts: [
@@ -180,13 +191,23 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
           thinkingConfig: { thinkingBudget: 0 },
           ...configExtra,
         }
-      });
+      };
+      // Herramientas (hoy solo búsqueda de Google). Va aparte y solo si se pide: el resto de las
+      // llamadas —guion, fragmentación, marcas— no debe tocar la web ni gastar cupo de búsqueda.
+      if (herramientas) cuerpo.tools = herramientas;
+
+      const response = await axios.post(`${GEMINI_BASE}/${modelo}:generateContent?key=${GEMINI_API_KEY}`, cuerpo);
 
       if (response.data.candidates && response.data.candidates.length > 0) {
+        const candidato = response.data.candidates[0];
         // Unir todas las partes de texto (puede venir en varias)
-        const parts = response.data.candidates[0].content.parts || [];
+        const parts = candidato.content.parts || [];
         const texto = parts.map(p => p.text || '').join('');
-        if (texto.trim()) return texto;
+        // Con búsqueda activa, la respuesta trae de dónde sacó cada cosa. Se devuelve junto al
+        // texto para poder mostrárselo al usuario y que audite lo que se trajo.
+        if (texto.trim()) {
+          return herramientas ? { texto, grounding: candidato.groundingMetadata || null } : texto;
+        }
       }
       throw new Error('No hay respuesta de Gemini');
     } catch (error) {
@@ -218,7 +239,7 @@ async function intentarModelo(modelo, prompt, userParts, configExtra) {
 // primero y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
 // Solo 401/403 (auth/permiso) abortan de una: no los arregla otro modelo.
 // `tarea` sale de TAREAS y decide con qué modelo se empieza (ver CADENAS arriba).
-async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra = {}) {
+async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra = {}, herramientas = null) {
   const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
   const cadena = tarea.cadena || CADENAS.creativo;
   let ultimoError;
@@ -226,7 +247,10 @@ async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra
     const modelo = cadena[i];
     try {
       if (i > 0) console.log(`↪️  Fallback: reintentando con ${modelo}...`);
-      const texto = await intentarModelo(modelo, prompt, userParts, configExtra);
+      const crudo = await intentarModelo(modelo, prompt, userParts, configExtra, herramientas);
+      // Con herramientas, `intentarModelo` devuelve {texto, grounding}; sin ellas, el texto pelado.
+      const texto = herramientas ? crudo.texto : crudo;
+      const grounding = herramientas ? crudo.grounding : null;
       // Deja rastro de qué modelo atendió cada llamada: sin esto no hay forma de saber si el
       // router está funcionando o si todo se está resolviendo por fallback en el tier caro.
       console.log(`  🤖 ${tarea.nombre || 'gemini'} → ${modelo}`);
@@ -234,7 +258,7 @@ async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra
       // escalar de verdad en el reintento — callGemini puede saltar varios escalones en
       // silencio por saturación antes de conseguir texto, así que "el intento anterior" no es
       // lo mismo que "el primer modelo de la cadena".
-      return { texto, modelo };
+      return { texto, modelo, grounding };
     } catch (error) {
       ultimoError = error;
       if (!error._geminiSiguienteModelo) {
@@ -485,7 +509,106 @@ async function extraerActa(sourceType, content) {
 // 4). Solo trabaja con texto — nunca vuelve a tocar audio/video/web — así que es la llamada
 // barata del par y la que se repite sola cuando el usuario pide "otro sesgo" (ver otroSesgo en
 // server.js: ya no hace falta re-descargar nada).
-async function sintetizarCronica(actas, sesgo = 'neutral') {
+// ENRIQUECER CONTEXTO — busca en la web alrededor de la noticia y devuelve UN ACTA MÁS.
+//
+// Para qué: el usuario notó que los dos guiones gemelos se parecen, y una de las causas es que no
+// hay de dónde sacar dos ángulos distintos. Un TikTok de 30 segundos trae un hecho; con eso, pedir
+// dos enfoques produce relleno. Esto trae el material que falta.
+//
+// LA REGLA QUE NO SE NEGOCIA: lo que vuelve de acá es CONTEXTO, no hechos nuevos de la noticia. Se
+// usa para entender (qué pasó antes, quién es quién, qué se dijo después), nunca para que el guion
+// afirme algo que las fuentes del usuario no dijeron. Sobre personas reales, inventar no es un
+// problema de estilo: es un problema legal.
+//
+// Antecedente y posterior van SEPARADOS a propósito. Lo posterior puede contradecir a la fuente
+// original —una desmentida, una respuesta del otro lado— y mezclarlo sin distinguir produce una
+// crónica incoherente. Separado, además, habilita un ángulo entero: "lo que vino después".
+//
+// Cuesta: la búsqueda tiene 5.000 consultas gratis por mes en la familia 3.x (la que usa el
+// proyecto). A ~100 noticias mensuales con 3-4 búsquedas cada una, ni se roza el cupo.
+const PROMPT_CONTEXTO = `Rol: Asistente de investigación para un canal de farándula.
+
+Te doy los HECHOS de una noticia. Buscá en la web información que ayude a ENTENDERLA mejor y
+devolvé lo que encuentres, con sus fuentes.
+
+QUÉ BUSCAR:
+- ANTECEDENTES: qué pasó ANTES entre estas personas. Declaraciones previas (sobre todo si
+  contradicen lo de ahora), historia entre las partes, hechos que expliquen por qué esto importa.
+- POSTERIOR: qué pasó DESPUÉS de este hecho. Respuestas del otro lado, desmentidas, reacciones de
+  personas involucradas, consecuencias concretas.
+- QUIÉN ES QUIÉN: si aparece alguien nombrado al pasar y no se explica quién es, aclaralo en una
+  frase.
+
+REGLAS:
+1. Solo lo que encuentres en fuentes reales. Si no encontrás nada de una categoría, dejala vacía.
+   Vacío es una respuesta correcta y útil; inventar no.
+2. Nada de rumores sin fuente identificable, y nada de foros o comentarios como fuente de un hecho.
+3. Cada punto tiene que ser verificable en la fuente que cites. Si la fuente dice "habría" o "según
+   allegados", copiá esa misma cautela: no lo conviertas en un hecho.
+4. Nada de opinión ni de narrativa: son notas de investigación, igual que un acta.
+5. Si lo que encontrás CONTRADICE los hechos que te di, no los corrijas ni los descartes: ponelo en
+   "posterior" indicando que es una versión distinta.
+
+Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin bloques de código):
+{
+  "antecedentes": "Lo que pasó antes, en prosa breve y neutral. Cadena vacía si no encontraste nada.",
+  "posterior": "Lo que pasó después, igual de breve. Cadena vacía si no hay.",
+  "quienEsQuien": "Aclaraciones de una frase sobre personas nombradas sin explicar. Vacío si no hace falta.",
+  "sinResultados": true o false (true si no encontraste NADA útil)
+}`;
+
+async function enriquecerContexto(hechos, personas = []) {
+  const quienes = personas.filter(Boolean).join(', ');
+  const mensaje = `=== HECHOS DE LA NOTICIA ===
+${hechos}
+=== FIN ===
+${quienes ? `\nPersonas involucradas: ${quienes}` : ''}
+
+Buscá en la web y devolvé el contexto en el JSON pedido.`;
+
+  const { texto, grounding } = await callGemini(
+    PROMPT_CONTEXTO, mensaje, TAREAS.contexto, {}, [{ google_search: {} }]
+  );
+
+  const datos = parsearJsonRobusto(texto);
+  if (!datos) throw new Error('la búsqueda no devolvió un JSON utilizable');
+
+  // Las citas son lo que hace auditable todo esto: cada dato traído queda con su enlace, y el
+  // usuario decide en el Paso 1 si lo acepta. Enriquecimiento visible, nunca invisible.
+  const citas = (grounding?.groundingChunks || [])
+    .map(c => c.web && { titulo: c.web.title, url: c.web.uri })
+    .filter(Boolean);
+  const consultas = grounding?.webSearchQueries || [];
+
+  return {
+    antecedentes: (datos.antecedentes || '').trim(),
+    posterior: (datos.posterior || '').trim(),
+    quienEsQuien: (datos.quienEsQuien || '').trim(),
+    sinResultados: Boolean(datos.sinResultados),
+    citas,
+    consultas,
+  };
+}
+
+// El contexto encontrado, con la forma de un acta, para que entre al mismo saco que las fuentes del
+// usuario sin que `sintetizarCronica` tenga que enterarse de nada. `origen: 'web'` es lo que después
+// permite tratarlo distinto donde importe.
+function actaDeContexto(contexto) {
+  const partes = [];
+  if (contexto.antecedentes) partes.push(`ANTES DE ESTO: ${contexto.antecedentes}`);
+  if (contexto.posterior) partes.push(`DESPUÉS DE ESTO: ${contexto.posterior}`);
+  if (contexto.quienEsQuien) partes.push(`QUIÉN ES QUIÉN: ${contexto.quienEsQuien}`);
+  if (!partes.length) return null;
+  return {
+    hechos: partes.join('\n\n'),
+    personas: [],
+    fuenteResumen: 'contexto encontrado en la web (antecedentes y reacciones posteriores)',
+    origen: 'web',
+    citas: contexto.citas,
+  };
+}
+
+async function sintetizarCronica(actas, sesgo = 'neutral', instruccionEncuadre = '') {
   try {
     if (!Array.isArray(actas) || actas.length === 0) {
       throw new Error('No hay actas para sintetizar');
@@ -495,7 +618,10 @@ async function sintetizarCronica(actas, sesgo = 'neutral') {
       ? actas[0].hechos
       : actas.map((a, i) => `Fuente ${i + 1}${a.fuenteResumen ? ` (${a.fuenteResumen})` : ''}:\n${a.hechos}`).join('\n\n');
 
-    const userParts = [{ text: `${bloqueActas}\n\n${instruccionSesgo}` }];
+    // El encuadre va después del sesgo: son ejes distintos y se suman. El sesgo dice de qué lado se
+    // narra; el encuadre, por dónde se entra a la historia. Vacío = comportamiento de siempre.
+    const extra = instruccionEncuadre ? `\n\n${instruccionEncuadre}` : '';
+    const userParts = [{ text: `${bloqueActas}\n\n${instruccionSesgo}${extra}` }];
     const datos = await llamarJSON(PROMPTS.lectura, userParts, TAREAS.lectura);
     const limpiar = (s) => (s || '').toString().replace(/[/\\:*?"<>|]/g, '').trim();
 
@@ -601,6 +727,12 @@ async function generarGuion(cronica, angle, angleContent = null, citas = [], gui
 
     const bloqueCitas = bloqueDeCitas(citas);
     const bloqueEvitar = bloqueDeEvitar(guionEvitar);
+    // Las expresiones van en el mensaje y NO en el prompt de sistema, justamente porque cambian en
+    // cada llamada: fijas en el sistema es lo que hacía que el modelo copiara las mismas cuatro.
+    const bloqueTono = expresiones.bloqueDeTono();
+    // Memoria entre videos: cómo arrancaron los últimos guiones del canal, para no repetir aperturas
+    // de una noticia a otra (guionEvitar solo cubre al gemelo del mismo job).
+    const bloqueAperturas = expresiones.bloqueDeAperturas();
 
     const userMessage = `A continuación tienes dos bloques claramente separados.
 
@@ -612,7 +744,9 @@ ${cronica}
 ${descripcionEnfoque}
 === FIN DEL ENFOQUE ===
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.${bloqueCitas}${bloqueEvitar}${nota ? `
+TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.
+
+REGISTRO: ${bloqueTono}${bloqueAperturas}${bloqueCitas}${bloqueEvitar}${nota ? `
 
 ${nota}` : ''}`;
 
@@ -652,7 +786,7 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
   const guion = await fn(cronica, angle, angleContent, citas, guionEvitar);
   const palabras = contarPalabras(guion);
-  if (palabras >= PALABRAS_MIN) return guion;
+  if (palabras >= PALABRAS_MIN) return entregar(guion);
 
   console.warn(`  ⚠️ El guion salió con ${palabras} palabras (mínimo ${PALABRAS_MIN}); se pide una vez más`);
   try {
@@ -663,14 +797,28 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
     const nuevas = contarPalabras(reintento);
     if (nuevas > palabras) {
       console.log(`  ✏️ Reintento: ${nuevas} palabras`);
-      return reintento;
+      return entregar(reintento);
     }
     console.warn(`  ⚠️ El reintento salió con ${nuevas}; se usa el primero`);
-    return guion;
+    return entregar(guion);
   } catch (e) {
     console.warn(`  ⚠️ El reintento del guion falló (${e.message}); se usa el primero`);
-    return guion;
+    return entregar(guion);
   }
+}
+
+// Único lugar por el que sale TODO guion entregado, de cualquier motor: acá se anota su apertura
+// para que el próximo video no repita ese arranque. Si el registro falla, el guion sale igual —
+// perder la memoria degrada la variedad, no rompe el video.
+function entregar(guion) {
+  try {
+    expresiones.recordarApertura(guion);
+    const usadas = expresiones.usadasEn(guion);
+    if (usadas.length) console.log(`  🗣️ Expresiones del registro usadas: ${usadas.join(', ')}`);
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo registrar la apertura del guion: ${e.message}`);
+  }
+  return guion;
 }
 
 const PROMPT_VARIAR_META = `Rol: Community manager de un canal de farándula en TikTok.
@@ -1060,6 +1208,7 @@ module.exports = {
   procesarLectura,
   extraerActa,
   sintetizarCronica,
+  enriquecerContexto, actaDeContexto,
   generarGuion,
   fragmentarGuionParrafos,
   verificarReconstruccion,
