@@ -3,12 +3,18 @@
 ## 🔴 CIERRE 2026-08-27 — variedad de guiones, IMPLEMENTADO (supersede lo anterior)
 
 El usuario pidió ejecutar todo el diseño de variedad "sin preguntarme nada, con todos los permisos
-en automático". Entraron **4 commits de código**. Trabajado en `test-persistencia`, desplegado en
-staging.
+en automático". Entraron **4 commits de código**. Trabajado en `test-persistencia`, desplegado y
+verificado en staging (contenedor levantado 02:14 GMT, health 200).
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `c235f7e` | local = remoto |
+| `farandula-video-generator` | `test-persistencia` | `ebe7199` | local = remoto, desplegado |
+
+### ⚠️ Lo primero al retomar: preguntarle qué le pareció
+
+Todo lo de esta tanda cambia **cómo salen los guiones**, y eso solo lo puede juzgar él. La pregunta
+concreta: *¿los dos guiones gemelos ahora se sienten distintos de verdad?* Que salen más variados
+está medido con números (abajo); si son **mejores** es criterio suyo y no hay métrica que lo diga.
 
 ### El diagnóstico del usuario era correcto
 
@@ -26,6 +32,7 @@ guiones salían de **la misma crónica**, y el parafraseo era su techo.
 | 1 | Registro de expresiones con rotación, memoria entre videos y regla de atribución | `ca3c649` |
 | 2 | Contexto desde la web y dos encuadres, uno por canal | `5a2e8a0` |
 | 3 | Columnas de rendimiento en la hoja del publicador | `c235f7e` |
+| 4 | El primer video también usa SU encuadre, no solo el gemelo | `ebe7199` |
 
 #### 1. Las cuatro frases fijas (`ca3c649`) — la causa más barata, encontrada desde la Mac
 
@@ -79,6 +86,35 @@ la que ya vuelve para pegar el link del post. ⚠️ Al tocar la hoja hay que ma
 **cuatro** listas: `ENCABEZADOS`, `ANCHOS`, `ALINEAR` y la fila de `registrarVideo()` — ahora 19
 cada una, `ULTIMA_COL = 'S'`.
 
+#### 4. Cada video con SU encuadre (`ebe7199`)
+
+Incoherencia detectada al revisar lo ya escrito: la pantalla del Paso 1 muestra un encuadre por
+canal, pero solo se aplicaba el del gemelo — el primero seguía usando la crónica sin encuadre. **La
+pantalla decía una cosa y el guion hacía otra.** Ahora los dos re-sintetizan su propia crónica desde
+las mismas actas. Con un video solo no se toca nada: no hay de qué diferenciarse, y la crónica que
+el usuario revisó es la que corresponde usar tal cual.
+
+### Cómo se verificó cada cosa (números, no impresiones)
+
+| Qué | Resultado |
+|---|---|
+| Frases viejas repetidas | **0 de 4** guiones, con Gemini real |
+| Aperturas repetidas | **0**, y 0 con las mismas 3 primeras palabras |
+| Rotación de expresiones | 3 sorteos seguidos sin repetir ninguna |
+| Lógica de encuadres | 7 casos con un Gemini falso: dos del mismo marco se reducen a uno y avisa; marco inventado se descarta; sin hechos lanza |
+| Encuadres reales, noticia rica | 2 marcos distintos: `conflicto` + `protagonista` |
+| Encuadres reales, noticia pobre | `suficiente: false`, **se negó a inventar el segundo** |
+| Búsqueda web real | 3 consultas, 7 fuentes citadas, trajo un hecho posterior que la fuente no tenía |
+| Guardas de `/api/enriquecer` | las 4 responden (sin jobId, job inexistente, sin fuentes, ya enriquecida) |
+| Lectura completa de punta a punta | job guardado con sus 2 encuadres |
+| Coherencia de la hoja | las 4 listas en 19 |
+
+⚠️ **El patrón que sirvió para verificar sin depender de la red**: un `gemini` falso que devuelve lo
+que uno le diga. Toda la lógica propia (reglas duras, degradación, descartes) se prueba así en
+segundos; a Gemini real se lo deja solo para lo que de verdad necesita su criterio. Vale la pena
+reusarlo — durante esta tanda Gemini estuvo devolviendo 503 casi todo el tiempo y las pruebas contra
+él tardaban minutos.
+
 ### ⚠️ Lo que NO se hizo, y por qué
 
 **Los comentarios de YouTube y Facebook** (tercer eje del plan). Necesitan credenciales que solo el
@@ -104,9 +140,25 @@ quedó cerrado por decisión suya.
 ### Lo que solo el usuario puede cerrar
 
 1. **Leer dos guiones gemelos de la misma noticia** y decir si ahora se sienten distintos. Que salen
-   más variados está medido; si son *mejores* es criterio suyo.
-2. **Probar el botón de contexto** en una noticia real y revisar que lo que trae sea correcto.
-3. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
+   más variados está medido; si son *mejores* es criterio suyo. **Es la pregunta principal.**
+2. **Probar el botón de contexto** en una noticia real y revisar que lo que trae sea correcto —
+   sobre todo que no meta como hecho algo que la fuente no dice.
+3. **Probar el cruce de canales** que quedó de la tanda anterior: mandar un canal, pasarse al otro
+   mientras trabaja, y mandarlo también.
+4. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
+
+### Notas operativas nuevas
+
+- **La lectura del Paso 1 ahora tarda más**: suma la llamada de los encuadres. Con Gemini saturado
+  (503, que fue constante durante esta tanda) puede irse a varios minutos. El techo de espera del
+  navegador son 5 minutos (`TIMEOUT_PEDIDO_MS`), así que entra — pero si el usuario reporta que "la
+  lectura no termina", mirar primero si Gemini está devolviendo 503.
+- **El botón de contexto es opcional y se pide a mano**, nunca corre solo: cuesta ~2 minutos y no
+  toda noticia lo necesita.
+- ⚠️ **Levantar el servidor local corta las pruebas con `curl` en vuelo.** Dos peticiones de esta
+  tanda terminaron en exit 56 por apagar el server mientras corrían; el trabajo del lado del
+  servidor SÍ se había completado (se confirmó mirando `data/jobs.json`). Antes de dar por fallida
+  una prueba larga, revisar el estado real en el job.
 
 ---
 
