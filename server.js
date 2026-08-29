@@ -49,7 +49,7 @@ app.use(express.static('public', {
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/') || req.path.startsWith('/material-file/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -542,6 +542,52 @@ app.delete('/api/materiales/:jobId/:materialId', (req, res) => {
 app.get('/api/materiales/:jobId', (req, res) => {
   const job = jobStore.obtenerJob(req.params.jobId);
   res.json({ materialesAdicionales: job?.materialesAdicionales || [] });
+});
+
+// Sirve el archivo de un material para poder ESCUCHARLO en el Paso 4.
+//
+// Por qué hace falta: los tiempos de cada cita los estima Gemini de oído (el prompt le pide el
+// momento "aproximado"), y se usan tal cual. Cuando el `fin` cae medio segundo antes de que la
+// persona termine de hablar, la frase sale cortada en el video. El usuario podía corregir los
+// números a mano desde el Paso 4, pero no tenía cómo saber QUÉ tramo era sin abrir el archivo por
+// fuera de la app y buscar el segundo a ojo. Su pregunta, textual: "¿pero cómo puedo saber qué
+// parte de la cita es?".
+//
+// Soporta Range para que el navegador pueda saltar a un segundo concreto sin bajarse el archivo
+// entero: sin esto, `currentTime = 12.4` en un video largo no funciona en Chrome.
+//
+// Va en `/api/material-file/` y NO bajo `/api/materiales/` porque tiene que estar EXENTA de la API
+// key: un `<audio>` no puede mandar cabeceras, igual que el `<video>` de las previas. Mismo criterio
+// que `/preview/` y `/audio/` — la protección es que la ruta lleva dos identificadores opacos
+// (`jobId` es un UUID v4), no que se pida la clave.
+app.get('/api/material-file/:jobId/:materialId', (req, res) => {
+  const { jobId, materialId } = req.params;
+  const job = jobStore.obtenerJob(jobId);
+  if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+  const material = (job.materialesAdicionales || []).find(m => m.id === materialId);
+  if (!material) return res.status(404).json({ error: 'Material no encontrado' });
+  if (!material.archivoPath || !fs.existsSync(material.archivoPath)) {
+    // El disco de Railway es efímero: tras un redeploy el archivo puede no estar aunque el job sí.
+    return res.status(404).json({ error: 'El archivo ya no está en el disco del servidor' });
+  }
+
+  const total = fs.statSync(material.archivoPath).size;
+  const tipo = material.tieneVideo ? 'video/mp4' : 'audio/mpeg';
+  const range = req.headers.range;
+  if (!range) {
+    res.writeHead(200, { 'Content-Length': total, 'Content-Type': tipo, 'Accept-Ranges': 'bytes' });
+    return fs.createReadStream(material.archivoPath).pipe(res);
+  }
+  const [desdeStr, hastaStr] = range.replace(/bytes=/, '').split('-');
+  const desde = parseInt(desdeStr, 10) || 0;
+  const hasta = hastaStr ? parseInt(hastaStr, 10) : total - 1;
+  res.writeHead(206, {
+    'Content-Range': `bytes ${desde}-${hasta}/${total}`,
+    'Accept-Ranges': 'bytes',
+    'Content-Length': hasta - desde + 1,
+    'Content-Type': tipo,
+  });
+  fs.createReadStream(material.archivoPath, { start: desde, end: hasta }).pipe(res);
 });
 
 // Inicializar Google Drive

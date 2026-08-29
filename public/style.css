@@ -841,6 +841,15 @@ footer {
     padding: 2px 4px;
     font-size: 0.82rem;
 }
+/* El reproductor del tramo baja a su propia línea: al lado de los números quedaría apretado y
+   además rompería el alto de la fila de asignación. */
+.asignacion-cita-tiempos { flex-wrap: wrap; }
+.cita-player {
+    width: 100%;
+    max-width: 320px;
+    height: 32px;
+    margin-top: 6px;
+}
 
 /* Material adicional por fragmento (Paso 1) */
 #materiales-lista {

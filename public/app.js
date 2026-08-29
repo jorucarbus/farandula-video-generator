@@ -1582,7 +1582,47 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
             const inFin = document.createElement('input');
             inFin.type = 'number'; inFin.step = '0.1'; inFin.className = 'input-cita-tiempo';
             inFin.title = 'Fin de la cita (segundos)';
-            inputsCita.append('Cita: ', inIni, ' – ', inFin, 's');
+
+            // Escuchar EXACTAMENTE el tramo que va a entrar al video. Sin esto los segundos son
+            // números a ciegas: los estima Gemini de oído y, para corregirlos, había que abrir la
+            // entrevista fuera de la app y buscar el momento a mano.
+            const btnOir = document.createElement('button');
+            btnOir.type = 'button';
+            btnOir.className = 'btn-copy';
+            btnOir.textContent = '▶ Oír el tramo';
+            btnOir.title = 'Reproduce solo lo que va a entrar, del inicio al fin de arriba';
+            const reproductor = document.createElement('audio');
+            reproductor.controls = true;
+            // `metadata` y no `none`: hace falta que el navegador conozca la duración ANTES de poder
+            // saltar a un segundo concreto. Con `none`, `currentTime = 12.4` no hace nada y el
+            // tramo arrancaría desde el principio del archivo.
+            reproductor.preload = 'metadata';
+            reproductor.className = 'cita-player hidden';
+
+            let cortar = null;
+            btnOir.onclick = () => {
+                const item = itemsMaterial.find(it => it.id === selMat.value);
+                if (!item) return;
+                const desde = parseFloat(inIni.value) || 0;
+                const hasta = parseFloat(inFin.value) || 0;
+                const url = `${apiBase()}/api/material-file/${state.jobId}/${item.materialId}`;
+                if (reproductor.dataset.url !== url) {
+                    reproductor.src = url;
+                    reproductor.dataset.url = url;
+                    reproductor.load();   // sin esto, con `preload=metadata` el src nuevo no se pide
+                }
+                reproductor.classList.remove('hidden');
+                // Frenar en el `fin`: es lo que hace que se OIGA si la frase queda cortada. Si el
+                // audio se corta a mitad de palabra, ahí está el problema y se sube el número.
+                if (cortar) reproductor.removeEventListener('timeupdate', cortar);
+                cortar = () => { if (hasta > desde && reproductor.currentTime >= hasta) reproductor.pause(); };
+                reproductor.addEventListener('timeupdate', cortar);
+                const arrancar = () => { reproductor.currentTime = desde; reproductor.play().catch(() => {}); };
+                if (reproductor.readyState >= 1) arrancar();
+                else reproductor.addEventListener('loadedmetadata', arrancar, { once: true });
+            };
+
+            inputsCita.append('Cita: ', inIni, ' – ', inFin, 's ', btnOir, reproductor);
 
             // Al elegir una cita, prellenar con lo que Gemini detectó en la entrevista
             // (item.inicioAprox/finAprox) — SALVO que esta selección sea la ya guardada del

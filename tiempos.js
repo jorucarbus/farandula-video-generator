@@ -38,6 +38,12 @@ async function generarConTiempos(guionConMarcas, { fuente = 'elevenlabs', modelo
 // es cambio de palabra real, no cadencia.
 const ES_IGNORABLE = c => /[\s,.:;!¡?¿"'“”«»…\-–—]/.test(c);
 
+// Segundos extra al final de cada cita, antes del clamp contra el archivo. Medio segundo alcanza
+// para que no se corte la última palabra sin llegar a colar la frase siguiente: si el modelo
+// errara por más que eso, el ajuste correcto es a mano desde el Paso 4, donde ahora se puede OÍR
+// el tramo exacto antes de generar.
+const COLCHON_CITA = 0.5;
+
 // Busca un token (palabra o fragmento) dentro de caracteres[] a partir de jInicio. Devuelve
 // el índice siguiente, o -1 si no encaja.
 function matchTexto(caracteres, jInicio, texto) {
@@ -184,12 +190,22 @@ async function empalmarCitasReales(audioPathOriginal, duracionesBase, palabrasBa
   // 1. Clamp de cada empalme contra la duración REAL del archivo de entrevista (mismo criterio
   //    que el fix de offset-clamp ya existente en video.js) — descarta el empalme individual si
   //    queda <0.3s tras el clamp, sin tocar los demás.
+  //
+  //    Antes del clamp va un COLCHÓN al final. Los tiempos de cada cita los estima Gemini de oído
+  //    (`PROMPT_CITAS` le pide el momento "aproximado") y se usaban tal cual, así que un `fin`
+  //    calculado medio segundo corto cortaba la frase a mitad de palabra en el video. El usuario lo
+  //    reportó: "los videos se cortan antes de terminar la frase".
+  //
+  //    Solo se agrega al FINAL, nunca al inicio: adelantar el inicio metería la cola de la frase
+  //    anterior, que suena peor que empezar justo. Y el clamp de abajo lo recorta si se pasa del
+  //    archivo, así que no puede pedir metraje que no existe.
   const descartados = [];
   const validos = [];
   for (const e of [...empalmes].sort((a, b) => a.parrafoIdx - b.parrafoIdx)) {
     let durArchivo = null;
     try { durArchivo = await video.obtenerDuracion(e.archivoPath); } catch { /* archivo raro, sigue sin clamp */ }
-    const finClamp = durArchivo && Number.isFinite(durArchivo) ? Math.min(e.fin, durArchivo) : e.fin;
+    const conColchon = e.fin + COLCHON_CITA;
+    const finClamp = durArchivo && Number.isFinite(durArchivo) ? Math.min(conColchon, durArchivo) : conColchon;
     if (finClamp - e.inicio < 0.3) {
       console.warn(`  ⚠️ Cita del fragmento ${e.parrafoIdx} descartada: duración inválida tras clamp (${(finClamp - e.inicio).toFixed(2)}s)`);
       descartados.push(e.parrafoIdx);
