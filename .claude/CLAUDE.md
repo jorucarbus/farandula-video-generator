@@ -8,7 +8,45 @@ verificado en staging (contenedor levantado 02:14 GMT, health 200).
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `5556df4` | local = remoto, desplegado |
+| `farandula-video-generator` | `test-persistencia` | `38c289d` | local = remoto, desplegado |
+
+### 2026-08-29 — Citas desde Drive: navegador + marcador, y solo se guarda el recorte
+
+Idea del usuario, y mejor que lo que había: *"en lugar de descargar el archivo, usarlo desde el
+Drive y solo marcarlo, y una vez escogido solo el fragmento, utilizar eso nada más"*. Él ya sube las
+entrevistas a mano a **`Redes_Canales/Citas`**, en subcarpetas por fecha y protagonista.
+
+**Qué entró** (`38c289d`):
+- **Navegador** de esa carpeta (`/api/citas-drive`). Navegador y no desplegable porque tiene
+  subcarpetas **y** archivos sueltos mezclados en la raíz.
+- **Puente de reproducción** (`/api/cita-stream/:fileId`): el navegador pide un tramo de bytes y se
+  le pide ese mismo tramo a Drive. Se salta a cualquier segundo de un video de 50 MB sin bajarlo
+  entero ni escribirlo en el disco del servidor.
+- **Marcador**: el video a la vista, "marcar inicio/fin acá" sobre el cursor, números editables al
+  lado, y "ver solo el tramo" para confirmar antes de aceptar.
+- **Al aceptar se recorta SOLO el tramo** y se guarda únicamente eso. El original nunca se toca.
+
+**Por qué importa**: sus archivos pesan 50 MB. Antes se subían por el navegador y quedaban enteros
+en el disco de Railway, que es efímero — eso ya hizo perder una entrevista entre el upload y el
+render (2026-08-20). Medido: 13 MB → 1,9 MB de recorte.
+
+⚠️ **DOS TRAMPAS que costaron y van a volver:**
+
+1. **La carpeta está compartida con la cuenta OAuth del usuario, NO con el Service Account.** Con
+   `getDrive()` a secas el listado vuelve **vacío, sin error**. Mismo caso que la música, que ya
+   usaba `getDriveOAuth() || getDrive()`. **Si algo de Drive devuelve una lista vacía y debería
+   traer datos, mirar esto primero.**
+2. **`r.headers` de googleapis es un objeto `Headers` (fetch), no un diccionario.** Leerlo como
+   `headers['content-range']` da `undefined` siempre: el puente contestaba 200 con el archivo entero
+   aunque Drive hubiera respondido 206 correctamente. Se lee con `.get()`. Y **Drive no manda
+   `accept-ranges`** aunque los soporta, así que hay que ponerlo a mano o el navegador ni intenta
+   pedir tramos.
+
+El recorte **re-codifica** en vez de copiar: cortar por tiempo con `-c copy` salta al keyframe más
+cercano y se lleva hasta medio segundo — justo lo que se está ajustando al milímetro.
+
+`GOOGLE_DRIVE_CITAS_FOLDER_ID` tiene el id por defecto en el código, así que funciona sin configurar
+nada en Railway; ponerla como variable solo hace falta si algún día cambia la carpeta.
 
 ### 2026-08-28 — Las citas se cortaban antes de terminar la frase (NO era el límite de 3s)
 
@@ -170,11 +208,13 @@ quedó cerrado por decisión suya.
    más variados está medido; si son *mejores* es criterio suyo. **Es la pregunta principal.**
 2. **Probar el botón de contexto** en una noticia real y revisar que lo que trae sea correcto —
    sobre todo que no meta como hecho algo que la fuente no dice.
-3. **Probar una cita** y confirmar que ya no se corta la frase — y si se corta, ajustar el fin
+3. **Probar el flujo nuevo de citas**: "Elegir de mi carpeta Citas" en el Paso 1, marcar un tramo
+   viendo el video, y confirmar que entra bien al guion. Es lo más nuevo y lo menos probado en uso real.
+4. **Probar una cita vieja** y confirmar que ya no se corta la frase — y si se corta, ajustar el fin
    escuchando el tramo con el botón nuevo.
-4. **Probar el cruce de canales** que quedó de la tanda anterior: mandar un canal, pasarse al otro
+5. **Probar el cruce de canales** que quedó de la tanda anterior: mandar un canal, pasarse al otro
    mientras trabaja, y mandarlo también.
-5. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
+6. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
 
 ### Notas operativas nuevas
 
