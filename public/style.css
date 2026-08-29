@@ -851,6 +851,69 @@ footer {
     margin-top: 6px;
 }
 
+/* Navegador de la carpeta Citas de Drive + marcador de tramo (Paso 1) */
+#citas-drive-panel {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft, rgba(0,0,0,0.02));
+}
+.citas-drive-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+#citas-drive-ruta {
+    flex: 1;
+    text-align: center;
+    color: var(--text-muted);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cita-drive-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card, #fff);
+    text-align: left;
+    cursor: pointer;
+    font-size: 0.87rem;
+}
+.cita-drive-item:hover { border-color: var(--accent); }
+.cita-drive-nombre { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cita-drive-icono { flex-shrink: 0; }
+
+#citas-drive-marcador { margin-top: 12px; }
+.cita-preview-video, .cita-preview-img {
+    width: 100%;
+    max-width: 420px;
+    max-height: 300px;
+    border-radius: 6px;
+    display: block;
+}
+.cita-preview-audio { width: 100%; max-width: 420px; }
+.cita-marcas {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+    font-size: 0.82rem;
+}
+.cita-marcas label { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+
 /* Material adicional por fragmento (Paso 1) */
 #materiales-lista {
     list-style: none;

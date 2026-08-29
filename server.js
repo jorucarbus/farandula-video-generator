@@ -49,7 +49,7 @@ app.use(express.static('public', {
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/') || req.path.startsWith('/material-file/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/') || req.path.startsWith('/material-file/') || req.path.startsWith('/cita-stream/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -542,6 +542,158 @@ app.delete('/api/materiales/:jobId/:materialId', (req, res) => {
 app.get('/api/materiales/:jobId', (req, res) => {
   const job = jobStore.obtenerJob(req.params.jobId);
   res.json({ materialesAdicionales: job?.materialesAdicionales || [] });
+});
+
+// ---------------------------------------------------------------------------------------------
+// CITAS DESDE DRIVE
+//
+// El usuario ya sube las entrevistas a mano a una carpeta "Citas" dentro de Redes_Canales, con
+// subcarpetas por fecha y protagonista. Su idea, textual: "en lugar de descargar el archivo, usarlo
+// desde el Drive y solo marcarlo, y una vez escogido solo el fragmento, utilizar eso nada más".
+//
+// Es mejor que subirlo por el navegador, que es lo que se hacía:
+//   - No se sube nada (sus archivos pesan 50 MB y ya están en Drive).
+//   - No ocupa el disco de Railway, que es efímero y ya hizo perder una entrevista entre el upload
+//     y el render (bug real, 2026-08-20).
+//   - Del archivo grande solo se guarda, al final, el recorte de unos segundos.
+// ---------------------------------------------------------------------------------------------
+
+// Navegar la carpeta de citas. Sin `folderId` abre la raíz; con él, entra en esa subcarpeta.
+app.get('/api/citas-drive', async (req, res) => {
+  try {
+    const folderId = req.query.folderId || driveHelper.CITAS_FOLDER_ID;
+    const contenido = await driveHelper.listarContenido(folderId);
+    res.json({ folderId, raiz: driveHelper.CITAS_FOLDER_ID, contenido });
+  } catch (error) {
+    console.error('Error listando la carpeta de citas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUENTE de reproducción: el navegador pide un tramo de bytes y se le pide ese mismo tramo a Drive.
+// Así se puede saltar a cualquier segundo de un video de 50 MB sin bajarlo entero ni escribirlo en
+// el disco del servidor.
+//
+// Exenta de la API key (ver `authenticateApiKey`): un <video> no puede mandar cabeceras.
+app.get('/api/cita-stream/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    const rango = req.headers.range || null;
+    const r = await driveHelper.streamArchivo(fileId, rango);
+    // Se copian las cabeceras que Drive ya calculó (rango, largo, tipo): recalcularlas a mano sería
+    // duplicar su aritmética y equivocarse en los bordes.
+    //
+    // ⚠️ `r.headers` es un objeto `Headers` (fetch), NO un diccionario: leerlo como `headers['x']`
+    // devuelve undefined siempre. Con eso el puente contestaba 200 con el archivo entero aunque
+    // Drive hubiera respondido 206 correctamente, y el navegador no podía saltar a un segundo.
+    const leer = (h) => (typeof r.headers?.get === 'function' ? r.headers.get(h) : r.headers?.[h]);
+    for (const h of ['content-type', 'content-length', 'content-range']) {
+      const v = leer(h);
+      if (v) res.setHeader(h, v);
+    }
+    // Drive no manda `accept-ranges` aunque los soporta; sin esta cabecera el navegador ni intenta
+    // pedir un tramo y se baja el video entero para poder moverse por la línea de tiempo.
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.status(leer('content-range') ? 206 : 200);
+    r.data.on('error', (e) => {
+      console.warn(`⚠️ Puente de cita cortado (${fileId}): ${e.message}`);
+      res.destroy();
+    });
+    r.data.pipe(res);
+  } catch (error) {
+    console.error('Error en el puente de cita:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
+// Toma un archivo de la carpeta Citas y lo suma al job como material.
+//
+// Con `inicio`/`fin` recorta SOLO ese tramo y guarda únicamente el recorte: de una entrevista de
+// 50 MB quedan unos segundos. Es lo que pidió el usuario ("una vez escogido solo el fragmento,
+// utilizar eso nada más") y de paso evita el modo de falla que ya mordió: el archivo grande
+// desapareciendo del disco efímero entre que se marca y se genera el video.
+//
+// Sin `inicio`/`fin` (una foto, o un video que se quiere entero) se trae tal cual.
+//
+// El original NUNCA se toca: sigue en el Drive del usuario, por si después quiere sacar otra cita.
+app.post('/api/citas-drive/usar', async (req, res) => {
+  try {
+    const { jobId, fileId, nombre, inicio, fin, tipo, descripcion, texto } = req.body;
+    if (!jobId || !fileId) return res.status(400).json({ error: 'Faltan jobId o fileId' });
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+
+    const info = await driveHelper.infoArchivo(fileId);
+    const esImagen = (info.mimeType || '').startsWith('image/');
+    const esVideo = (info.mimeType || '').startsWith('video/');
+    const recorta = !esImagen && Number.isFinite(inicio) && Number.isFinite(fin) && fin > inicio;
+
+    // Misma carpeta y estructura que los materiales subidos a mano (MATERIALES_DIR/jobId/), para
+    // que el borrado, el respaldo y la restauración desde Drive los traten igual sin saber de dónde
+    // vinieron.
+    const destDir = path.join(materiales.MATERIALES_DIR, jobId);
+    fs.mkdirSync(destDir, { recursive: true });
+    const ext = path.extname(info.name || '') || (esImagen ? '.jpg' : '.mp4');
+    const destino = path.join(destDir, `drive_${crypto.randomBytes(6).toString('hex')}${ext}`);
+
+    // Se baja el original a un temporal, se recorta, y el original se descarta. Bajarlo entero es
+    // inevitable: para cortar por tiempo hay que leer el índice del contenedor, y Drive solo sabe
+    // servir rangos de BYTES, que en un mp4 no mapean a segundos.
+    const tmp = path.join(video.TEMP_DIR, `cita_src_${crypto.randomBytes(4).toString('hex')}${ext}`);
+    fs.mkdirSync(video.TEMP_DIR, { recursive: true });
+    const r = await driveHelper.streamArchivo(fileId);
+    await new Promise((ok, err) => {
+      const out = fs.createWriteStream(tmp);
+      r.data.on('error', err);
+      out.on('error', err);
+      out.on('finish', ok);
+      r.data.pipe(out);
+    });
+
+    try {
+      if (recorta) {
+        const dur = (fin - inicio).toFixed(2);
+        console.log(`✂️ Recortando cita de "${info.name}": ${inicio.toFixed(2)}s a ${fin.toFixed(2)}s (${dur}s)`);
+        // Re-codifica en vez de copiar: un corte por tiempo con `-c copy` salta al keyframe más
+        // cercano y se lleva puesto hasta medio segundo, que es justo lo que se está tratando de
+        // ajustar al milímetro.
+        await video.ffmpeg(['-ss', String(inicio), '-i', tmp, '-t', dur,
+          ...(esVideo ? ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'] : []),
+          '-c:a', 'aac', '-b:a', '192k', destino]);
+      } else {
+        fs.copyFileSync(tmp, destino);
+      }
+    } finally {
+      try { fs.unlinkSync(tmp); } catch {}
+    }
+
+    driveCache.respaldar(destino, materiales.nombreDriveMaterial(jobId, destino), info.mimeType);
+
+    const material = {
+      id: crypto.randomBytes(6).toString('hex'),
+      tipo: tipo || (esImagen ? 'foto' : 'entrevista'),
+      archivoPath: destino,
+      mimeType: info.mimeType,
+      tieneVideo: esVideo,
+      descripcion: descripcion || null,
+      origenDrive: { fileId, nombre: nombre || info.name },
+      // Ya viene recortado: los tiempos son del archivo NUEVO, que arranca en 0. Guardar acá los
+      // del original confundiría al Paso 4, que los usaría como offsets dentro del recorte.
+      citas: recorta
+        ? [{ citaId: crypto.randomBytes(3).toString('hex'), texto: texto || '', inicioAprox: 0, finAprox: Math.round((fin - inicio) * 100) / 100 }]
+        : [],
+    };
+
+    const lista = [...(job.materialesAdicionales || []), material];
+    jobStore.actualizarJob(jobId, { materialesAdicionales: lista });
+    const tam = Math.round(fs.statSync(destino).size / 1048576 * 10) / 10;
+    console.log(`  ✅ Material agregado desde Drive: ${info.name} → ${tam} MB${recorta ? ' (solo el tramo marcado)' : ''}`);
+
+    res.json({ status: 'success', material, recortado: recorta, tamMB: tam });
+  } catch (error) {
+    console.error('Error usando la cita de Drive:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Sirve el archivo de un material para poder ESCUCHARLO en el Paso 4.

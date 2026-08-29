@@ -1167,6 +1167,202 @@ function renderFuentesLista() {
     }
 }
 
+// =================================================================================================
+// CITAS DESDE DRIVE — navegador + marcador
+//
+// El usuario ya sube las entrevistas a mano a su carpeta "Citas" (dentro de Redes_Canales), con
+// subcarpetas por fecha y protagonista. Su idea: elegir el archivo de ahí en vez de subirlo otra
+// vez, marcar el tramo viendo el video, y quedarse SOLO con ese recorte.
+//
+// Por qué un navegador y no un desplegable: tiene subcarpetas Y archivos sueltos mezclados en la
+// raíz, así que una lista plana no le serviría.
+// =================================================================================================
+
+let citasDrive = { pila: [], actual: null, elegido: null };
+
+async function abrirCitasDrive() {
+    if (!state.jobId) {
+        alert('Primero leé la fuente de la noticia: el material se cuelga de ese proceso.');
+        return;
+    }
+    document.getElementById('citas-drive-panel').classList.remove('hidden');
+    citasDrive.pila = [];
+    await citasDriveNavegar(null, 'Citas');
+}
+
+function cerrarCitasDrive() {
+    document.getElementById('citas-drive-panel').classList.add('hidden');
+    document.getElementById('citas-drive-marcador').classList.add('hidden');
+    citasDrive = { pila: [], actual: null, elegido: null };
+}
+
+async function citasDriveNavegar(folderId, nombre) {
+    const lista = document.getElementById('citas-drive-lista');
+    const marcador = document.getElementById('citas-drive-marcador');
+    marcador.classList.add('hidden');
+    marcador.innerHTML = '';
+    lista.innerHTML = '<p class="hint">Cargando…</p>';
+    document.getElementById('citas-drive-ruta').textContent =
+        [...citasDrive.pila.map(p => p.nombre), nombre].join(' / ');
+    document.getElementById('btn-citas-volver').classList.toggle('hidden', citasDrive.pila.length === 0);
+
+    try {
+        const r = await apiCall(`/citas-drive${folderId ? `?folderId=${encodeURIComponent(folderId)}` : ''}`);
+        citasDrive.actual = { id: r.folderId, nombre };
+        if (!r.contenido.length) {
+            lista.innerHTML = '<p class="hint">Esta carpeta está vacía.</p>';
+            return;
+        }
+        lista.innerHTML = '';
+        for (const f of r.contenido) {
+            const fila = document.createElement('button');
+            fila.type = 'button';
+            fila.className = 'cita-drive-item';
+            const icono = f.esCarpeta ? '📁' : (f.esVideo ? '🎬' : (f.esImagen ? '🖼️' : (f.esAudio ? '🎵' : '📄')));
+            const detalle = [
+                f.tamMB ? `${f.tamMB} MB` : null,
+                f.duracion ? `${Math.round(f.duracion)}s` : null,
+            ].filter(Boolean).join(' · ');
+            fila.innerHTML = `<span class="cita-drive-icono">${icono}</span>
+                <span class="cita-drive-nombre">${f.name}</span>
+                <span class="hint">${detalle}</span>`;
+            fila.onclick = () => {
+                if (f.esCarpeta) {
+                    citasDrive.pila.push(citasDrive.actual);
+                    citasDriveNavegar(f.id, f.name);
+                } else {
+                    abrirMarcador(f);
+                }
+            };
+            lista.appendChild(fila);
+        }
+    } catch (e) {
+        lista.innerHTML = `<p class="error-text">No se pudo leer la carpeta: ${e.message}</p>`;
+    }
+}
+
+function citasDriveVolver() {
+    const anterior = citasDrive.pila.pop();
+    if (anterior) citasDriveNavegar(anterior.id, anterior.nombre);
+}
+
+// Marcador: el video a la vista, y dos marcas que se ponen donde está el cursor de reproducción.
+//
+// Los botones "marcar acá" son el modo principal: se deja correr y se marca al vuelo, que es como
+// se trabaja de verdad. Los números quedan editables al lado para el ajuste fino.
+//
+// En una imagen no hay nada que marcar: entra tal cual como material de apoyo.
+function abrirMarcador(archivo) {
+    citasDrive.elegido = archivo;
+    const caja = document.getElementById('citas-drive-marcador');
+    caja.classList.remove('hidden');
+    const src = `${apiBase()}/api/cita-stream/${archivo.id}`;
+
+    if (archivo.esImagen) {
+        caja.innerHTML = `
+            <p><strong>${archivo.name}</strong></p>
+            <img src="${src}" class="cita-preview-img" alt="">
+            <p class="hint">Es una imagen: no hay tramo que marcar, entra tal cual como material de apoyo.</p>
+            <button type="button" class="btn btn-success" id="btn-usar-cita">Usar esta imagen</button>
+            <p class="hint" id="cita-estado"></p>`;
+        document.getElementById('btn-usar-cita').onclick = () => usarCitaDrive(archivo, null, null);
+        return;
+    }
+
+    const visor = archivo.esVideo
+        ? `<video id="cita-media" src="${src}" controls playsinline preload="metadata" class="cita-preview-video"></video>`
+        : `<audio id="cita-media" src="${src}" controls preload="metadata" class="cita-preview-audio"></audio>`;
+
+    caja.innerHTML = `
+        <p><strong>${archivo.name}</strong> <span class="hint">${archivo.tamMB || '?'} MB</span></p>
+        ${visor}
+        <div class="cita-marcas">
+            <button type="button" class="btn btn-secondary" id="btn-marcar-inicio">⇤ Marcar inicio acá</button>
+            <button type="button" class="btn btn-secondary" id="btn-marcar-fin">Marcar fin acá ⇥</button>
+            <label>Inicio <input type="number" step="0.1" id="cita-inicio" class="input-cita-tiempo" value="0"></label>
+            <label>Fin <input type="number" step="0.1" id="cita-fin" class="input-cita-tiempo" value="0"></label>
+            <span class="hint" id="cita-duracion"></span>
+        </div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-secondary" id="btn-oir-tramo">▶ Ver solo el tramo</button>
+            <button type="button" class="btn btn-success" id="btn-usar-cita">Usar este tramo</button>
+        </div>
+        <p class="hint">Se guarda solo el tramo marcado: el archivo original queda intacto en tu Drive.</p>
+        <p class="hint" id="cita-estado"></p>`;
+
+    const media = document.getElementById('cita-media');
+    const inIni = document.getElementById('cita-inicio');
+    const inFin = document.getElementById('cita-fin');
+    const durLabel = document.getElementById('cita-duracion');
+
+    const refrescarDuracion = () => {
+        const d = (parseFloat(inFin.value) || 0) - (parseFloat(inIni.value) || 0);
+        durLabel.textContent = d > 0 ? `— dura ${d.toFixed(1)}s` : '— marcá el fin después del inicio';
+    };
+    // Fin por defecto: el final del archivo, para que "usar todo" sea el punto de partida.
+    media.addEventListener('loadedmetadata', () => {
+        if (!parseFloat(inFin.value)) inFin.value = media.duration.toFixed(1);
+        refrescarDuracion();
+    }, { once: true });
+    inIni.oninput = refrescarDuracion;
+    inFin.oninput = refrescarDuracion;
+
+    document.getElementById('btn-marcar-inicio').onclick = () => {
+        inIni.value = media.currentTime.toFixed(1);
+        refrescarDuracion();
+    };
+    document.getElementById('btn-marcar-fin').onclick = () => {
+        inFin.value = media.currentTime.toFixed(1);
+        refrescarDuracion();
+    };
+
+    let cortar = null;
+    document.getElementById('btn-oir-tramo').onclick = () => {
+        const desde = parseFloat(inIni.value) || 0;
+        const hasta = parseFloat(inFin.value) || 0;
+        if (cortar) media.removeEventListener('timeupdate', cortar);
+        cortar = () => { if (hasta > desde && media.currentTime >= hasta) media.pause(); };
+        media.addEventListener('timeupdate', cortar);
+        media.currentTime = desde;
+        media.play().catch(() => {});
+    };
+
+    document.getElementById('btn-usar-cita').onclick = () => {
+        const desde = parseFloat(inIni.value) || 0;
+        const hasta = parseFloat(inFin.value) || 0;
+        if (!(hasta > desde)) {
+            alert('El fin tiene que ser posterior al inicio.');
+            return;
+        }
+        usarCitaDrive(archivo, desde, hasta);
+    };
+}
+
+// Manda a recortar y suma el resultado como material del proceso.
+async function usarCitaDrive(archivo, inicio, fin) {
+    const btn = document.getElementById('btn-usar-cita');
+    const estado = document.getElementById('cita-estado');
+    if (btn) btn.disabled = true;
+    if (estado) estado.textContent = inicio != null
+        ? 'Recortando el tramo… (se baja el original una sola vez, puede tardar)'
+        : 'Trayendo el archivo…';
+    try {
+        const r = await apiCall('/citas-drive/usar', 'POST', {
+            jobId: state.jobId,
+            fileId: archivo.id,
+            nombre: archivo.name,
+            ...(inicio != null ? { inicio, fin } : {}),
+        });
+        state.materialesAdicionales.push(r.material);
+        renderMaterialesLista();
+        log(`✅ ${archivo.name}${r.recortado ? ` — solo el tramo (${r.tamMB} MB)` : ''} agregado desde Drive`);
+        cerrarCitasDrive();
+    } catch (e) {
+        if (estado) estado.textContent = `No se pudo: ${e.message}`;
+        if (btn) btn.disabled = false;
+    }
+}
+
 // Material adicional por fragmento (cita/foto/video de apoyo) — Paso 1, opcional e independiente
 // de las fuentes de texto. Antes de tener jobId los archivos quedan en cola
 // (state.materialesPendientes, mismo patrón que state.fuentes antes de "Procesar fuentes") y se

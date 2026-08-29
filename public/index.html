@@ -129,9 +129,24 @@
                 <div class="form-group" id="materiales-wrap">
                     <p class="hint mt-sm"><strong>Material adicional (opcional):</strong> una cita con audio real, o una foto/video que ilustre un tema puntual del guion — el sistema sugiere solo en qué fragmento va cada uno, editable en el Paso 4.</p>
                     <div class="btn-row">
+                        <button type="button" class="btn btn-primary" id="btn-citas-drive" onclick="abrirCitasDrive()">
+                            <span class="icon-slot" data-icon="folderOpen"></span> Elegir de mi carpeta Citas
+                        </button>
                         <button type="button" class="btn btn-secondary" id="btn-add-entrevista" onclick="document.getElementById('input-entrevista').click()">+ Cita de entrevista</button>
                         <button type="button" class="btn btn-secondary" id="btn-add-foto" onclick="document.getElementById('input-foto').click()">+ Foto de apoyo</button>
                         <button type="button" class="btn btn-secondary" id="btn-add-video-apoyo" onclick="document.getElementById('input-video-apoyo').click()">+ Video de apoyo</button>
+                    </div>
+
+                    <!-- Navegador de la carpeta Citas de Drive + marcador. Se abre sobre el paso,
+                         porque marcar un tramo pide toda la atención y el video ocupa lugar. -->
+                    <div class="hidden" id="citas-drive-panel">
+                        <div class="citas-drive-head">
+                            <button type="button" class="btn-copy" id="btn-citas-volver" onclick="citasDriveVolver()">← Volver</button>
+                            <span id="citas-drive-ruta">Citas</span>
+                            <button type="button" class="btn-copy" onclick="cerrarCitasDrive()">✕ Cerrar</button>
+                        </div>
+                        <div id="citas-drive-lista"></div>
+                        <div class="hidden" id="citas-drive-marcador"></div>
                     </div>
                     <input type="file" id="input-entrevista" accept="audio/*,video/*" class="hidden" multiple onchange="handleMaterialFile('entrevista', this.files)">
                     <input type="file" id="input-foto" accept="image/jpeg,image/png,image/webp" class="hidden" multiple onchange="handleMaterialFile('foto', this.files)">

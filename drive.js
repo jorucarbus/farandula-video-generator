@@ -415,6 +415,69 @@ async function listarSubcarpetas(parentId) {
   return res.data.files;
 }
 
+// Carpeta "Citas" del usuario (dentro de Redes_Canales): ahí sube a mano las entrevistas de las
+// que después saca los testimonios. La tiene organizada en subcarpetas por fecha y protagonista
+// ("2026-08-21 Alejandra Jaramillo"), con archivos sueltos mezclados en la raíz.
+const CITAS_FOLDER_ID = process.env.GOOGLE_DRIVE_CITAS_FOLDER_ID || '1oN0GceJughLAvVnRFMpONx785vBKpzwe';
+
+// Lista el contenido de una carpeta para NAVEGARLA: subcarpetas y archivos juntos, en un solo
+// pedido, con lo que hace falta para pintar la lista y decidir qué se puede marcar.
+//
+// Por qué navegar y no un selector fijo: el usuario tiene subcarpetas por fecha/protagonista Y
+// archivos sueltos en la raíz. Un desplegable plano no le serviría.
+async function listarContenido(folderId) {
+  // OAuth preferido, mismo criterio que la música: esta carpeta está compartida con la cuenta del
+  // usuario, no con el Service Account — con getDrive() a secas devuelve una lista vacía.
+  const res = await (getDriveOAuth() || getDrive()).files.list({
+    q: `'${folderId}' in parents and trashed=false`,
+    fields: 'files(id, name, mimeType, size, modifiedTime, videoMediaMetadata(durationMillis))',
+    pageSize: 1000,
+    orderBy: 'folder,modifiedTime desc',
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return (res.data.files || []).map(f => {
+    const esCarpeta = f.mimeType === 'application/vnd.google-apps.folder';
+    return {
+      id: f.id,
+      name: f.name,
+      esCarpeta,
+      mimeType: f.mimeType,
+      // `esImagen` decide si se muestra el marcador: en una foto no hay nada que recortar.
+      esImagen: f.mimeType?.startsWith('image/') || false,
+      esVideo: f.mimeType?.startsWith('video/') || false,
+      esAudio: f.mimeType?.startsWith('audio/') || false,
+      tamMB: f.size ? Math.round(Number(f.size) / 1048576 * 10) / 10 : null,
+      duracion: f.videoMediaMetadata?.durationMillis
+        ? Number(f.videoMediaMetadata.durationMillis) / 1000
+        : null,
+    };
+  });
+}
+
+// Datos de un archivo suelto (para volver a él sin re-listar la carpeta).
+async function infoArchivo(fileId) {
+  const res = await (getDriveOAuth() || getDrive()).files.get({
+    fileId,
+    fields: 'id, name, mimeType, size, parents',
+    supportsAllDrives: true,
+  });
+  return res.data;
+}
+
+// Devuelve un stream de un tramo de bytes del archivo, para el puente de reproducción. El
+// navegador pide "de tal byte a tal byte" y eso se le pasa a Drive tal cual: así se puede saltar a
+// un segundo cualquiera de un video de 50 MB sin bajarlo entero ni guardarlo en el servidor.
+async function streamArchivo(fileId, rango = null) {
+  const opciones = { responseType: 'stream' };
+  if (rango) opciones.headers = { Range: rango };
+  const res = await (getDriveOAuth() || getDrive()).files.get(
+    { fileId, alt: 'media', supportsAllDrives: true },
+    opciones
+  );
+  return res;
+}
+
 // Mandar un archivo/carpeta a la PAPELERA de Drive (recuperable ~30 días), nunca borrado
 // permanente: si la limpieza automática se equivoca, el usuario puede restaurar.
 // Intenta con el Service Account (dueño de las carpetas de insumo) y cae a OAuth si no
@@ -432,6 +495,7 @@ async function enviarAPapelera(fileId) {
 
 module.exports = {
   obtenerCarpetasFamosos,
+  listarContenido, infoArchivo, streamArchivo, CITAS_FOLDER_ID,
   listarVideos,
   descargarVideo,
   subirVideo,
