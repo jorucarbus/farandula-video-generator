@@ -8,7 +8,34 @@ verificado en staging (contenedor levantado 02:14 GMT, health 200).
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `ebe7199` | local = remoto, desplegado |
+| `farandula-video-generator` | `test-persistencia` | `5556df4` | local = remoto, desplegado |
+
+### 2026-08-28 — Las citas se cortaban antes de terminar la frase (NO era el límite de 3s)
+
+El usuario lo reportó y preguntó si era por el límite de 3 segundos por clip. **No lo era**, y
+conviene tenerlo claro para no volver a sospechar de ahí: la cita **abre su propio hueco** en la
+línea de tiempo con su duración real (el pseudo-fragmento de `empalmarCitasReales`), y el plan lo
+reparte en tomas consecutivas **del mismo archivo** con el offset avanzando. `CLIP_MAX` sigue siendo
+un límite legal para material ajeno y no se tocó.
+
+**La causa real**: los tiempos de cada cita los estima Gemini **de oído** — `PROMPT_CITAS` le pide
+literalmente el momento *"aproximado"* — y se usaban tal cual. Un `fin` medio segundo corto corta la
+frase a mitad de palabra. Había un clamp contra la duración del archivo, pero ningún margen.
+
+**Dos arreglos** (`5556df4`), y el segundo salió de su repregunta:
+
+1. **Colchón de 0,5s** al final de cada cita, antes del clamp. Solo al final, nunca al inicio:
+   adelantar el inicio metería la cola de la frase anterior, que suena peor.
+2. **"Oír el tramo"** en el Paso 4. Su repregunta fue *"¿pero cómo puedo saber qué parte de la cita
+   es?"* — y tenía razón: los segundos eran números a ciegas, había que abrir la entrevista fuera de
+   la app para corregirlos. Ahora un botón reproduce **exactamente lo que va a entrar**: salta al
+   inicio y frena en el fin.
+
+⚠️ **Detalle que costó encontrar**: el endpoint del archivo tuvo que ir a `/api/material-file/` y
+**exento de la API key**, porque un `<audio>` no puede mandar cabeceras — lo mismo que ya pasaba con
+el `<video>` de las previas. Y necesita soportar **Range**, sin lo cual el navegador no puede saltar
+a un segundo concreto. Además el reproductor va con `preload="metadata"`: con `none`, fijar
+`currentTime` no hace nada porque el navegador todavía no conoce la duración.
 
 ### ⚠️ Lo primero al retomar: preguntarle qué le pareció
 
@@ -143,9 +170,11 @@ quedó cerrado por decisión suya.
    más variados está medido; si son *mejores* es criterio suyo. **Es la pregunta principal.**
 2. **Probar el botón de contexto** en una noticia real y revisar que lo que trae sea correcto —
    sobre todo que no meta como hecho algo que la fuente no dice.
-3. **Probar el cruce de canales** que quedó de la tanda anterior: mandar un canal, pasarse al otro
+3. **Probar una cita** y confirmar que ya no se corta la frase — y si se corta, ajustar el fin
+   escuchando el tramo con el botón nuevo.
+4. **Probar el cruce de canales** que quedó de la tanda anterior: mandar un canal, pasarse al otro
    mientras trabaja, y mandarlo también.
-4. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
+5. Y lo de antes: música a -20 dB, una pronunciación cargada a mano, y un par de gemelos completo.
 
 ### Notas operativas nuevas
 
