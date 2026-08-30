@@ -10,6 +10,70 @@ verificado en staging (contenedor levantado 02:14 GMT, health 200).
 |---|---|---|---|
 | `farandula-video-generator` | `test-persistencia` | `38c289d` | local = remoto, desplegado |
 
+### 🔴 2026-08-30 — El guionista recibía "[object Object]" y SE INVENTABA LA NOTICIA ENTERA
+
+**El fallo más grave del proyecto hasta ahora.** El usuario lo vio en pantalla: los nombres y los
+encuadres hablaban de Celeste Morán, KikeJav y Las Ñañas, y los guiones hablaban de **Emilia Mernes
+y Duki** — gente que no aparece en ninguna parte de su noticia.
+
+**Causa.** `sintetizarCronica` devuelve un OBJETO `{cronica, titulo, protagonista…}`, y
+`cronicaConEncuadre`/`cronicaConSesgo` lo devolvían entero. Al interpolarlo en el prompt, el
+guionista recibía literalmente:
+
+```
+=== MATERIAL BASE (los HECHOS de la noticia) ===
+[object Object]
+```
+
+Sin hechos, y con un prompt que igual le exige 205 palabras de farándula con tensión, **el modelo
+hace lo único que puede: inventar una noticia verosímil con famosos que conoce.**
+
+⚠️ **La lección que hay que retener**: un modelo al que se le pide un texto convincente SIEMPRE va a
+producir uno. Si el material base se rompe, no protesta — rellena. Cualquier dato que entre a un
+prompt por interpolación tiene que ser texto verificado, no un objeto que "seguro trae lo que hace
+falta".
+
+**Historia del bug**: vivía en `cronicaConSesgo` desde `970c698` (24/08) pero solo se activaba con
+motor grafo Y sesgo favor/contra, así que pasó desapercibido. Al aplicar los encuadres —que se
+proponen SIEMPRE— pasó de latente a constante, y en `ebe7199` se replicó también al primer video.
+
+**Alcance, revisado en los 20 procesos de staging**: 2 guiones inventados (el gemelo de "Naim
+Darrechi y katy" del 29/08, y los de "El imparable ascenso de Celeste Morán" del 30/08).
+✅ **Ninguno llegó a video**: los dos quedaron en el paso del guion. Nada falso se publicó.
+
+**Dos arreglos** (`d1066f0`):
+1. Tomar `.cronica` en vez del objeto.
+2. **`exigirCronica()` en `escribirGuion`**, el punto común de los dos motores: si lo que llega no es
+   texto con hechos, el paso **falla a la vista** en vez de dejar improvisar. La regla del proyecto
+   es degradar sin abortar, pero acá no aplica — un guion inventado no es una degradación, es
+   contenido falso sobre personas reales.
+
+### 2026-08-30 — Dos crónicas desde la lectura (pedido del usuario)
+
+> *"primera lectura: dos crónicas con distintos enfoques. Elaboración de guion con grafos basado
+> cada guion en cada enfoque. Los grafos solo convierten esas crónicas a guiones de TikTok."*
+
+Detrás del bug había un problema de diseño peor: **la crónica que el usuario veía y podía EDITAR en
+el Paso 1 no era la que se usaba.** Al escribir el guion se re-sintetizaba otra por cada encuadre, y
+su edición se perdía sin aviso.
+
+**Cómo quedó** (`72246bc`):
+- La lectura escribe **dos crónicas**, una por enfoque, y las guarda en el job.
+- Se muestran en el Paso 1, rotuladas por canal y **editables**. `PUT /api/encuadres` las guarda
+  (rechaza vacías: de ahí sale el guion).
+- El Paso 3 **ya no sintetiza nada**: toma la crónica guardada de cada canal. Los jobs viejos —con
+  encuadres pero sin crónicas— siguen por el camino anterior.
+- **El motor grafo deja de decidir contenido.** Antes miraba el guion hermano para diferenciarse, y
+  esa era la palanca DÉBIL: la estructura cambia el ORDEN en que se cuenta, no QUÉ se cuenta. Ahora
+  solo evita que además suenen igual de forma.
+- `bloqueDeEvitar` decía *"los hechos son los mismos y el ángulo es el mismo"*. Ya no es cierto y
+  confundía: el modelo podía tomar de ahí contenido que su propia crónica no tiene.
+
+**Verificado con una lectura real**: dos crónicas distintas sobre la noticia correcta —
+`[humano]` "Las lágrimas de Celeste Morán en vivo" (791 car.) y `[protagonista]` "KikeJav resalta el
+despegue" (939 car.)— cada una con su título de publicación propio. Y en el log del Paso 3:
+`🎯 Este video con su crónica del Paso 1`.
+
 ### 2026-08-29 — Citas desde Drive: navegador + marcador, y solo se guarda el recorte
 
 Idea del usuario, y mejor que lo que había: *"en lugar de descargar el archivo, usarlo desde el
