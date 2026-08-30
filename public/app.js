@@ -247,12 +247,21 @@ function toggleGemelos(activo) {
     document.querySelectorAll('[data-tabs]').forEach(t => t.classList.toggle('hidden', !state.gemelos));
     actualizarTabs();
     actualizarBotonesVariante();
-    // Al prender gemelos con una lectura ya hecha, ofrecer preparar los dos enfoques.
     pintarEncuadres();
     pintarLecturaGemela();
     log(state.gemelos
         ? '👯 Modo gemelos activado: se van a generar DOS videos, uno por canal hermano'
         : '🎬 Modo gemelos desactivado: un solo video');
+
+    // ESTE es el momento en que hay que preparar los dos enfoques, y no al terminar la lectura.
+    //
+    // El interruptor de gemelos vive en el PASO 2, o sea que cuando el usuario lo prende la lectura
+    // ya terminó hace rato. Dispararlos al final de la lectura —como se hacía— no servía de nada:
+    // en ese instante `state.gemelos` todavía era false y no se generaba ninguno. Por eso el usuario
+    // veía un solo enfoque y los guiones volvían a parecerse.
+    if (state.gemelos && state.jobId && state.sourceData?.cronica && !state.encuadres?.cronicas?.length) {
+        generarEncuadres();
+    }
 }
 
 // Nombre visible de cada pestaña: el canal destino si ya se eligió, si no "Video A"/"Video B".
@@ -1598,7 +1607,10 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
             setStepStatus('fuente-section', 'done');
             setStepStatus('script-section', 'active');
             log('➡️ Agregá otra fuente si querés, o selecciona un ángulo para continuar');
-            generarEncuadres();   // en su propio pedido: ver el comentario de la función
+            // La crónica cambió: los enfoques anteriores ya no le corresponden.
+            state.encuadres = null;
+            pintarEncuadres();
+            generarEncuadres();   // no hace nada si gemelos está apagado (ver la función)
         } else {
             log(`✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada (${result.tipoReal}) — sin procesar todavía`);
             marcarFuentesPendientes(true);
@@ -1638,6 +1650,8 @@ async function procesarFuentes() {
         setStepStatus('fuente-section', 'done');
         setStepStatus('script-section', 'active');
         log('✅ Crónica actualizada con todas las fuentes. Selecciona un ángulo para continuar');
+        state.encuadres = null;
+        pintarEncuadres();
         generarEncuadres();
     } catch (error) {
         mostrarError(`Error procesando fuentes: ${error.message}`, () => procesarFuentes(), 'fuente-section');
