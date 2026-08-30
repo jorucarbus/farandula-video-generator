@@ -3304,20 +3304,58 @@ async function cargarHistorial() {
 let jobPendiente = null;
 
 async function chequearJobPendiente() {
+    if (!API_KEY) return;
     const jobId = sessionStorage.getItem('farandula_job_id');
-    if (!jobId || !API_KEY) return;
-    try {
-        const job = await apiCall(`/jobs/${jobId}`);
-        if (job && job.paso !== 'completado') {
-            jobPendiente = job;
-            document.getElementById('recuperar-banner').classList.remove('hidden');
-        } else {
+
+    if (jobId) {
+        try {
+            const job = await apiCall(`/jobs/${jobId}`);
+            if (job && job.paso !== 'completado') {
+                ofrecerRecuperar(job);
+                return;
+            }
+            sessionStorage.removeItem('farandula_job_id');
+        } catch {
+            // Job no encontrado (expiró, se podó, o server reiniciado): limpiar referencia vieja
             sessionStorage.removeItem('farandula_job_id');
         }
-    } catch {
-        // Job no encontrado (expiró, se podó, o server reiniciado): limpiar referencia vieja
-        sessionStorage.removeItem('farandula_job_id');
     }
+
+    // Sin referencia local, se le pregunta al SERVIDOR si quedó algo sin terminar.
+    //
+    // Por qué hace falta: el jobId se guarda cuando la respuesta de la lectura llega al navegador.
+    // Si ese pedido muere en el camino —el 502 del gateway con Gemini lento— el servidor SÍ creó el
+    // proceso y guardó la crónica, pero la pantalla nunca se enteró de que existía. Al recargar no
+    // había nada que ofrecer y el trabajo parecía perdido, aunque estaba entero del otro lado.
+    // Le pasó al usuario con cinco procesos a la vez (2026-08-30).
+    try {
+        const r = await apiCall('/jobs');
+        const abiertos = (r?.jobs || [])
+            .filter(j => j && j.paso && j.paso !== 'completado' && j.cronica)
+            .sort((a, b) => (b.actualizado || '').localeCompare(a.actualizado || ''));
+        if (!abiertos.length) return;
+        // Solo lo de las últimas 24h: más viejo que eso, el usuario ya lo dio por perdido y
+        // ofrecérselo al abrir la app es ruido.
+        const limite = Date.now() - 24 * 60 * 60 * 1000;
+        const reciente = abiertos.find(j => new Date(j.actualizado || 0).getTime() > limite);
+        if (reciente) ofrecerRecuperar(reciente, abiertos.length);
+    } catch { /* si no se puede consultar, la app arranca limpia como antes */ }
+}
+
+function ofrecerRecuperar(job, cuantos = 1) {
+    jobPendiente = job;
+    const banner = document.getElementById('recuperar-banner');
+    if (!banner) return;
+    banner.classList.remove('hidden');
+    const detalle = banner.querySelector('.recuperar-detalle') || (() => {
+        const p = document.createElement('p');
+        p.className = 'hint recuperar-detalle';
+        banner.insertBefore(p, banner.querySelector('.btn-row'));
+        return p;
+    })();
+    const cuando = job.actualizado ? new Date(job.actualizado).toLocaleString() : '';
+    detalle.textContent = `“${job.titulo || 'sin título'}” — quedó en el paso “${job.paso}”${cuando ? `, ${cuando}` : ''}.`
+        + (cuantos > 1 ? ` Hay ${cuantos} procesos sin terminar; este es el más reciente (los otros están en el historial).` : '');
 }
 
 // Carga directa (sin banner) de un job pasado por ?jobId= en la URL — usado al abrir
@@ -3383,6 +3421,10 @@ async function recuperarJobPendiente() {
     document.getElementById('recuperar-banner').classList.add('hidden');
 
     state.jobId = job.jobId;
+    // Dejar la referencia guardada: si el proceso se encontró preguntándole al servidor (porque el
+    // pedido original murió antes de devolver el jobId), sin esto la próxima recarga tendría que
+    // volver a buscarlo.
+    sessionStorage.setItem('farandula_job_id', job.jobId);
     // job.fuentes es lo nuevo (Fase 4, multifuente); job.fuente (singular) es de jobs viejos
     // guardados antes de esa fase — se adapta al formato nuevo para no romper la recuperación.
     state.fuentes = job.fuentes || (job.fuente ? [job.fuente] : []);
