@@ -781,9 +781,41 @@ function contarPalabras(t) {
   return String(t || '').split(/\s+/).filter(Boolean).length;
 }
 
+// Mínimo de caracteres para considerar que llegaron HECHOS y no basura. Una crónica real ronda los
+// 800-1500; 120 es un piso holgado que solo atrapa lo evidente.
+const CRONICA_MIN = 120;
+
+// Antes de escribir NADA hay que estar seguro de que llegaron hechos.
+//
+// Sin esta guarda, una crónica rota entra igual y el modelo —al que el prompt le exige 205 palabras
+// de farándula con tensión— INVENTA una noticia entera con famosos que conoce. Pasó de verdad: por
+// pasar el objeto de `sintetizarCronica` en vez de su campo `.cronica`, el guionista recibió
+// "[object Object]" y escribió sobre Emilia Mernes y Duki en un job sobre Celeste Morán. Llegó hasta
+// la pantalla del usuario sin que nada avisara, y los dos guiones gemelos salieron inventados.
+//
+// La regla del proyecto es degradar sin abortar, pero acá NO aplica: un guion inventado no es una
+// degradación, es contenido falso sobre personas reales. Es preferible que el paso falle a la vista.
+function exigirCronica(cronica) {
+  const texto = typeof cronica === 'string' ? cronica.trim() : '';
+  if (!texto) {
+    const tipo = cronica === null || cronica === undefined ? String(cronica) : typeof cronica;
+    throw new Error(`El guion no se puede escribir: no llegaron los hechos de la noticia (se recibió ${tipo}). `
+      + 'Es un error del pipeline, no del modelo — revisá de dónde sale la crónica antes de reintentar.');
+  }
+  if (texto.length < CRONICA_MIN) {
+    throw new Error(`El guion no se puede escribir: la crónica tiene ${texto.length} caracteres, `
+      + `demasiado poco para escribir sobre hechos reales (mínimo ${CRONICA_MIN}).`);
+  }
+  if (texto.includes('[object Object]')) {
+    throw new Error('El guion no se puede escribir: la crónica llegó como objeto, no como texto.');
+  }
+  return texto;
+}
+
 async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini') {
   const fn = MOTORES_GUION[motor];
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
+  exigirCronica(cronica);
   const guion = await fn(cronica, angle, angleContent, citas, guionEvitar);
   const palabras = contarPalabras(guion);
   if (palabras >= PALABRAS_MIN) return entregar(guion);
@@ -1208,6 +1240,7 @@ module.exports = {
   procesarLectura,
   extraerActa,
   sintetizarCronica,
+  exigirCronica,   // guarda: el guion nunca se escribe sin hechos
   enriquecerContexto, actaDeContexto,
   generarGuion,
   fragmentarGuionParrafos,

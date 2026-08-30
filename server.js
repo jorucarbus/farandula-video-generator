@@ -214,7 +214,13 @@ async function cronicaConEncuadre(job, encuadre) {
     return null;
   }
   try {
-    return await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(encuadre));
+    // `.cronica`, NO el objeto entero: sintetizarCronica devuelve {cronica, titulo, protagonista…}.
+    // Devolver el objeto lo metía tal cual en el prompt del guionista, que recibía "[object Object]"
+    // en lugar de los hechos — y como el prompt igual le exige 205 palabras de farándula, INVENTABA
+    // una noticia entera con famosos que conoce. El usuario lo vio: guion sobre Emilia Mernes y Duki
+    // en un job cuya crónica era de Celeste Morán (2026-08-30).
+    const sintesis = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(encuadre));
+    return sintesis?.cronica || null;
   } catch (e) {
     console.warn(`  ⚠️ No se pudo sintetizar la crónica del gemelo con el encuadre "${encuadre.titulo}" (${e.message}), usa la del primero`);
     return null;
@@ -228,7 +234,10 @@ async function cronicaConSesgo(job, sesgo) {
     return null;
   }
   try {
-    return await gemini.sintetizarCronica(actas, sesgo);
+    // Mismo caso que arriba: el bug vivía acá desde el 2026-08-24 pero pasaba desapercibido porque
+    // esta rama solo se activa con motor grafo Y sesgo favor/contra.
+    const sintesis = await gemini.sintetizarCronica(actas, sesgo);
+    return sintesis?.cronica || null;
   } catch (e) {
     console.warn(`  ⚠️ No se pudo sintetizar la crónica ${sesgo} del gemelo (${e.message}), usa la del primero`);
     return null;
