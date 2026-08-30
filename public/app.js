@@ -247,6 +247,8 @@ function toggleGemelos(activo) {
     document.querySelectorAll('[data-tabs]').forEach(t => t.classList.toggle('hidden', !state.gemelos));
     actualizarTabs();
     actualizarBotonesVariante();
+    // Al prender gemelos con una lectura ya hecha, ofrecer preparar los dos enfoques.
+    pintarEncuadres();
     pintarLecturaGemela();
     log(state.gemelos
         ? '👯 Modo gemelos activado: se van a generar DOS videos, uno por canal hermano'
@@ -790,7 +792,20 @@ function pintarEncuadres() {
     const datos = state.encuadres;
     const propuestos = datos?.encuadres || [];
     if (!propuestos.length) {
-        caja.classList.add('hidden');
+        // Con gemelos activos y una lectura ya hecha, los enfoques SE PUEDEN pedir: se ofrece el
+        // botón en vez de esconder la caja. Es lo que destraba un proceso que quedó a medias porque
+        // el pedido se cortó (pasó con los 502 del 30/08) — la lectura ya está, solo falta esto.
+        const sePuedePedir = state.gemelos && state.jobId && state.sourceData?.cronica;
+        caja.classList.toggle('hidden', !sePuedePedir);
+        if (sePuedePedir) {
+            hint.textContent = 'Este proceso todavía no tiene los dos enfoques preparados.';
+            lista.innerHTML = '';
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-secondary';
+            btn.textContent = '✨ Preparar los dos enfoques';
+            btn.onclick = () => { btn.remove(); generarEncuadres(); };
+            lista.appendChild(btn);
+        }
         return;
     }
     caja.classList.remove('hidden');
@@ -850,6 +865,48 @@ function pintarEncuadres() {
     } else {
         hint.textContent = 'El material alcanza para un solo enfoque honesto. Los dos videos van a '
             + 'parecerse. Si querés diferenciarlos, agregá otra fuente o buscá contexto en la web (Paso 1).';
+    }
+}
+
+// Pide los dos encuadres y sus crónicas DESPUÉS de la lectura, en su propio pedido.
+//
+// Por qué separado: estaban dentro de `/api/read` y lo reventaron. La lectura pasó a hacer seis
+// llamadas a Gemini seguidas y, con los 503 constantes, el gateway cortaba con 502 — el usuario
+// terminó con cinco procesos que no avanzaban ni fallaban (2026-08-30).
+//
+// Va sin `await` desde la lectura: la crónica ya está en pantalla y el usuario puede seguir
+// trabajando mientras esto se cocina. Si falla, la lectura NO se pierde y queda un botón para
+// reintentar — las actas están cacheadas, así que reintentar es barato.
+async function generarEncuadres() {
+    if (!state.jobId || !state.gemelos) return;   // sin gemelos no hay dos enfoques que repartir
+    const caja = document.getElementById('encuadres-section');
+    const hint = document.getElementById('encuadres-hint');
+    if (caja && hint) {
+        caja.classList.remove('hidden');
+        hint.textContent = '⏳ Escribiendo las dos crónicas, una por canal… (puede tardar un par de minutos)';
+    }
+    try {
+        const r = await apiCall('/encuadres/generar', 'POST', { jobId: state.jobId });
+        state.encuadres = r.encuadres || null;
+        pintarEncuadres();
+        const n = r.encuadres?.cronicas?.length || 0;
+        log(n >= 2
+            ? '✅ Dos crónicas listas, una por canal — revisalas en el Paso 1'
+            : 'ℹ️ El material solo da para un enfoque: los dos videos van a parecerse');
+    } catch (e) {
+        log(`⚠️ No se pudieron preparar los dos enfoques: ${e.message}`);
+        if (caja && hint) {
+            hint.innerHTML = `No se pudieron preparar los dos enfoques (${e.message}). `
+                + 'La lectura está guardada: podés reintentar sin rehacerla.';
+            if (!document.getElementById('btn-reintentar-encuadres')) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-secondary mt-sm';
+                btn.id = 'btn-reintentar-encuadres';
+                btn.textContent = '↻ Reintentar los dos enfoques';
+                btn.onclick = () => { btn.remove(); generarEncuadres(); };
+                document.getElementById('encuadres-lista').appendChild(btn);
+            }
+        }
     }
 }
 
@@ -1541,6 +1598,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
             setStepStatus('fuente-section', 'done');
             setStepStatus('script-section', 'active');
             log('➡️ Agregá otra fuente si querés, o selecciona un ángulo para continuar');
+            generarEncuadres();   // en su propio pedido: ver el comentario de la función
         } else {
             log(`✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada (${result.tipoReal}) — sin procesar todavía`);
             marcarFuentesPendientes(true);
@@ -1580,6 +1638,7 @@ async function procesarFuentes() {
         setStepStatus('fuente-section', 'done');
         setStepStatus('script-section', 'active');
         log('✅ Crónica actualizada con todas las fuentes. Selecciona un ángulo para continuar');
+        generarEncuadres();
     } catch (error) {
         mostrarError(`Error procesando fuentes: ${error.message}`, () => procesarFuentes(), 'fuente-section');
     } finally {

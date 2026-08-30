@@ -595,6 +595,26 @@ app.get('/api/materiales/:jobId', (req, res) => {
   res.json({ materialesAdicionales: job?.materialesAdicionales || [] });
 });
 
+// Calcular los dos encuadres y sus crónicas. Va en su PROPIO pedido, separado de la lectura: son
+// tres llamadas a Gemini y meterlas dentro de `/api/read` hacía que el gateway cortara con 502.
+//
+// Se puede reintentar cuantas veces haga falta sin rehacer la lectura: las actas ya están cacheadas.
+app.post('/api/encuadres/generar', async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    if (!job.fuentes?.length) return res.status(400).json({ error: 'Este proceso todavía no tiene fuentes leídas' });
+
+    const actualizado = await proponerEncuadres(job, job.fuentes);
+    res.json({ status: 'success', encuadres: actualizado.encuadres || null });
+  } catch (error) {
+    console.error('Error generando encuadres:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Guardar las crónicas editadas a mano en el Paso 1. Son las que se convierten en guion, así que
 // tienen que sobrevivir a una recarga o a retomar el proceso desde la otra máquina.
 app.put('/api/encuadres', (req, res) => {
@@ -1159,13 +1179,17 @@ app.post('/api/read', async (req, res) => {
       job = jobStore.actualizarJob(job.jobId, { sesgo: sesgoElegido, fuentes: todasLasFuentes, ...result });
     }
 
-    // Dos puntos de entrada distintos a la misma noticia, uno por video gemelo. Se calculan acá y no
-    // al escribir el guion porque el usuario tiene que poder verlos y cambiarlos en el Paso 1, antes
-    // de que decidan nada. Es una llamada de texto, barata.
+    // ⚠️ Los encuadres y las dos crónicas NO se calculan acá, a propósito.
     //
-    // Nunca tumba la lectura: si falla o el material no da para dos, el job sigue sin encuadres y
-    // los gemelos se diferencian como hasta ahora.
-    job = await proponerEncuadres(job, todasLasFuentes);
+    // Estaban en este mismo pedido y lo reventaron: la lectura pasó a hacer SEIS llamadas a Gemini
+    // seguidas (acta, crónica base, nombres, encuadres, y una crónica por enfoque). Con Gemini
+    // devolviendo 503 —constante estos días— cada una tarda minutos, el total se fue arriba de diez,
+    // y el gateway de Railway cortó con **HTTP 502**. El usuario terminó con cinco procesos colgados
+    // que ni avanzaban ni fallaban del todo (2026-08-30).
+    //
+    // Ahora la lectura responde apenas tiene la crónica, como siempre, y los encuadres se piden
+    // aparte (`POST /api/encuadres/generar`). Mismo criterio que sacó el render del pedido HTTP: un
+    // pedido, un trabajo.
 
     // Guardar la lectura en Drive (carpeta de insumos) — incluye TODAS las actas acumuladas.
     driveHelper.guardarEnInsumo(job.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: todasLasFuentes, ...result }, null, 2))
