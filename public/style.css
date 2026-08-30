@@ -851,6 +851,21 @@ footer {
     margin-top: 6px;
 }
 
+/* Encuadres: un bloque por canal, con su crónica editable */
+.encuadre-bloque {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+}
+.encuadre-bloque:last-of-type { border-bottom: none; }
+.encuadre-titulo { font-weight: 600; margin: 2px 0; }
+.encuadre-cronica {
+    width: 100%;
+    margin-top: 4px;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    resize: vertical;
+}
+
 /* Navegador de la carpeta Citas de Drive + marcador de tramo (Paso 1) */
 #citas-drive-panel {
     margin-top: 12px;

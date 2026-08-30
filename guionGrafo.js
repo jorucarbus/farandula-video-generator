@@ -88,25 +88,24 @@ Responde ÚNICAMENTE con un objeto JSON válido (sin markdown, sin bloques de c�
 // Elige la estructura. Tarea PAUTADA (elegir de una lista dada, no inventar), así que va por la
 // cadena mecánica del router — mismo criterio que fragmentación y materiales.
 async function elegirEstructura(gemini, cronica, guionEvitar) {
-  // Videos gemelos. Pedirle "que sea distinto" no alcanzó: en la primera prueba real eligió la
-  // MISMA estructura para los dos (la de doble caída, que es la más aplicable a video corto y por
-  // eso se vuelve la respuesta fácil). Así que primero tiene que NOMBRAR la estructura del hermano
-  // y después elegir una de otro grupo del catálogo — obligarlo a decir de qué se aparta es lo que
-  // lo saca de la respuesta cómoda.
+  // Videos gemelos: el hermano se pasa solo para NO REPETIRLE la forma, no para diferenciar el
+  // contenido. Eso ya no es trabajo de este motor.
+  //
+  // Antes sí lo era, y era la palanca débil: la estructura cambia el ORDEN en que se cuenta, no QUÉ
+  // se cuenta, así que con los dos videos saliendo de la misma crónica el techo era el parafraseo.
+  // Ahora cada video llega con SU PROPIA CRÓNICA, escrita desde su enfoque en el Paso 1 — pedido
+  // del usuario: "los grafos solo convierten esas crónicas a guiones de TikTok". La diferencia de
+  // fondo ya viene resuelta; acá solo se evita que además suenen igual de forma.
   const evitar = !guionEvitar ? '' : `
 
-=== GUION QUE YA EXISTE PARA EL CANAL HERMANO ===
+=== GUION DEL CANAL HERMANO (otra historia, del mismo hecho) ===
 ${guionEvitar}
 === FIN ===
 
-REGLAS EXTRA, OBLIGATORIAS:
-- Antes de elegir, deducí qué estructura usa ese guion: por dónde abre, en qué orden revela y cómo
-  cierra. Escribila en el campo "evitada".
-- La combinación que elijas NO puede repetir esa estructura, y su técnica de APERTURA tiene que
-  venir de un grupo del catálogo distinto del que usaría ese guion.
-- Los dos videos cuentan los mismos hechos: lo que tiene que cambiar es el orden en que se
-  entienden. Si allá el conflicto se revela de entrada, acá se administra; si allá se cierra con
-  pregunta, acá se cierra con otra cosa.`;
+REGLA EXTRA: no repitas su FORMA. Deducí por dónde abre, en qué orden revela y cómo cierra,
+escribilo en "evitada", y elegí una combinación cuya APERTURA venga de otro grupo del catálogo.
+No mires su contenido para decidir de qué habla este video: eso ya está decidido en la NOTICIA de
+arriba, que es distinta de la suya.`;
 
   const mensaje = `=== NOTICIA ===
 ${cronica}

@@ -796,16 +796,52 @@ function pintarEncuadres() {
     caja.classList.remove('hidden');
 
     const etiquetaCanal = i => (state.gemelos ? etiquetaVariante(i === 0 ? 'A' : 'B') : `Enfoque ${i + 1}`);
-    lista.innerHTML = propuestos.map((e, i) => `
-        <div class="nombre-fila">
-            <div>
-                <strong>${etiquetaCanal(i)}</strong>
-                <span class="hint"> · ${e.marco}</span>
-                <p><strong>${e.titulo || ''}</strong></p>
-                <p class="hint pre-wrap">${e.instruccion || ''}</p>
-            </div>
-        </div>
-    `).join('');
+    const cronicas = datos.cronicas || [];
+
+    lista.innerHTML = '';
+    propuestos.forEach((e, i) => {
+        const fila = document.createElement('div');
+        fila.className = 'encuadre-bloque';
+        fila.innerHTML = `
+            <p><strong>${etiquetaCanal(i)}</strong> <span class="hint">· ${e.marco}</span></p>
+            <p class="encuadre-titulo">${e.titulo || ''}</p>
+            <p class="hint pre-wrap">${e.instruccion || ''}</p>`;
+
+        // LA CRÓNICA DE ESE CANAL, editable. Es la que se convierte en guion: lo que se edite acá es
+        // lo que se cuenta. Antes se mostraba una sola crónica "neutra" que después se descartaba y
+        // se re-sintetizaba otra al escribir el guion — la edición del usuario se perdía sin aviso.
+        const c = cronicas[i];
+        if (c?.cronica) {
+            const label = document.createElement('label');
+            label.className = 'hint mt-sm';
+            label.textContent = 'Crónica de este canal (editable — es la que se convierte en guion):';
+            const ta = document.createElement('textarea');
+            ta.className = 'encuadre-cronica';
+            ta.rows = 5;
+            ta.value = c.cronica;
+            ta.oninput = () => {
+                state.encuadres.cronicas[i].cronica = ta.value;
+                marcarCronicasSinGuardar();
+            };
+            fila.appendChild(label);
+            fila.appendChild(ta);
+        }
+        lista.appendChild(fila);
+    });
+
+    // Botón para guardar las ediciones. Aparece solo si hay crónicas que editar.
+    if (cronicas.length >= 2 && !document.getElementById('btn-guardar-cronicas')) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary mt-sm';
+        btn.id = 'btn-guardar-cronicas';
+        btn.textContent = '✓ Guardar crónicas';
+        btn.onclick = guardarCronicas;
+        lista.appendChild(btn);
+        const estado = document.createElement('p');
+        estado.className = 'hint';
+        estado.id = 'cronicas-estado';
+        lista.appendChild(estado);
+    }
 
     if (datos.suficiente && propuestos.length >= 2) {
         hint.textContent = datos.porque
@@ -814,6 +850,29 @@ function pintarEncuadres() {
     } else {
         hint.textContent = 'El material alcanza para un solo enfoque honesto. Los dos videos van a '
             + 'parecerse. Si querés diferenciarlos, agregá otra fuente o buscá contexto en la web (Paso 1).';
+    }
+}
+
+function marcarCronicasSinGuardar() {
+    const estado = document.getElementById('cronicas-estado');
+    if (estado) estado.textContent = '✏️ Hay cambios sin guardar.';
+}
+
+// Guarda las crónicas editadas en el proceso. Sin esto la edición viviría solo en la pantalla y se
+// perdería al recargar o al retomar el proceso desde otra máquina.
+async function guardarCronicas() {
+    const cronicas = state.encuadres?.cronicas;
+    if (!cronicas?.length || !state.jobId) return;
+    const estado = document.getElementById('cronicas-estado');
+    setButtonDisabled('btn-guardar-cronicas', true);
+    try {
+        await apiCall('/encuadres', 'PUT', { jobId: state.jobId, cronicas });
+        if (estado) estado.textContent = '✅ Crónicas guardadas: son las que se van a convertir en guion.';
+        log('✅ Crónicas de los dos canales guardadas');
+    } catch (e) {
+        if (estado) estado.textContent = `❌ No se pudo guardar: ${e.message}`;
+    } finally {
+        setButtonDisabled('btn-guardar-cronicas', false);
     }
 }
 

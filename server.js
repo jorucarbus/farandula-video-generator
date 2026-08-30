@@ -185,22 +185,64 @@ function sesgoOpuesto(sesgo) {
 // PROMPTS.acta en gemini.js), así que esto NO vuelve a descargar ni releer la fuente original —
 // solo re-sintetiza. Devuelve null si algo falta o falla: el llamador cae a la crónica del
 // primero y el gemelo sale como antes, nunca se pierde el video por esto.
-// Pide los dos encuadres y los guarda en el job. Degrada en silencio: si el modelo falla o los
-// hechos no dan para dos ángulos honestos, el job queda sin encuadres y todo sigue como antes.
+// Pide los dos encuadres Y ESCRIBE LAS DOS CRÓNICAS, una por canal, acá en la lectura.
+//
+// Pedido explícito del usuario: "primera lectura: dos crónicas con distintos enfoques. Elaboración
+// de guion con grafos basado cada guion en cada enfoque. Los grafos solo convierten esas crónicas a
+// guiones de TikTok".
+//
+// Antes las crónicas por encuadre se generaban recién al escribir el guion, y eso tenía un problema
+// de fondo más allá del bug de `[object Object]`: la crónica que el usuario veía y podía EDITAR en
+// el Paso 1 no era la que se usaba — se re-sintetizaba otra y su edición se perdía. Ahora lo que ve
+// es lo que se convierte en guion.
+//
+// Degrada en capas: si no hay encuadres, o si una síntesis falla, se sigue con la crónica única de
+// siempre. Nunca tumba la lectura.
 async function proponerEncuadres(job, fuentesDelJob) {
+  const actas = (fuentesDelJob || []).map(f => f.acta).filter(Boolean);
+  let propuesta;
   try {
-    const propuesta = await encuadres.proponerDos(gemini, (fuentesDelJob || []).map(f => f.acta));
-    const cuantos = propuesta.encuadres.length;
-    if (propuesta.suficiente && cuantos >= 2) {
-      console.log(`  🎯 Dos encuadres: "${propuesta.encuadres[0].titulo}" (${propuesta.encuadres[0].marco}) y "${propuesta.encuadres[1].titulo}" (${propuesta.encuadres[1].marco})`);
-    } else {
-      console.log(`  🎯 El material solo da para ${cuantos} encuadre(s): los gemelos se diferencian como antes`);
-    }
-    return jobStore.actualizarJob(job.jobId, { encuadres: propuesta });
+    propuesta = await encuadres.proponerDos(gemini, actas);
   } catch (e) {
     console.warn(`  ⚠️ No se pudieron proponer encuadres (${e.message}); los gemelos se diferencian como antes`);
     return job;
   }
+
+  const lista = propuesta.encuadres || [];
+  if (!propuesta.suficiente || lista.length < 2) {
+    console.log(`  🎯 El material solo da para ${lista.length} encuadre(s): un solo enfoque`);
+    return jobStore.actualizarJob(job.jobId, { encuadres: propuesta });
+  }
+  console.log(`  🎯 Dos encuadres: "${lista[0].titulo}" (${lista[0].marco}) y "${lista[1].titulo}" (${lista[1].marco})`);
+
+  // Una crónica por encuadre, desde las MISMAS actas. Es barato: las actas ya están extraídas y son
+  // solo texto, así que esto no vuelve a tocar la fuente original.
+  const cronicas = [];
+  for (let i = 0; i < 2; i++) {
+    try {
+      const s = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(lista[i]));
+      if (!s?.cronica?.trim()) throw new Error('la síntesis volvió sin crónica');
+      cronicas.push({
+        marco: lista[i].marco,
+        titulo: lista[i].titulo,
+        cronica: s.cronica.trim(),
+        // Título y descripción propios de ESTE enfoque: cada canal publica su propio texto.
+        metaTitulo: s.titulo,
+        metaDescripcion: s.descripcion,
+        tono: s.tono,
+      });
+      console.log(`     crónica ${i + 1} (${lista[i].marco}): ${s.cronica.trim().length} caracteres`);
+    } catch (e) {
+      console.warn(`  ⚠️ No se pudo escribir la crónica del enfoque "${lista[i].titulo}" (${e.message})`);
+      break;
+    }
+  }
+
+  if (cronicas.length < 2) {
+    console.warn('  ⚠️ No salieron las dos crónicas: los dos videos van con la crónica única');
+    return jobStore.actualizarJob(job.jobId, { encuadres: propuesta });
+  }
+  return jobStore.actualizarJob(job.jobId, { encuadres: { ...propuesta, cronicas } });
 }
 
 // Crónica del gemelo con OTRO ENCUADRE, desde las mismas actas. Igual de barata que la de sesgo
@@ -551,6 +593,33 @@ app.delete('/api/materiales/:jobId/:materialId', (req, res) => {
 app.get('/api/materiales/:jobId', (req, res) => {
   const job = jobStore.obtenerJob(req.params.jobId);
   res.json({ materialesAdicionales: job?.materialesAdicionales || [] });
+});
+
+// Guardar las crónicas editadas a mano en el Paso 1. Son las que se convierten en guion, así que
+// tienen que sobrevivir a una recarga o a retomar el proceso desde la otra máquina.
+app.put('/api/encuadres', (req, res) => {
+  try {
+    const { jobId, cronicas } = req.body;
+    if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
+    const job = jobStore.obtenerJob(jobId);
+    if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+    if (!Array.isArray(cronicas) || !cronicas.length) {
+      return res.status(400).json({ error: 'Faltan las crónicas' });
+    }
+    // Se respeta lo que el usuario escribió, pero no se aceptan crónicas vacías: de ahí sale el
+    // guion, y una vacía dispararía la guarda `exigirCronica` recién en el Paso 3.
+    const vacias = cronicas.filter(c => !c?.cronica?.trim());
+    if (vacias.length) return res.status(400).json({ error: 'Hay crónicas vacías: el guion sale de ellas' });
+
+    const previas = job.encuadres?.cronicas || [];
+    const fusionadas = cronicas.map((c, i) => ({ ...(previas[i] || {}), ...c, cronica: c.cronica.trim() }));
+    jobStore.actualizarJob(jobId, { encuadres: { ...(job.encuadres || {}), cronicas: fusionadas } });
+    console.log(`✏️ Crónicas editadas a mano en ${jobId}: ${fusionadas.map(c => c.cronica.length + ' car.').join(', ')}`);
+    res.json({ status: 'success' });
+  } catch (error) {
+    console.error('Error guardando crónicas:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1251,13 +1320,19 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
     const citasB = citasDeVariante(materiales, 'B');
     let cronicaB = cronica;
 
-    // PRIMERO el encuadre, que es la palanca fuerte: cambia DE QUÉ habla el video, no solo desde qué
-    // postura. Si la lectura propuso dos, el gemelo se queda con el segundo y re-sintetiza su propia
-    // crónica desde las mismas actas. Sin esto los dos guiones salen del mismo texto y el parafraseo
-    // es su techo — que es justo lo que el usuario notó.
+    // La crónica del gemelo YA ESTÁ ESCRITA desde la lectura (una por enfoque), y es la que el
+    // usuario vio y pudo editar en el Paso 1. Acá solo se toma: no se re-sintetiza nada.
+    //
+    // Antes se generaba en este punto, y eso tenía dos problemas: la edición del usuario se perdía,
+    // y era donde entraba el bug que hacía escribir sobre una noticia inventada.
+    const cronicaGuardada = job?.encuadres?.cronicas?.[1];
     const encuadreB = job?.encuadres?.encuadres?.[1];
-    if (encuadreB) {
-      console.log(`  🎯 Gemelo con otro encuadre: "${encuadreB.titulo}" (${encuadreB.marco})`);
+    if (cronicaGuardada?.cronica) {
+      console.log(`  🎯 Gemelo con su crónica del Paso 1: "${cronicaGuardada.titulo}" (${cronicaGuardada.marco})`);
+      cronicaB = cronicaGuardada.cronica;
+    } else if (encuadreB) {
+      // Job viejo: tiene encuadres pero no crónicas (se guardaron antes de este cambio).
+      console.log(`  🎯 Gemelo con otro encuadre (job anterior, se sintetiza ahora): "${encuadreB.titulo}"`);
       cronicaB = (await cronicaConEncuadre(job, encuadreB)) || cronica;
     } else {
       // Sin encuadres, la palanca de antes: sesgo invertido, que solo aplica si el usuario eligió
@@ -1363,16 +1438,20 @@ app.post('/api/generate-script', async (req, res) => {
     // En modo gemelo cada video recibe SUS citas (repartidas), no todas.
     const citasA = citasDeVariante(materiales, 'A');
 
-    // Si la lectura propuso dos encuadres, el PRIMERO es de este video. Se re-sintetiza su crónica
-    // igual que la del gemelo: si no, la pantalla diría que este canal se cuenta con un encuadre que
-    // en realidad no se aplica, y solo el hermano quedaría diferenciado.
+    // La crónica de ESTE video, igual que la del gemelo, ya está escrita desde la lectura. Se toma
+    // la primera de las dos; no se re-sintetiza nada acá.
     //
-    // Solo cuando hay gemelo: con un video solo no hay de qué diferenciarse, y la crónica que el
-    // usuario revisó en el Paso 1 es la que corresponde usar tal cual.
+    // Solo con gemelo: con un video solo no hay de qué diferenciarse, y va la crónica única de
+    // siempre — la que el usuario revisó en el Paso 1.
+    const cronicaGuardadaA = gemela ? job?.encuadres?.cronicas?.[0] : null;
     const encuadreA = gemela ? job?.encuadres?.encuadres?.[0] : null;
     let cronicaA = cronica;
-    if (encuadreA) {
-      console.log(`  🎯 Este video con su encuadre: "${encuadreA.titulo}" (${encuadreA.marco})`);
+    if (cronicaGuardadaA?.cronica) {
+      console.log(`  🎯 Este video con su crónica del Paso 1: "${cronicaGuardadaA.titulo}" (${cronicaGuardadaA.marco})`);
+      cronicaA = cronicaGuardadaA.cronica;
+    } else if (encuadreA) {
+      // Job viejo, sin crónicas guardadas: se sintetiza ahora (comportamiento anterior).
+      console.log(`  🎯 Este video con su encuadre (job anterior, se sintetiza ahora): "${encuadreA.titulo}"`);
       cronicaA = (await cronicaConEncuadre(job, encuadreA)) || cronica;
     }
 

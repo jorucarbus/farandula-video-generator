@@ -694,23 +694,30 @@ REGLAS OBLIGATORIAS PARA LAS CITAS:
 }
 
 // Ídem para el guion hermano que este NO puede parecerse (videos gemelos).
+// El guion del canal hermano entra como "no te le parezcas", NUNCA como material.
+//
+// ⚠️ Distinción que hay que mantener: cada video llega con SU PROPIA crónica, escrita desde su
+// enfoque en el Paso 1. O sea que los dos guiones ya hablan de cosas distintas del mismo hecho, y
+// este bloque solo se ocupa de que además no suenen igual. Antes decía "los hechos son los mismos y
+// el ángulo es el mismo, lo que cambia es CÓMO se cuenta" — eso ya no es cierto y confundía al
+// modelo, que podía tomar de acá contenido que su propia crónica no tiene.
 function bloqueDeEvitar(guionEvitar) {
   return !guionEvitar ? '' : `
 
-=== GUION YA ESCRITO PARA EL CANAL HERMANO (NO es material, es lo que TENÉS QUE EVITAR) ===
+=== GUION DEL CANAL HERMANO (NO es material: es lo que NO tenés que parecerte) ===
 ${guionEvitar}
-=== FIN DEL GUION A EVITAR ===
+=== FIN ===
 
-REGLAS OBLIGATORIAS PARA NO REPETIRLO:
-- Los HECHOS son los mismos y el ÁNGULO es el mismo. Lo que cambia es CÓMO se cuenta.
-- Arranque distinto: prohibido abrir con la misma frase, con la misma idea de apertura, o con el
-  mismo dato. Si ese guion abre con la traición, este abre por otro lado del mismo escándalo.
-- Orden de revelación distinto: lo que allá se guarda para el final, acá puede ir antes, y al revés.
+ATENCIÓN: ese guion cuenta OTRO ángulo del mismo hecho, escrito desde otra crónica. NO saques de
+ahí ni un dato: todo lo que cuentes sale del MATERIAL BASE de arriba, que es distinto del suyo.
+
+REGLAS OBLIGATORIAS PARA NO PARECERTE:
+- Arranque distinto: prohibido abrir con la misma frase, con la misma idea de apertura o con el
+  mismo dato.
 - Vocabulario distinto: prohibido reusar sus expresiones de farándula. Buscá otras.
 - PROHIBIDO copiar cualquier tira de más de 4 palabras seguidas de ese guion.
 - Cierre distinto, con otra pregunta o tensión abierta.
-- Mismo largo, mismo ritmo, misma calidad. No es una versión resumida ni una segunda parte: es el
-  mismo escándalo contado por otra boca.`;
+- Mismo largo, mismo ritmo, misma calidad. No es un resumen ni una segunda parte.`;
 }
 
 async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null) {
