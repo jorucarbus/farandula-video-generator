@@ -239,9 +239,39 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
 // primero y, si falla (saturación, 400/404 de routing de alias), cae al siguiente.
 // Solo 401/403 (auth/permiso) abortan de una: no los arregla otro modelo.
 // `tarea` sale de TAREAS y decide con qué modelo se empieza (ver CADENAS arriba).
+// MODELOS EN PENITENCIA. Cuando un modelo devuelve 503 se anota la hora, y durante los siguientes
+// minutos la cadena lo SALTA sin probarlo.
+//
+// Por qué: medido el 2026-08-30, `gemini-flash-latest` devolvía 503 en el 100% de los intentos
+// durante horas. Cada llamada perdía 20-30 segundos probándolo —dos intentos con 8s de espera— antes
+// de caer al modelo que sí respondía. Con tres llamadas por lectura eso son minutos tirados, y fue
+// parte de por qué el gateway cortaba con 502 y el usuario terminó con procesos colgados.
+//
+// La penitencia es corta a propósito: los 503 de Gemini van y vienen, y un modelo desterrado para
+// siempre sería peor que el problema. Si TODOS están penados, se usa la cadena completa igual — es
+// preferible probar uno saturado que no probar ninguno.
+const PENITENCIA_MS = 3 * 60 * 1000;
+const penados = new Map();   // modelo -> timestamp del último 503
+
+function penar(modelo) {
+  penados.set(modelo, Date.now());
+}
+function estaPenado(modelo) {
+  const t = penados.get(modelo);
+  if (!t) return false;
+  if (Date.now() - t > PENITENCIA_MS) { penados.delete(modelo); return false; }
+  return true;
+}
+
 async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra = {}, herramientas = null) {
   const userParts = Array.isArray(userMessage) ? userMessage : [{ text: userMessage }];
-  const cadena = tarea.cadena || CADENAS.creativo;
+  const cadenaCompleta = tarea.cadena || CADENAS.creativo;
+  const disponibles = cadenaCompleta.filter(m => !estaPenado(m));
+  // Si todos están penados se prueba con la cadena entera: mejor uno saturado que ninguno.
+  const cadena = disponibles.length ? disponibles : cadenaCompleta;
+  const saltados = cadenaCompleta.length - cadena.length;
+  if (saltados > 0) console.log(`  ⏭️  Salteando ${saltados} modelo(s) que acaban de dar 503`);
+
   let ultimoError;
   for (let i = 0; i < cadena.length; i++) {
     const modelo = cadena[i];
@@ -265,6 +295,9 @@ async function callGemini(prompt, userMessage, tarea = TAREAS.guion, configExtra
         console.error('Error Gemini (no recuperable):', error.message);
         throw error;
       }
+      // Queda en penitencia: las próximas llamadas de los siguientes minutos no van a perder
+      // tiempo probándolo (ver PENITENCIA_MS).
+      penar(modelo);
       console.warn(`⚠️  ${modelo} saturado tras reintentos; probando el siguiente modelo...`);
     }
   }
