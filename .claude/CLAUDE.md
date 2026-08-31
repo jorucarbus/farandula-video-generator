@@ -8,7 +8,76 @@ verificado en staging (contenedor levantado 02:14 GMT, health 200).
 
 | Repo | Rama | SHA | Estado |
 |---|---|---|---|
-| `farandula-video-generator` | `test-persistencia` | `38c289d` | local = remoto, desplegado |
+| `farandula-video-generator` | `test-persistencia` | `7d07063` | local = remoto, desplegado |
+
+### 2026-08-31 (Mac) — Auditoría de estado: qué había quedado sin anotar, y dónde está cada cosa
+
+El usuario: *"revisa en el github y railway todos los cambios porque creo que no hice actualizar la
+bitácora en mi casa"*. **Casi todo SÍ estaba anotado** — la tanda del 27 al 30 quedó documentada en
+detalle desde Windows. Lo que faltaba eran **los cuatro últimos commits del 30/08**, los cuatro de
+la misma noche y todos nacidos de que el usuario se quedó con procesos colgados. Se anotan acá
+porque cuentan una historia sola: *la tanda de encuadres funcionaba en las pruebas y se rompía en
+uso real*.
+
+| Commit | Qué |
+|---|---|
+| `d007d21` | Sacar los encuadres del pedido de lectura — el gateway cortaba con 502 |
+| `e138b3b` | Recuperar el proceso aunque el navegador nunca haya sabido su id |
+| `62eb7ff` | Saltar los modelos que acaban de dar 503 en vez de volver a probarlos |
+| `7d07063` | Los dos enfoques se preparan al ACTIVAR gemelos, no al terminar la lectura |
+
+**El hilo común: un pedido HTTP, un trabajo.** Al meter los encuadres y las dos crónicas dentro de
+`/api/read`, la lectura pasó a hacer **seis llamadas seguidas a Gemini** (acta, crónica base,
+nombres, encuadres, y una crónica por enfoque). Con Gemini devolviendo 503 constante, cada una
+tardaba minutos, el total se fue arriba de diez y **el gateway de Railway cortó con 502**. Los jobs
+quedaban con crónica pero sin encuadres: ni avanzaban ni fallaban. El usuario: *"no avanza de ahí,
+tengo 5 procesos colgados"*. `d007d21` movió ese trabajo a `POST /api/encuadres/generar`, que se
+puede reintentar sin rehacer la lectura porque las actas están cacheadas. **Mismo criterio que ya
+había sacado el render del HTTP largo** — vale como regla: si un endpoint encadena llamadas a
+Gemini, el gateway es el techo, no el timeout del cliente.
+
+**`e138b3b` es la secuela del 502, y la trampa es sutil**: el `jobId` se guardaba en `sessionStorage`
+recién cuando la respuesta LLEGABA al navegador. Si el pedido moría en el camino, el servidor SÍ
+había creado el proceso y guardado la crónica, pero la pantalla nunca se enteró de que existía. Al
+recargar no había nada que ofrecer y el trabajo *parecía* perdido estando entero del otro lado.
+Ahora, sin referencia local, se le **pregunta al servidor** por procesos sin terminar de las últimas
+24h. ⚠️ **El patrón general**: guardar la referencia a un trabajo remoto recién al recibir la
+respuesta deja huérfano todo lo que el servidor completó y el cliente no llegó a ver.
+
+**`62eb7ff` — los 503 costaban 20-30s por llamada.** `gemini-flash-latest` daba 503 el 100% de las
+veces durante horas y encabeza la cadena creativa: cada llamada pagaba dos intentos con 8s de espera
+antes de caer al modelo que sí respondía. Medido con síntesis reales: **61,6s y 144,6s por llamada**.
+Ahora un modelo que da 503 queda **en penitencia 3 minutos** y la cadena lo saltea. La penitencia es
+corta a propósito (los 503 van y vienen) y si TODOS están penados se usa la cadena completa igual —
+mejor probar uno saturado que ninguno.
+
+**`7d07063` — el bug de flujo, y el más fácil de repetir.** El interruptor de gemelos vive en el
+**Paso 2**; `generarEncuadres()` se disparaba al **final de la lectura**, cuando `state.gemelos`
+todavía era `false`. Salía por su propia guarda sin hacer nada: **nunca se generaban**. El usuario:
+*"con video gemelos solo aparece uno y regresamos al problema de similitud de guiones"* — y los
+datos le daban la razón, de 6 procesos recientes solo UNO tenía los dos enfoques. Ahora la
+preparación la dispara `toggleGemelos` al ACTIVARSE, y releer o agregar una fuente invalida los
+enfoques anteriores. ⚠️ **La lección**: una guarda `if (!state.x) return` dentro de algo que se
+dispara automáticamente falla en silencio; el disparo tiene que colgarse del momento en que la
+condición se cumple, no de un paso anterior.
+
+### Estado real verificado hoy (31/08, desde la Mac)
+
+| Dónde | Estado |
+|---|---|
+| `origin/test-persistencia` | `7d07063` — la Mac ya está al día (venía 19 commits atrás) |
+| Staging (`adventurous-reflection`) | **`/api/health` 200**, y el `app.js` servido tiene los marcadores del ÚLTIMO commit (`generarEncuadres`, "Preparar los dos enfoques", "Escribiendo las dos crónicas"). **Desplegado y al día.** |
+| Producción (`farandula-video-generator-production`) | **200 y sano, pero `main` está en `624a24a` del 17/08 — 64 commits atrás.** Su `index.html` no tiene *Citas*, *enriquecer* ni *encuadre*: nada de la tanda de variedad está en producción. |
+| `farandula-insumos-production` | 404 "Application not found" — **esperado**, se apagó el 27/07 al dejar de depender de un servicio separado. |
+
+⚠️ **El riesgo más grande del proyecto sigue siendo el mismo y creció**: `main` acumula **64
+commits** de atraso, incluidos varios fixes de crashes reales de producción. El merge sigue
+pendiente.
+
+📌 **Nota de convención**: desde Windows la bitácora pasó a escribirse **con lo más nuevo arriba**,
+debajo del CIERRE. Antes se agregaba al final, en "Sesiones recientes". Se mantiene el criterio
+nuevo — pero conviene saberlo, porque buscar lo último al final del archivo ahora da la entrada
+equivocada.
 
 ### 🔴 2026-08-30 — El guionista recibía "[object Object]" y SE INVENTABA LA NOTICIA ENTERA
 
