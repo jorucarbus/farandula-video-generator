@@ -81,6 +81,7 @@ function setModo(modo) {
     state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], encuadres: null, motorGuion: 'gemini', gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, pasos: {}, carpetasDestino: [] };
     renderFuentesLista();
     renderMaterialesLista();
+    reiniciarCartelPortada();
     sessionStorage.removeItem('farandula_job_id');
 
     document.getElementById('lectura-section').classList.add('hidden');
@@ -1565,6 +1566,8 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
     try {
         state.sesgo = sesgo;
         if (esPrimera) state.canalId = canalId;
+        // Noticia nueva: el cartel de la anterior no le corresponde (ver `reiniciarCartelPortada`).
+        if (esPrimera) reiniciarCartelPortada();
         // Rehacer/ampliar la lectura invalida guion/asignaciones/audio/destino ya hechos
         state.selectedAngle = null;
         state.guion = null;
@@ -2188,8 +2191,12 @@ async function aprobarAudio() {
         setPasoDeVariante(v, 'destination-section', 'active');
         // Prefill del titular del cartel con el TÍTULO de la lectura (no con `nombreCorto`, que es
         // la base del nombre de archivo) — editable, y sin pisar si el usuario ya escribió algo.
+        // La condición mira el ESTADO de la variante, no lo que haya en el input. Antes preguntaba
+        // `!portadaTitularEl.value.trim()`, y ese campo puede traer texto de otro proyecto (ver
+        // `reiniciarCartelPortada`): en ese caso el prellenado se saltaba, el titular correcto no
+        // entraba nunca, y el viejo se quemaba en el video.
         const portadaTitularEl = document.getElementById('portada-titular');
-        if (v === state.varianteActiva && portadaTitularEl && !portadaTitularEl.value.trim()) {
+        if (v === state.varianteActiva && portadaTitularEl && !V(v).titularCartel) {
             portadaTitularEl.value = tituloParaCartel(v);
             V(v).titularCartel = portadaTitularEl.value;
             actualizarPortadaDiseno();
@@ -2938,6 +2945,23 @@ async function actualizarPortadaDiseno() {
     dibujarCartel(canvas, { ...diseno, titular: diseno.titular || '...' });
 }
 
+// El titular del cartel es CONTENIDO de este proyecto, no una preferencia como la tipografía o el
+// tamaño de la caja. Pero vive en un `<input>` único y compartido por las dos pestañas, y nadie lo
+// limpiaba nunca: al empezar otra noticia arrastraba el texto de la anterior. Peor, el navegador
+// restaura el valor de los campos de texto al recargar la página, así que ni recargar lo soltaba.
+//
+// Y no se quedaba en un detalle visual: `volcarVista()` vuelca lo que haya en el input al estado de
+// la variante activa (`d.titularCartel`), y `encolarVariante()` lo prefiere por encima del título de
+// la noticia. Resultado: el titular viejo terminaba QUEMADO en el frame 0 del video nuevo y en su
+// JPG de portada. Lo reportó el usuario el 31/08/2026 con un cartel de otro trabajo.
+function reiniciarCartelPortada() {
+    state.titularCartel = null;
+    if (state.B) state.B.titularCartel = null;
+    const titular = document.getElementById('portada-titular');
+    if (titular) titular.value = '';
+    actualizarPortadaDiseno();
+}
+
 function initPortadaDiseno() {
     document.getElementById('portada-titular')?.addEventListener('input', actualizarPortadaDiseno);
     document.getElementById('portada-fuente')?.addEventListener('change', actualizarPortadaDiseno);
@@ -3435,6 +3459,9 @@ async function recuperarJobPendiente() {
     document.getElementById('recuperar-banner').classList.add('hidden');
 
     state.jobId = job.jobId;
+    // El titular del cartel no se guarda en el job, así que lo que quede en pantalla al retomar es
+    // siempre de otro proyecto: se descarta y se vuelve a prellenar con el título de ESTE.
+    reiniciarCartelPortada();
     // Dejar la referencia guardada: si el proceso se encontró preguntándole al servidor (porque el
     // pedido original murió antes de devolver el jobId), sin esto la próxima recarga tendría que
     // volver a buscarlo.
@@ -3837,6 +3864,13 @@ function aplicarIconos() {
 
 document.addEventListener('DOMContentLoaded', () => {
     aplicarIconos();
+    // Al arrancar, el titular del cartel se vacía SIEMPRE: el navegador restaura los campos de
+    // texto al recargar, y un titular restaurado es por definición de otro proyecto (nunca se
+    // guarda del lado del servidor). Va acá y no dentro de `initPortadaDiseno`, que cuelga de
+    // `cargarFuentesEnSelect(...).then(...)` y no llega a correr si esa petición falla —
+    // justo el caso en que el arrastre pasaría desapercibido.
+    const titularInicial = document.getElementById('portada-titular');
+    if (titularInicial) titularInicial.value = '';
     document.querySelectorAll('.steps-grid .form-section[id]').forEach(el => actualizarStepBadge(el, el.dataset.status));
     log('✅ App iniciada');
     initApiKey();

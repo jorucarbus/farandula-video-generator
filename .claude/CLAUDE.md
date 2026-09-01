@@ -10,6 +10,51 @@ verificado en staging (contenedor levantado 02:14 GMT, health 200).
 |---|---|---|---|
 | `farandula-video-generator` | `test-persistencia` | `7d07063` | local = remoto, desplegado |
 
+### 🔴 2026-09-01 (Mac) — El cartel de portada arrastraba el titular del proyecto ANTERIOR
+
+El usuario lo vio en pantalla: video nuevo, cartel quemado con *"La Flaca Guerrero frente a una
+preocupante alerta médica"*, de otro trabajo. Su pregunta va al fondo del asunto: *"al tener un
+nuevo proyecto o continuar uno, ¿no debería tener información en caché solo de ese proyecto?"*.
+
+**CAUSA — el `<input>` era la memoria.** `portada-titular` es UN solo campo, compartido por las dos
+pestañas de gemelos, y **nadie lo limpiaba nunca**. Ni al empezar otra noticia, ni al retomar un
+proceso, ni al cambiar de modo. Tres piezas lo convertían en un titular quemado:
+
+1. **`volcarVista()` cementa lo que haya en el input**: `d.titularCartel = titular.value`, sin
+   condición. Corre en cada cambio de pestaña **y justo antes de encolar** (`generarVideos`).
+2. **El prellenado se saltaba solo.** La guarda era `!portadaTitularEl.value.trim()` — *"no pisar si
+   el usuario ya escribió algo"*. Pero no distingue **lo que escribió el usuario para ESTE video**
+   de **lo que quedó del anterior**: con texto viejo en el campo, el título correcto no entraba nunca.
+3. **`encolarVariante()` prefiere el estado**: `d.titularCartel || tituloParaCartel(v)`. Cementado el
+   texto viejo en el paso 1, gana sobre el título de la noticia y va al PNG, al frame 0 y al JPG.
+
+⚠️ **La lección, y ya mordió antes en este mismo cartel**: un control del DOM no es estado. Acá
+además hacía de estado *sin dueño* — compartido entre variantes y entre proyectos, sobreviviendo a
+todo lo que sí se reinicia (`leerFuente` invalida guion, fragments, audio y destino… y no el cartel).
+**Una guarda del tipo "no pisar si hay algo" es segura solo si algo garantiza que ese `algo` es del
+trabajo actual.** Acá nada lo garantizaba.
+
+**ARREGLO** — `reiniciarCartelPortada()`, un único lugar que vacía input + `titularCartel` de las dos
+variantes, llamado en los tres puntos donde empieza o se retoma un proyecto: `leerFuente` (noticia
+nueva), `recuperarJobPendiente` (retomar) y `cambiarModo` (reset a Paso 1). Más dos cosas:
+- **La guarda del prellenado ahora mira el ESTADO** (`!V(v).titularCartel`), no el input.
+- **Vaciado al arrancar**, en `DOMContentLoaded`. Va ahí y **no** en `initPortadaDiseno`, que cuelga
+  de `cargarFuentesEnSelect(...).then(...)`: si esa petición falla, el `.then` no corre —
+  justo el caso en que el arrastre pasaría desapercibido. Lo encontró la prueba en browser, no la
+  lectura del código.
+
+**VERIFICADO en browser real**, con las funciones vivas de la página (no una réplica): con el título
+de la noticia en `El regreso de Silvana Torres…` y el campo sucio con el titular viejo, la cadena
+**vieja** termina quemando *"La Flaca Guerrero…"* y la **nueva** quema el título correcto. También:
+recarga real (`navigation.type === "reload"`) deja el campo vacío, y la guarda vieja daba `false`
+—se saltaba— donde la nueva da `true`.
+
+📌 **Lo que NO se pudo reproducir**: cómo se ensucia el campo la primera vez. Se sospechó de la
+restauración de formularios del navegador al recargar, y **se probó: no ocurre** (un input de
+control que nadie limpia también volvió vacío). Los candidatos que quedan son sin recarga de por
+medio — `cambiarModo`, o retomar un proceso viejo del banner. **El arreglo no depende de saberlo**:
+tapa el arrastre en los tres puntos de entrada y además al arrancar.
+
 ### 2026-08-31 (Mac) — Auditoría de estado: qué había quedado sin anotar, y dónde está cada cosa
 
 El usuario: *"revisa en el github y railway todos los cambios porque creo que no hice actualizar la
