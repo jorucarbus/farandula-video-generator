@@ -1029,10 +1029,16 @@ REGLAS DE CARPETA (a quién se le asigna cada fragmento):
    del concierto) → "intentó ocultar fue el absoluto vacío" (Dayanara) → "de su micrófono
    apagado." (Celeste_Moran — "su" es el de Celeste, vuelve a ella aunque el fragmento anterior
    fuera de Dayanara).
-8. Usa el nombre EXACTO de la carpeta (respeta mayúsculas y guiones bajos).
-9. Responde ÚNICAMENTE con un array JSON válido: [{"parrafo": "texto", "carpeta": "Nombre_Carpeta"}]
+8. ANTE LA DUDA, LA DEL PROTAGONISTA. Si un fragmento no nombra a nadie y tampoco se entiende a
+   quién se refiere, usa la carpeta del protagonista de la noticia — la persona de la que trata el
+   guion entero. PROHIBIDO elegir una carpeta "por elegir": si dudas entre dos, gana la que aparece
+   antes en el propio guion, nunca la primera de la lista de abajo. Una cara equivocada en pantalla
+   arruina el fragmento.
+9. Usa el nombre EXACTO de la carpeta (respeta mayúsculas y guiones bajos).
+10. Responde ÚNICAMENTE con un array JSON válido: [{"parrafo": "texto", "carpeta": "Nombre_Carpeta"}]
 
-Carpetas disponibles: ${carpetas.join(', ')}`;
+Carpetas disponibles (son las de las personas que salen en ESTA noticia; no hay otras):
+${carpetas.join(', ')}`;
 
   const lista = await llamarJSON(prompt, `Guion:\n\n${script}`, TAREAS.fragmentacion);
   if (!Array.isArray(lista) || lista.length === 0) {

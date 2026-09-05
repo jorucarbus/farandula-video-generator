@@ -1512,6 +1512,59 @@ app.post('/api/generate-script', async (req, res) => {
   }
 });
 
+// Las carpetas de las personas que SALEN en esta noticia, y solo esas.
+//
+// De dónde salen los nombres, en orden de confianza:
+//   1. El protagonista y el secundario que detectó la lectura.
+//   2. Las `personas` de cada acta (incluye a los mencionados de paso).
+//   3. Los nombres propios del GUION mismo — el guionista puede nombrar a alguien que la lectura
+//      no marcó, y esa persona igual necesita su carpeta.
+//
+// El cotejo va por clave fonética (`famosos.cotejar`), el mismo que corrige los nombres mal
+// transcritos: así "Fatima Bos" encuentra la carpeta "Fatima_Bosch". Comparar letra por letra
+// fallaría justo en los casos que más importan.
+//
+// Devuelve [] si no encuentra ninguna — quien llama decide qué hacer (hoy: usar todas, que es el
+// comportamiento viejo).
+function filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista) {
+  const candidatos = new Set();
+  const sumar = (n) => { const v = (n || '').trim(); if (v.length > 2) candidatos.add(v); };
+
+  sumar(protagonista);
+  sumar(job?.protagonista);
+  sumar(job?.secundario);
+  for (const f of job?.fuentes || []) for (const p of f.acta?.personas || []) sumar(p);
+
+  // Nombres propios del guion: secuencias de palabras capitalizadas. Es un tamiz grueso a
+  // propósito — lo que sobre se descarta solo en el cotejo, que exige una carpeta que suene igual.
+  for (const m of (script || '').matchAll(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+(?:de|del|la|los)?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*)/g)) {
+    sumar(m[1]);
+  }
+
+  const encontradas = new Set();
+  for (const nombre of candidatos) {
+    // Se prueba el nombre completo y, si no encuentra, sus partes de izquierda a derecha.
+    //
+    // Hace falta porque las carpetas no siguen un formato único: algunas llevan nombre y apellido
+    // ("Celeste_Moran") y otras solo el nombre ("Dayanara"). Un guion que dice "Dayanara Peralta"
+    // no calzaba contra la carpeta "Dayanara" y esa persona quedaba fuera de la lista — con el
+    // filtro puesto eso es peor que antes, porque el modelo le asignaría a otro.
+    //
+    // Las variantes cortas son seguras porque el cotejo exige que la clave fonética coincida
+    // ENTERA: buscar "Dayanara" solo puede encontrar una carpeta que se llame así, nunca
+    // "Dayana_Moran" ni "Dayana_Zambrano".
+    const partes = nombre.split(/\s+/).filter(p => p.length > 3);
+    const variantes = [nombre, ...(partes.length > 1 ? [partes.slice(0, 2).join(' '), partes[0]] : [])];
+    for (const v of variantes) {
+      const r = famosos.cotejar(v, carpetas);
+      // Solo confianza ALTA: con 294 carpetas, aceptar parecidos mete a la persona equivocada, que
+      // es peor que no encontrarla. "Camila" y "Camilo" suenan casi igual.
+      if (r?.carpeta && r.confianza === 'alta') { encontradas.add(r.carpeta); break; }
+    }
+  }
+  return [...encontradas].sort((a, b) => a.localeCompare(b));
+}
+
 // ETAPA 3: Fragmentación + Carpetas
 app.post('/api/fragment', async (req, res) => {
   try {
@@ -1531,8 +1584,23 @@ app.post('/api/fragment', async (req, res) => {
       return res.status(500).json({ error: 'No se encontraron carpetas de famosos en Drive' });
     }
 
-    console.log(`📂 Fragmentando guion en párrafos (${carpetas.length} carpetas)...`);
-    const fragments = await gemini.fragmentarGuionParrafos(script, carpetas);
+    // AL MODELO SOLO SE LE MUESTRAN LAS CARPETAS DE QUIENES APARECEN EN LA NOTICIA.
+    //
+    // Antes se le pasaban las 294, ordenadas alfabéticamente, y eso tenía un efecto que el usuario
+    // detectó solo: cuando un fragmento no dejaba claro de quién habla, el modelo agarraba la
+    // PRIMERA de la lista. Como la primera alfabéticamente es "Aaron", terminaba metiendo clips de
+    // Aarón en noticias que no lo mencionan (reportado 2026-09-05).
+    //
+    // No es un problema de prompt sino de opciones: dándole 294 candidatos para una noticia de dos
+    // personas, 292 son ruido. Con la lista corta, ante la duda solo puede elegir entre gente que sí
+    // sale en la noticia.
+    const job = jobId ? jobStore.obtenerJob(jobId) : null;
+    const carpetasRelevantes = filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista);
+    const usadas = carpetasRelevantes.length ? carpetasRelevantes : carpetas;
+
+    console.log(`📂 Fragmentando guion en párrafos (${usadas.length} de ${carpetas.length} carpetas`
+      + `${carpetasRelevantes.length ? `: ${usadas.join(', ')}` : ' — sin coincidencias, se usan todas'})...`);
+    const fragments = await gemini.fragmentarGuionParrafos(script, usadas);
 
     // Porcentaje de tiempo de cada párrafo (por caracteres, incluye espacios)
     const totalChars = fragments.reduce((s, f) => s + f.caracteres, 0);
