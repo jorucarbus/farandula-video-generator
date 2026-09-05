@@ -391,7 +391,7 @@ async function renderizarPorTandas(segmentos, duracionesVisibles, outPath, opts,
 // efectos: { zoom, zoomPct, espejo, transicion, transicionDur, transicionTipo, subsPath, fuentesDir }
 // La suma de duraciones VISIBLES = duración del audio, así que el video calza por construcción
 // — las transiciones NO acortan esa suma, solo agregan metraje extra por debajo (ver más abajo).
-async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
+async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, avisar = null) {
   const enc = argsEncoder(await detectarEncoder());
   const zoomPreset = efectos.zoom || 'ninguno';
   const espejoPreset = efectos.espejo || 'ninguno';
@@ -444,6 +444,10 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   for (let k = 0; k < clipsValidos.length; k++) {
     const { clip, i } = clipsValidos[k];
     const esUltimo = k === clipsValidos.length - 1;
+    // Cortar los clips es la parte larga del render: se reporta cada uno para que la pantalla
+    // muestre avance real en vez de quedarse cinco minutos en "renderizando". El tramo 45-80 del
+    // total se reparte entre los clips; lo que sigue (concatenar y mezclar) va después.
+    if (avisar) avisar(45 + Math.round((k / clipsValidos.length) * 35), `Cortando toma ${k + 1} de ${clipsValidos.length}`);
     // Este clip empalma con el siguiente por transición → necesita `transDur` segundos EXTRA
     // de metraje fuente para la cola de mezcla (Fase 7, corrección de solapamiento). Por eso
     // server.js ya bajó CLIP_MAX a CLIP_MAX-transDur al planificar: duracion+padding nunca pasa
@@ -509,6 +513,7 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   };
 
   const hayTransiciones = transPreset !== 'ninguno' && segmentos.length > 1;
+  if (avisar) avisar(80, hayTransiciones ? 'Uniendo las tomas con transiciones' : 'Uniendo las tomas');
   if (!hayTransiciones) {
     await concatPlano();
   } else {
@@ -528,6 +533,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}) {
   // Mux con la locución: si el video quedó una pizca corto (redondeos), se congela
   // el último frame hasta 2s; el corte final es exactamente la duración del audio.
   const durAudio = await obtenerDuracion(audioPath);
+  // Mezcla final: es el tramo más largo del montaje (quema subtítulos y recodifica todo el video
+  // de una pasada), así que sin este aviso la barra se quedaba quieta en 80 hasta el final.
+  if (avisar) avisar(84, efectos.subsPath ? 'Quemando subtítulos y mezclando el audio' : 'Mezclando el audio');
   const finalPath = path.join(TEMP_DIR, `${jobId}_final.mp4`);
   const tpad = 'tpad=stop_mode=clone:stop_duration=2';
   // Subtítulos (Fase 6): filtro `ass` quemado DESPUÉS del tpad, para que también se vea sobre

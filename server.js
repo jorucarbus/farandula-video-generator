@@ -1869,6 +1869,7 @@ async function renderizarVideo(params, renderId) {
 
     // 1. Duración real de la locución: define el tiempo total del video
     let durAudio = await video.obtenerDuracion(audioPath);
+    colaRender.reportar(renderId, 5, 'Preparando el plan de tomas');
     console.log(`🎬 [${renderId}] Audio: ${durAudio.toFixed(1)}s. Buscando videos en Drive...`);
 
     // 1b. Material adicional por fragmento (cita con audio real / foto de apoyo / video de
@@ -2025,10 +2026,17 @@ async function renderizarVideo(params, renderId) {
     const archivos = {};
     for (const m of materialesPorFragmento.values()) archivos[m.archivoId] = m.archivoPath;
     const porBajar = [...new Set(clipsValidos.map(c => c.videoId))].filter(id => !archivos[id]);
+    colaRender.reportar(renderId, 15, `Bajando ${porBajar.length} clips de Drive`);
     console.log(`⬇️ [${renderId}] Descargando ${porBajar.length} clips (de a ${DESCARGAS_EN_PARALELO})...`);
     const arranque = Date.now();
+    // El avance se reporta clip a clip (15% a 30%): con 30 clips y la red lenta este tramo solo
+    // era una barra quieta, que es justo lo que se siente como "se colgó".
+    let bajados = 0;
     await enTandas(porBajar, DESCARGAS_EN_PARALELO, async (videoId) => {
       archivos[videoId] = await driveHelper.descargarVideo(videoId, video.TEMP_DIR);
+      bajados++;
+      colaRender.reportar(renderId, 15 + Math.round((bajados / porBajar.length) * 15),
+        `Bajando clips de Drive (${bajados} de ${porBajar.length})`);
     });
     if (porBajar.length) {
       console.log(`  ✅ ${porBajar.length} clips listos en ${((Date.now() - arranque) / 1000).toFixed(1)}s`);
@@ -2037,6 +2045,7 @@ async function renderizarVideo(params, renderId) {
     // 5. Subtítulos (Fase 6): palabra por palabra resaltada, timing real si el audio aprobado
     // lo trae (Fase 5). Opt-out con efectos.subtitulos===false. Nunca aborta el render: si algo
     // falla generando el .ass, el video sale igual, sin subtítulos.
+    colaRender.reportar(renderId, 32, 'Preparando subtítulos');
     let subsPath = null;
     let fuentesDir = null;
     if (efectos?.subtitulos !== false) {
@@ -2062,6 +2071,7 @@ async function renderizarVideo(params, renderId) {
     // síntesis (Fase 8a) en el job — sin ninguno de los dos, cae a "neutral" dentro de
     // emparejarCarpetaTono(); si ni neutral existe, sale sin música. Nunca aborta el render por
     // esto: cualquier fallo acá deja musicaPath en null y sigue.
+    colaRender.reportar(renderId, 38, 'Eligiendo la música');
     let musicaPath = null;
     let musicaOffset = 0;
     let musicaGananciaDb = musica.GANANCIA_DEFAULT_DB; // se recalcula por pista según su loudness medido
@@ -2127,11 +2137,12 @@ async function renderizarVideo(params, renderId) {
     // 6. Montar (cortes secos, zoom/espejo opcionales, subtítulos quemados, cartel en el frame 0
     // y música si se generaron). Hyperframes retirado: no terminó de funcionar. El código queda
     // en video.js (montarVideoHyper) y en el historial de git por si se retoma.
+    colaRender.reportar(renderId, 45, 'Montando el video');
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
     const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, {
       ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset, musicaGananciaDb,
       cartelPath,
-    });
+    }, (pct, etapa) => colaRender.reportar(renderId, pct, etapa));
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
 
     // 7. Guardar el video SUELTO en la carpeta del canal, sin subcarpeta por video.
@@ -2166,6 +2177,7 @@ async function renderizarVideo(params, renderId) {
       destinoPortada = { modo: 'local', carpetaLocal: carpetaCanal, nombreBase: nombreBasePortada };
     } else {
       // Fallback: subir por API (requiere OAuth, los Service Accounts no tienen cuota)
+      colaRender.reportar(renderId, 88, 'Subiendo el video a Drive');
       console.log(`⬆️ [${renderId}] Subiendo a Drive por API: ${fileName}`);
       const subido = await driveHelper.subirVideo(resultado.finalPath, fileName, destFolder);
       driveLink = subido.webViewLink;

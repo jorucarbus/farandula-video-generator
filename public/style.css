@@ -851,6 +851,55 @@ footer {
     margin-top: 6px;
 }
 
+/* Barra de avance del render que está corriendo, dentro del panel de la cola */
+.cola-progreso {
+    height: 5px;
+    background: var(--surface-alt);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 2px 0 3px;
+}
+.cola-progreso-barra {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+.cola-etapa {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+/* Avance del render por canal, debajo de los botones del Paso 6 */
+.render-avance { margin-top: 14px; }
+.render-avance-fila { margin-bottom: 10px; }
+.render-avance-fila:last-child { margin-bottom: 0; }
+.render-avance-cab {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+}
+.render-avance-cab strong { color: var(--text); }
+/* En cola todavía no hay porcentaje real: la barra va llena y latiendo, para que se lea
+   "esperando turno" y no "terminado". */
+.cola-progreso-barra.esperando {
+    background: var(--border-strong);
+    animation: cola-latido 1.6s ease-in-out infinite;
+}
+@keyframes cola-latido {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .cola-progreso-barra { transition: none; }
+    .cola-progreso-barra.esperando { animation: none; }
+}
+
 /* Encuadres: un bloque por canal, con su crónica editable */
 .encuadre-bloque {
     padding: 10px 0;

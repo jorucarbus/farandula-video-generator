@@ -466,6 +466,11 @@
                     </button>
                 </div>
                 <p class="hint hidden" id="hint-generar-variante"></p>
+
+                <!-- Avance del render, UNA barra por canal. Va acá y no en la barra global de
+                     arriba porque con gemelos hay dos renders vivos a la vez y una sola barra
+                     compartida se pisaba: no se sabía cuál de los dos estaba avanzando. -->
+                <div id="render-avance" class="render-avance hidden"></div>
             </div>
 
             </div><!-- /.steps-grid -->

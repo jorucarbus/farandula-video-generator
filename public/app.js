@@ -598,10 +598,11 @@ let colaTimer = null;
 // `conBarra` en false = seguir en segundo plano: el registro y el panel de la cola informan igual,
 // pero la barra de progreso NO se toma la pantalla. Con dos videos en vuelo esa barra además se
 // pisaba entre sí, contando dos historias a la vez.
-async function esperarRender(renderId, etiqueta, conBarra = true) {
+async function esperarRender(renderId, etiqueta, conBarra = true, alAvanzar = null) {
     let ultimoEstado = null;
     while (true) {
         const t = await apiCall(`/render/${renderId}`, 'GET');
+        if (alAvanzar) alAvanzar(t);
         if (t.estado !== ultimoEstado) {
             ultimoEstado = t.estado;
             if (t.estado === 'en_cola') log(`⏳ ${etiqueta}: en cola, puesto ${t.posicion} de ${t.enEspera}`);
@@ -609,10 +610,14 @@ async function esperarRender(renderId, etiqueta, conBarra = true) {
         }
         if (conBarra && t.estado === 'en_cola') {
             showProgress(`${icon('listChecks')} ${etiqueta}: en cola (puesto ${t.posicion} de ${t.enEspera})`);
-            updateProgress(55);
+            updateProgress(5);
         } else if (conBarra && t.estado === 'renderizando') {
-            showProgress(`${icon('rocketLaunch')} ${etiqueta}: renderizando...`);
-            updateProgress(80);
+            // Avance REAL que reporta el servidor, con la etapa en palabras. Antes la barra se
+            // clavaba en 80 y el texto decía "renderizando…" durante minutos, sin forma de saber si
+            // estaba avanzando o colgado.
+            const pct = Number.isFinite(t.progreso) ? t.progreso : 10;
+            showProgress(`${icon('rocketLaunch')} ${etiqueta}: ${t.etapa || 'renderizando…'} (${pct}%)`);
+            updateProgress(pct);
         }
         if (t.estado === 'listo') return t.resultado;
         if (t.estado === 'error') throw new Error(t.error || 'El render falló');
@@ -636,12 +641,22 @@ function pintarCola(datos) {
     const cont = document.getElementById('cola-lista');
     if (!cont) return;
     const filas = [];
-    const fila = (t, clase) => `
+    // El que está renderizando lleva su propia barrita y la etapa en palabras: con dos videos
+    // encolados, es la única forma de ver cuál avanza y en qué anda.
+    const fila = (t, clase) => {
+        const renderizando = t.estado === 'renderizando';
+        const pct = Number.isFinite(t.progreso) ? t.progreso : 0;
+        const detalle = renderizando ? `${pct}%`
+            : (t.estado === 'en_cola' ? `puesto ${t.posicion}` : (t.error ? 'falló' : ''));
+        return `
         <div class="cola-item" data-estado="${t.estado}">
             <span class="cola-estado">${clase}</span>
             <span class="cola-nombre">${(t.etiqueta || 'Video')}${t.canal ? ` · ${t.canal}` : ''}</span>
-            <span class="cola-detalle">${t.estado === 'en_cola' ? `puesto ${t.posicion}` : (t.error ? 'falló' : '')}</span>
-        </div>`;
+            <span class="cola-detalle">${detalle}</span>
+        </div>
+        ${renderizando ? `<div class="cola-progreso"><div class="cola-progreso-barra" style="width:${pct}%"></div></div>
+        <div class="cola-etapa">${t.etapa || 'renderizando…'}</div>` : ''}`;
+    };
     if (datos.corriendo) filas.push(fila(datos.corriendo, '🎞️'));
     for (const t of datos.cola || []) filas.push(fila(t, '⏳'));
     for (const t of (datos.recientes || []).slice(-3).reverse()) filas.push(fila(t, t.estado === 'listo' ? '✅' : '❌'));
@@ -2415,7 +2430,7 @@ async function encolarVariante(v) {
 // pestaña y mandar el hermano mientras este se cocina.
 async function seguirRender(v, renderId) {
     try {
-        const res = await esperarRender(renderId, etiquetaVariante(v), false);
+        const res = await esperarRender(renderId, etiquetaVariante(v), false, t => marcarAvance(v, t));
         V(v).resultado = res;
         // El paso queda hecho para ESE video, no para el que se esté mirando: si se encolaron los
         // dos desde la pestaña del primero, el hermano también avanza.
@@ -2428,8 +2443,50 @@ async function seguirRender(v, renderId) {
         else mostrarError(`El video de ${etiquetaVariante(v)} falló: ${e.message}`,
             () => generarVideos([v]), 'destination-section');
     } finally {
+        marcarAvance(v, null);
         desocupar(v, 'render');
     }
+}
+
+// Guarda el último parte del render de UNA variante y repinta el bloque. Se llama con `null` al
+// terminar (bien o mal) para que la barra desaparezca en vez de quedarse clavada en su último %.
+function marcarAvance(v, tarea) {
+    V(v).avanceRender = tarea ? {
+        estado: tarea.estado,
+        progreso: Number.isFinite(tarea.progreso) ? tarea.progreso : null,
+        etapa: tarea.etapa || null,
+        posicion: tarea.posicion,
+        enEspera: tarea.enEspera,
+    } : null;
+    pintarAvanceRender();
+}
+
+// Una fila por canal con render vivo. Siempre se pintan LOS DOS si los dos están corriendo, sin
+// importar qué pestaña se esté mirando: el usuario encola A, se pasa a B y quiere seguir viendo
+// cómo va A sin volver.
+function pintarAvanceRender() {
+    const cont = document.getElementById('render-avance');
+    if (!cont) return;
+    const filas = [];
+    for (const v of ['A', 'B']) {
+        const a = V(v).avanceRender;
+        if (!a) continue;
+        const enCola = a.estado === 'en_cola';
+        const pct = enCola ? 0 : (a.progreso ?? 0);
+        const texto = enCola
+            ? `en cola (puesto ${a.posicion} de ${a.enEspera})`
+            : `${a.etapa || 'renderizando…'} · ${pct}%`;
+        filas.push(`
+        <div class="render-avance-fila">
+            <div class="render-avance-cab">
+                <strong>${etiquetaVariante(v)}</strong>
+                <span>${texto}</span>
+            </div>
+            <div class="cola-progreso"><div class="cola-progreso-barra${enCola ? ' esperando' : ''}" style="width:${enCola ? 100 : pct}%"></div></div>
+        </div>`);
+    }
+    cont.innerHTML = filas.join('');
+    cont.classList.toggle('hidden', filas.length === 0);
 }
 
 // Genera el video de la pestaña que se está viendo. Con gemelos activos ya NO arrastra al hermano:

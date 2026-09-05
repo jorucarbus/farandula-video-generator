@@ -158,11 +158,15 @@ async function bombear() {
   corriendo = true;
   siguiente.estado = 'renderizando';
   siguiente.iniciado = new Date().toISOString();
+  siguiente.progreso = 0;
+  siguiente.etapa = 'Preparando…';
   guardar();
 
   try {
     siguiente.resultado = await ejecutor(siguiente.params, siguiente.renderId);
     siguiente.estado = 'listo';
+    siguiente.progreso = 100;
+    siguiente.etapa = 'Listo';
   } catch (e) {
     siguiente.estado = 'error';
     siguiente.error = e.message;
@@ -176,6 +180,22 @@ async function bombear() {
   guardar();
 
   setImmediate(bombear); // el resto de la cola, una por una
+}
+
+// Avance del render que se está haciendo AHORA. Lo llama el ejecutor a medida que avanza.
+//
+// Por qué existe: hasta acá la pantalla solo podía decir "renderizando…" y quedarse ahí cinco
+// minutos sin mover un pixel — el usuario no tenía forma de saber si estaba avanzando o colgado.
+// Con etapas reales al menos ve que algo pasa, y dónde.
+//
+// A propósito NO se guarda en disco en cada reporte: el progreso cambia decenas de veces por
+// render y `guardar()` escribe el archivo Y programa un respaldo a Drive. Es un dato efímero —
+// si el contenedor se reinicia, ese render ya se perdió igual.
+function reportar(renderId, progreso, etapa) {
+  const t = tareas.find(x => x.renderId === renderId);
+  if (!t || t.estado !== 'renderizando') return;
+  if (Number.isFinite(progreso)) t.progreso = Math.max(0, Math.min(99, Math.round(progreso)));
+  if (etapa) t.etapa = etapa;
 }
 
 // Vista pública de una tarea (sin `params`, que es interno y pesado) + su puesto en la fila.
@@ -192,6 +212,8 @@ function publica(t) {
     estado: t.estado,
     posicion: idx >= 0 ? idx + 1 : null,   // 1 = es el próximo en entrar
     enEspera: enEspera.length,
+    progreso: t.progreso ?? null,   // 0-100 mientras renderiza; null si todavía no arrancó
+    etapa: t.etapa || null,         // qué está haciendo ahora, en palabras
     encolado: t.encolado,
     iniciado: t.iniciado,
     terminado: t.terminado,
@@ -237,4 +259,4 @@ function audioTokensPendientes() {
     .map(t => t.params.audioToken);
 }
 
-module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, audioTokensPendientes, nuevoRenderId };
+module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, audioTokensPendientes, nuevoRenderId, reportar };
