@@ -774,6 +774,22 @@ function revealLectura() {
 // Los tres caminos que producen una lectura (leer fuente, procesar varias, cambiar de sesgo)
 // pintaban lo mismo copiado tres veces. Ahora pasan por acá, así los nombres detectados no se
 // quedan afuera en uno de los tres.
+// Muestra u oculta "Buscar contexto en la web". Vive en su propia función porque hay que decidirlo
+// en DOS momentos distintos, y hacerlo solo en uno era el bug:
+//
+// `renderFuentesLista()` corre ANTES de `pintarLectura()`, o sea antes de que exista la crónica.
+// En la primera lectura de una noticia la condición "ya hay crónica" todavía era falsa y el botón
+// quedaba oculto; recién aparecía al agregar una segunda fuente, porque para entonces sí había una
+// crónica de la vuelta anterior. De ahí el "no siempre aparece" que reportó el usuario (2026-09-05).
+function actualizarBotonContexto() {
+    const wrap = document.getElementById('enriquecer-wrap');
+    if (!wrap) return;
+    // Ya enriquecida: buscar dos veces la misma noticia solo duplicaría el contexto.
+    const yaEnriquecida = (state.fuentes || []).some(f => f.type === 'web' || f.tipoReal === 'contexto-web');
+    const listo = Boolean(state.jobId && state.sourceData?.cronica) && !yaEnriquecida;
+    wrap.classList.toggle('hidden', !listo);
+}
+
 function pintarLectura(result) {
     state.sourceData = { ...state.sourceData, ...result };
     document.getElementById('res-titulo').textContent = result.titulo || '';
@@ -783,6 +799,8 @@ function pintarLectura(result) {
     if (result.encuadres !== undefined) state.encuadres = result.encuadres;
     pintarNombres();
     pintarEncuadres();
+    // Acá ya existe la crónica: es el momento en que el botón de contexto puede aparecer.
+    actualizarBotonContexto();
     revealLectura();
 }
 
@@ -1268,13 +1286,7 @@ function renderFuentesLista() {
     wrap.classList.toggle('hidden', state.fuentes.length === 0);
     btnProcesar.classList.toggle('hidden', state.fuentes.length === 0);
 
-    // Buscar contexto en la web: aparece recién cuando ya hay una lectura hecha (necesita los
-    // hechos para saber qué buscar) y se esconde si esta noticia ya se enriqueció.
-    const yaEnriquecida = state.fuentes.some(f => f.type === 'web' || f.tipoReal === 'contexto-web');
-    const enriquecerWrap = document.getElementById('enriquecer-wrap');
-    if (enriquecerWrap) {
-        enriquecerWrap.classList.toggle('hidden', !state.jobId || !state.sourceData?.cronica || yaEnriquecida);
-    }
+    actualizarBotonContexto();
 
     if (state.fuentes.length === 0) {
         btn.innerHTML = `${icon('bookOpen')} Leer y procesar`;
