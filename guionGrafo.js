@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const expresiones = require('./expresiones');
+const instruccion = require('./instruccion');
 
 const CATALOGO_PATH = path.join(__dirname, 'catalogo-tecnicas.json');
 
@@ -125,7 +126,7 @@ ${catalogoFormateado()}
 //
 // `angle` y `angleContent` se reciben y se IGNORAN a propósito — en este motor la estructura la
 // decide el grafo, no el usuario. Están en la firma porque el contrato es compartido.
-async function generarGuionGrafo(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null) {
+async function generarGuionGrafo(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null, instruccionUsuario = '') {
   // require adentro para no crear un ciclo: gemini.js registra este motor en MOTORES_GUION.
   const gemini = require('./gemini');
 
@@ -141,7 +142,7 @@ async function generarGuionGrafo(cronica, angle, angleContent = null, citas = []
     // Regla de robustez: si el grafo no puede elegir, no se cae el paso del guion — se escribe con
     // el motor de siempre y se avisa.
     console.warn(`  ⚠️ El motor del grafo no pudo elegir estructura (${e.message}); se escribe con el motor de siempre`);
-    return gemini.generarGuion(cronica, angle, angleContent, citas, guionEvitar, nota);
+    return gemini.generarGuion(cronica, angle, angleContent, citas, guionEvitar, nota, instruccionUsuario);
   }
 
   // El guion se escribe con el MISMO prompt maestro y los MISMOS bloques de citas y de
@@ -155,7 +156,7 @@ ${cronica}
 
 === ESTRUCTURA NARRATIVA (esto NO es contenido; es CÓMO tenés que contar los hechos) ===
 ${estructura.tecnica}
-=== FIN DE LA ESTRUCTURA ===
+=== FIN DE LA ESTRUCTURA ===${instruccion.bloqueParaGuion(instruccionUsuario)}
 
 TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados con la ESTRUCTURA NARRATIVA indicada. No copies el texto de la estructura en el guion: úsalo solo para decidir la apertura, el orden de la revelación y el cierre.
 

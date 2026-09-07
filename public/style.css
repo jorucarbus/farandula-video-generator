@@ -871,6 +871,43 @@ footer {
     margin-bottom: 6px;
 }
 
+/* Interés central del video: plegado, porque la mayoría de las noticias no lo necesitan */
+.instruccion-box {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.instruccion-box > summary {
+    cursor: pointer;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--text);
+    list-style-position: inside;
+}
+.instruccion-box > summary .opcional {
+    font-family: var(--font-body);
+    font-weight: 400;
+    color: var(--text-muted);
+}
+.instruccion-box[open] > summary { margin-bottom: 10px; }
+.instruccion-box label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+.instruccion-box textarea { width: 100%; }
+/* Con texto adentro se nota aunque esté plegado: es una instrucción que cambia todo el resultado
+   y olvidarse de que quedó puesta de la noticia anterior sería peor que no tenerla. */
+.instruccion-box:has(textarea:not(:placeholder-shown)) {
+    border-color: var(--accent-border);
+    background: var(--accent-tint);
+}
+#aviso-instruccion { margin-bottom: 16px; }
+
 /* Aprobación de las personas del guion, antes de repartir las tomas */
 .nombres-guion {
     margin-top: 16px;

@@ -24,6 +24,8 @@
 
 // Cada marco con el nombre que el modelo va a ver y una explicación en términos de farándula, no
 // académicos: el prompt tiene que servirle a un guionista, no a un investigador.
+const instruccion = require('./instruccion');
+
 const MARCOS = {
   conflicto: 'El choque entre las partes: quién enfrentó a quién, qué se dijeron, cómo escaló.',
   humano: 'El costo personal: qué significó esto para la persona, qué se le vino encima, cómo la afecta.',
@@ -81,12 +83,15 @@ function bloqueDeMarcos() {
 //
 // Devuelve siempre algo utilizable o lanza: quien llama decide si degrada. La regla del proyecto es
 // que nada de esto puede tumbar la lectura, así que el servidor lo envuelve.
-async function proponerDos(gemini, actas) {
+async function proponerDos(gemini, actas, instruccionUsuario = '') {
   const hechos = (actas || []).map(a => a?.hechos).filter(Boolean).join('\n\n');
   if (!hechos.trim()) throw new Error('no hay hechos de los que sacar encuadres');
 
   const prompt = PROMPT_ENCUADRES.replace('{{MARCOS}}', bloqueDeMarcos());
-  const datos = await gemini.llamarJSON(prompt, `=== HECHOS ===\n${hechos}\n=== FIN ===`, gemini.TAREAS.encuadres);
+  // El interes que fijo el usuario manda sobre los DOS encuadres: son dos puertas de entrada a la
+  // misma historia, no dos historias. Sin esto, uno de los dos videos se iba para otro lado.
+  const foco = instruccion.bloqueParaEncuadres(instruccionUsuario);
+  const datos = await gemini.llamarJSON(prompt, `=== HECHOS ===\n${hechos}\n=== FIN ===${foco}`, gemini.TAREAS.encuadres);
 
   const lista = Array.isArray(datos?.encuadres) ? datos.encuadres : [];
   const validos = lista

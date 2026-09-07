@@ -14,6 +14,7 @@ const sheets = require('./sheets');
 const seleccion = require('./seleccion');
 const tiempos = require('./tiempos');
 const encuadres = require('./encuadres');
+const instruccion = require('./instruccion');
 const subtitulos = require('./subtitulos');
 const musica = require('./musica');
 const jobStore = require('./jobStore');
@@ -202,7 +203,7 @@ async function proponerEncuadres(job, fuentesDelJob) {
   const actas = (fuentesDelJob || []).map(f => f.acta).filter(Boolean);
   let propuesta;
   try {
-    propuesta = await encuadres.proponerDos(gemini, actas);
+    propuesta = await encuadres.proponerDos(gemini, actas, job?.instruccion);
   } catch (e) {
     console.warn(`  ⚠️ No se pudieron proponer encuadres (${e.message}); los gemelos se diferencian como antes`);
     return job;
@@ -220,7 +221,7 @@ async function proponerEncuadres(job, fuentesDelJob) {
   const cronicas = [];
   for (let i = 0; i < 2; i++) {
     try {
-      const s = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(lista[i]));
+      const s = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(lista[i]), job.instruccion);
       if (!s?.cronica?.trim()) throw new Error('la síntesis volvió sin crónica');
       cronicas.push({
         marco: lista[i].marco,
@@ -261,7 +262,7 @@ async function cronicaConEncuadre(job, encuadre) {
     // en lugar de los hechos — y como el prompt igual le exige 205 palabras de farándula, INVENTABA
     // una noticia entera con famosos que conoce. El usuario lo vio: guion sobre Emilia Mernes y Duki
     // en un job cuya crónica era de Celeste Morán (2026-08-30).
-    const sintesis = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(encuadre));
+    const sintesis = await gemini.sintetizarCronica(actas, job.sesgo || 'neutral', encuadres.instruccionPara(encuadre), job?.instruccion);
     return sintesis?.cronica || null;
   } catch (e) {
     console.warn(`  ⚠️ No se pudo sintetizar la crónica del gemelo con el encuadre "${encuadre.titulo}" (${e.message}), usa la del primero`);
@@ -278,7 +279,7 @@ async function cronicaConSesgo(job, sesgo) {
   try {
     // Mismo caso que arriba: el bug vivía acá desde el 2026-08-24 pero pasaba desapercibido porque
     // esta rama solo se activa con motor grafo Y sesgo favor/contra.
-    const sintesis = await gemini.sintetizarCronica(actas, sesgo);
+    const sintesis = await gemini.sintetizarCronica(actas, sesgo, '', job?.instruccion);
     return sintesis?.cronica || null;
   } catch (e) {
     console.warn(`  ⚠️ No se pudo sintetizar la crónica ${sesgo} del gemelo (${e.message}), usa la del primero`);
@@ -1109,7 +1110,7 @@ async function revisarNombres(result, actas = []) {
 
 app.post('/api/read', async (req, res) => {
   try {
-    const { type, content, sesgo, canalId, jobId: jobIdExistente, sintetizar } = req.body;
+    const { type, content, sesgo, canalId, jobId: jobIdExistente, sintetizar, instruccion: instruccionCruda } = req.body;
     if (!type || !content) {
       return res.status(400).json({ error: 'Faltan type o content' });
     }
@@ -1129,7 +1130,17 @@ app.post('/api/read', async (req, res) => {
     }
 
     const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : (job?.sesgo || 'neutral');
+    // El interés que fija el usuario al pegar la fuente. Viaja con el job para que TODO lo que
+    // venga después (resintetizar, encuadres, gemelo, guion) lo respete sin volver a escribirlo.
+    //
+    // Se distingue "no mandó el campo" de "lo mandó vacío": un cliente que no sabe de esto (o una
+    // llamada de otro flujo) no puede borrar la instrucción que el usuario ya escribió, pero
+    // borrar el texto del campo y volver a procesar SÍ la quita — si no, no habría forma de sacarla.
+    const instruccionElegida = typeof instruccionCruda === 'string'
+      ? instruccion.normalizar(instruccionCruda)
+      : (job?.instruccion || '');
     const contenido = content.trim();
+    if (instruccionElegida) console.log(`  🎯 Interes fijado por el usuario: "${instruccionElegida}"`);
 
     console.log(`📖 ${job ? 'Agregando fuente' : 'Leyendo fuente'} ${fuentesActuales.length + 1}/${MAX_FUENTES} (${type})...`);
     const { acta, tipoReal } = await extraerActaDeFuente(type, contenido);
@@ -1145,7 +1156,7 @@ app.post('/api/read', async (req, res) => {
     const debeSintetizar = !job || sintetizar !== false;
 
     if (!debeSintetizar) {
-      job = jobStore.actualizarJob(job.jobId, { fuentes: todasLasFuentes });
+      job = jobStore.actualizarJob(job.jobId, { fuentes: todasLasFuentes, instruccion: instruccionElegida });
       return res.json({
         status: 'success',
         jobId: job.jobId,
@@ -1158,8 +1169,15 @@ app.post('/api/read', async (req, res) => {
     }
 
     console.log(`📝 Sintetizando crónica (${todasLasFuentes.length} fuente${todasLasFuentes.length > 1 ? 's' : ''}, sesgo: ${sesgoElegido})...`);
-    const cronicaBase = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido);
+    const cronicaBase = await gemini.sintetizarCronica(todasLasFuentes.map(f => f.acta), sesgoElegido, '', instruccionElegida);
     const { result, nombresDetectados } = await revisarNombres(cronicaBase, todasLasFuentes.map(f => f.acta));
+    // Se mide contra las ACTAS y no contra la cronica: la cronica ya sale enfocada por la propia
+    // instruccion, asi que preguntarle a ella si el tema aparece es preguntarle al examinado si
+    // aprobo. Pedir el foco en alguien de quien las fuentes no dicen nada es como se llega a un
+    // guion inventado.
+    const avisoInstruccion = instruccion.avisoSiNoEstaEnLasFuentes(
+      instruccionElegida, todasLasFuentes.map(f => f.acta?.hechos || '').join(' '));
+    if (avisoInstruccion) console.warn(`  ⚠️ ${avisoInstruccion}`);
 
     if (!job) {
       // Primera fuente del video: crear la carpeta de insumos y el job.
@@ -1172,11 +1190,12 @@ app.post('/api/read', async (req, res) => {
         canalId,
         carpetaInsumoId,
         sesgo: sesgoElegido,
+        instruccion: instruccionElegida,
         fuentes: todasLasFuentes,
         ...result,
       });
     } else {
-      job = jobStore.actualizarJob(job.jobId, { sesgo: sesgoElegido, fuentes: todasLasFuentes, ...result });
+      job = jobStore.actualizarJob(job.jobId, { sesgo: sesgoElegido, instruccion: instruccionElegida, fuentes: todasLasFuentes, ...result });
     }
 
     // ⚠️ Los encuadres y las dos crónicas NO se calculan acá, a propósito.
@@ -1213,6 +1232,8 @@ app.post('/api/read', async (req, res) => {
       nombreCorto: result.nombreCorto,
       tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
       nombresDetectados,   // [{leido, sugerido, carpeta, confianza, decir}] — para confirmar en el Paso 1
+      instruccion: job.instruccion || '',
+      avisoInstruccion,    // el interés pedido no aparece en las fuentes (null si todo bien)
       encuadres: job.encuadres || null,   // los dos puntos de entrada propuestos (null si no se pudo)
     });
   } catch (error) {
@@ -1226,7 +1247,7 @@ app.post('/api/read', async (req, res) => {
 // "otro sesgo" volvía a descargar y resubir el video entero para esto).
 app.post('/api/resintetizar', async (req, res) => {
   try {
-    const { jobId, sesgo } = req.body;
+    const { jobId, sesgo, instruccion: instruccionCruda } = req.body;
     if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
     const job = jobStore.obtenerJob(jobId);
     if (!job) return res.status(404).json({ error: 'Job no encontrado' });
@@ -1236,10 +1257,20 @@ app.post('/api/resintetizar', async (req, res) => {
 
     const sesgoElegido = ['favor', 'contra', 'neutral'].includes(sesgo) ? sesgo : 'neutral';
     console.log(`📝 Re-sintetizando con sesgo ${sesgoElegido} (${job.fuentes.length} fuente(s) cacheadas, sin re-descargar)...`);
-    const cronicaBase = await gemini.sintetizarCronica(job.fuentes.map(f => f.acta), sesgoElegido);
+    // Si el usuario cambió el texto del interés, esta es su oportunidad de aplicarlo sin releer
+    // las fuentes: las actas ya están y no dependen ni del sesgo ni del interés. Vaciar el campo
+    // acá también lo borra (mismo criterio que en /api/read).
+    const instruccionElegida = typeof instruccionCruda === 'string'
+      ? instruccion.normalizar(instruccionCruda)
+      : (job.instruccion || '');
+    if (instruccionElegida) console.log(`  🎯 Interes: "${instruccionElegida}"`);
+    const cronicaBase = await gemini.sintetizarCronica(job.fuentes.map(f => f.acta), sesgoElegido, '', instruccionElegida);
     const { result, nombresDetectados } = await revisarNombres(cronicaBase, job.fuentes.map(f => f.acta));
+    const avisoInstruccion = instruccion.avisoSiNoEstaEnLasFuentes(
+      instruccionElegida, job.fuentes.map(f => f.acta?.hechos || '').join(' '));
+    if (avisoInstruccion) console.warn(`  ⚠️ ${avisoInstruccion}`);
 
-    const jobActualizado = jobStore.actualizarJob(jobId, { sesgo: sesgoElegido, ...result });
+    const jobActualizado = jobStore.actualizarJob(jobId, { sesgo: sesgoElegido, instruccion: instruccionElegida, ...result });
     driveHelper.guardarEnInsumo(jobActualizado.carpetaInsumoId, 'lectura.json', JSON.stringify({ fuentes: job.fuentes, ...result }, null, 2))
       .catch(e => console.warn(`⚠️ No se pudo respaldar lectura.json en Drive: ${e.message}`));
 
@@ -1254,6 +1285,9 @@ app.post('/api/resintetizar', async (req, res) => {
       accion: result.accion,
       nombreCorto: result.nombreCorto,
       tono: result.tono, // Fase 8 (música por sentido): ya viaja desde acá, aunque nada lo use todavía
+      nombresDetectados,
+      instruccion: instruccionElegida,
+      avisoInstruccion,
     });
   } catch (error) {
     console.error('Error re-síntesis:', error);
@@ -1367,7 +1401,7 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
         cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
       }
     }
-    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, scriptA, motorElegido);
+    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, scriptA, motorElegido, job?.instruccion);
     const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
     // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
     // texto del post tiene que acompañarla, no repetir el enfoque del primero.
@@ -1481,7 +1515,7 @@ app.post('/api/generate-script', async (req, res) => {
 
     const comoElige = motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`;
     console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
-    const script = await gemini.escribirGuion(cronicaA, angle, angleContent, citasA, null, motorElegido);
+    const script = await gemini.escribirGuion(cronicaA, angle, angleContent, citasA, null, motorElegido, job?.instruccion);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 

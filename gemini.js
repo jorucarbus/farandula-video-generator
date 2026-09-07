@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const expresiones = require('./expresiones');
+const instruccion = require('./instruccion');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -643,7 +644,7 @@ function actaDeContexto(contexto) {
   };
 }
 
-async function sintetizarCronica(actas, sesgo = 'neutral', instruccionEncuadre = '') {
+async function sintetizarCronica(actas, sesgo = 'neutral', instruccionEncuadre = '', instruccionUsuario = '') {
   try {
     if (!Array.isArray(actas) || actas.length === 0) {
       throw new Error('No hay actas para sintetizar');
@@ -656,7 +657,10 @@ async function sintetizarCronica(actas, sesgo = 'neutral', instruccionEncuadre =
     // El encuadre va después del sesgo: son ejes distintos y se suman. El sesgo dice de qué lado se
     // narra; el encuadre, por dónde se entra a la historia. Vacío = comportamiento de siempre.
     const extra = instruccionEncuadre ? `\n\n${instruccionEncuadre}` : '';
-    const userParts = [{ text: `${bloqueActas}\n\n${instruccionSesgo}${extra}` }];
+    // La instruccion del usuario va DESPUES de todo lo demas: es la que manda cuando choca con el
+    // criterio del modelo ("si ahi se nombra a una persona, ESA es el protagonista").
+    const foco = instruccion.bloqueParaLectura(instruccionUsuario);
+    const userParts = [{ text: `${bloqueActas}\n\n${instruccionSesgo}${extra}${foco}` }];
     const datos = await llamarJSON(PROMPTS.lectura, userParts, TAREAS.lectura);
     const limpiar = (s) => (s || '').toString().replace(/[/\\:*?"<>|]/g, '').trim();
 
@@ -755,7 +759,7 @@ REGLAS OBLIGATORIAS PARA NO PARECERTE:
 - Mismo largo, mismo ritmo, misma calidad. No es un resumen ni una segunda parte.`;
 }
 
-async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null) {
+async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null, instruccionUsuario = '') {
   try {
     let descripcionEnfoque;
 
@@ -784,7 +788,7 @@ ${cronica}
 
 === ENFOQUE NARRATIVO (esto NO es contenido; es solo la LENTE con la que debes contar los hechos) ===
 ${descripcionEnfoque}
-=== FIN DEL ENFOQUE ===
+=== FIN DEL ENFOQUE ===${instruccion.bloqueParaGuion(instruccionUsuario)}
 
 TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.
 
@@ -809,7 +813,7 @@ const MOTORES_GUION = {
   // El motor del grafo: elige él mismo la estructura narrativa (el usuario no elige ángulo) y
   // escribe con el MISMO prompt maestro de arriba. `require` perezoso porque guionGrafo.js
   // requiere este módulo de vuelta — cargarlo acá arriba sería un ciclo.
-  grafo: (...args) => require('./guionGrafo').generarGuionGrafo(...args),   // recibe la misma firma, `nota` incluida
+  grafo: (...args) => require('./guionGrafo').generarGuionGrafo(...args),   // misma firma: `nota` e instruccion del usuario incluidas
 };
 
 // El prompt pide 205-220 palabras ("nunca menos de 200") porque de ahí sale la duración del video:
@@ -854,11 +858,11 @@ function exigirCronica(cronica) {
   return texto;
 }
 
-async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini') {
+async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini', instruccionUsuario = '') {
   const fn = MOTORES_GUION[motor];
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
   exigirCronica(cronica);
-  const guion = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar));
+  const guion = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, null, instruccionUsuario));
   const palabras = contarPalabras(guion);
   if (palabras >= PALABRAS_MIN) return entregar(guion);
 
@@ -867,7 +871,7 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
     const nota = `AVISO: el intento anterior de este mismo guion salió de ${palabras} palabras, `
       + `demasiado corto. La longitud NO es opcional: de ella sale la duración del video. `
       + `Escribe entre 205 y 220 palabras, sin recortar el desarrollo.`;
-    const reintento = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, nota));
+    const reintento = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, nota, instruccionUsuario));
     const nuevas = contarPalabras(reintento);
     if (nuevas > palabras) {
       console.log(`  ✏️ Reintento: ${nuevas} palabras`);

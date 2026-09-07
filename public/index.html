@@ -92,6 +92,24 @@
                     </p>
                 </div>
 
+                <!-- Interés central: una sola instrucción que ven TODAS las etapas (lectura,
+                     encuadres de los gemelos y guion). Plegada porque casi siempre no hace falta;
+                     cuando hace falta, es lo que evita que la noticia se le vaya a otra persona. -->
+                <details class="instruccion-box" id="instruccion-box">
+                    <summary>Instrucción para esta noticia <span class="opcional">(opcional)</span></summary>
+                    <label for="instruccion-input">¿En qué querés que se centre? Vale para todas las fuentes y para todo el proceso.</label>
+                    <textarea id="instruccion-input" rows="2" maxlength="400"
+                              placeholder="Ej: céntrate en Shyare Andrade, la ecuatoriana — el resto es contexto"></textarea>
+                    <p class="hint">
+                        Manda sobre el criterio del sistema: decide quién es el protagonista (y por
+                        lo tanto las carpetas de tomas, el título y los hashtags) y qué de cada
+                        fuente se usa. No inventa nada: si tus fuentes traen poco sobre eso, te avisa.
+                    </p>
+                </details>
+                <!-- Fuera del bloque plegable a propósito: si el interés pedido no está en las
+                     fuentes hay que verlo aunque el bloque esté cerrado. -->
+                <div id="aviso-instruccion" class="banner-warning hidden"></div>
+
                 <div class="form-group">
                     <label for="sesgo-select">Sesgo de la narración (hacia el protagonista):</label>
                     <select id="sesgo-select">

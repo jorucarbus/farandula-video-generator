@@ -1255,6 +1255,32 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 
 // PASO 1: Leer fuente (primera) o agregar otra (hasta MAX_FUENTES) sobre la misma noticia.
 // El botón es el mismo en los dos casos — leerFuente() decide según si ya hay jobId.
+// El interés central que escribió el usuario (vacío si no abrió el bloque o no escribió nada).
+function textoInstruccion() {
+    return (document.getElementById('instruccion-input')?.value || '').trim();
+}
+
+// Refleja lo que el servidor hizo con la instrucción: la deja escrita (por si venía guardada en un
+// job recuperado), mantiene el bloque abierto mientras haya texto, y muestra el aviso cuando las
+// fuentes no hablan de lo que se pidió — que es el caso en el que el guion sale inventado.
+function aplicarInstruccion(result) {
+    const campo = document.getElementById('instruccion-input');
+    const caja = document.getElementById('instruccion-box');
+    if (campo && typeof result.instruccion === 'string') campo.value = result.instruccion;
+    if (caja) caja.open = Boolean(campo?.value.trim());
+    state.instruccion = campo?.value.trim() || '';
+
+    const aviso = document.getElementById('aviso-instruccion');
+    if (!aviso) return;
+    if (result.avisoInstruccion) {
+        aviso.textContent = `⚠️ ${result.avisoInstruccion}`;
+        aviso.classList.remove('hidden');
+        log(`⚠️ ${result.avisoInstruccion}`);
+    } else {
+        aviso.classList.add('hidden');
+    }
+}
+
 async function handleRead() {
     const canalId = document.getElementById('canal-select').value;
     const sourceType = document.getElementById('source-type').value;
@@ -1620,6 +1646,9 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
             canalId: canalId,
             jobId: state.jobId || undefined,
             sintetizar: false, // ignorado en la primera fuente: el server la sintetiza igual
+            // El interés central va en CADA lectura: el usuario puede escribirlo recién al agregar
+            // la segunda fuente. Vacío no borra el que el job ya tenga (lo resuelve el servidor).
+            instruccion: textoInstruccion(),
         });
 
         state.fuentes.push({ type: sourceType, content: sourceInput, tipoReal: result.tipoReal, fuenteResumen: result.fuenteResumen });
@@ -1637,6 +1666,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
 
         if (result.sintetizado) {
             log(esPrimera ? '✅ Lectura completada' : `✅ Fuente ${result.numFuentes}/${result.maxFuentes} agregada y procesada`);
+            aplicarInstruccion(result);
             pintarLectura(result);
             marcarFuentesPendientes(false);
             hideProgress();
@@ -1680,7 +1710,8 @@ async function procesarFuentes() {
         log(`📝 Sintetizando crónica con ${state.fuentes.length} fuente(s) (sesgo: ${state.sesgo})...`);
         updateProgress(30);
 
-        const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo: state.sesgo });
+        const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo: state.sesgo, instruccion: textoInstruccion() });
+        aplicarInstruccion(result);
         pintarLectura(result);
         marcarFuentesPendientes(false);
         hideProgress();
@@ -3340,8 +3371,9 @@ async function otroSesgo(sesgo) {
 
         // /resintetizar reusa las actas YA cacheadas en el job: no vuelve a tocar
         // audio/video/web de ninguna fuente (Fase 4 del plan maestro).
-        const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo });
+        const result = await apiCall('/resintetizar', 'POST', { jobId: state.jobId, sesgo, instruccion: textoInstruccion() });
 
+        aplicarInstruccion(result);
         pintarLectura(result);
 
         hideProgress();
@@ -3744,6 +3776,9 @@ async function recuperarJobPendiente() {
     // guardados antes de esa fase — se adapta al formato nuevo para no romper la recuperación.
     state.fuentes = job.fuentes || (job.fuente ? [job.fuente] : []);
     state.sesgo = job.sesgo || job.fuente?.sesgo || 'neutral';
+    // El interés central vuelve escrito y con el bloque abierto: si no, al retomar el proceso el
+    // campo se ve vacío, el usuario cree que no hay ninguno y lo pierde en la próxima resíntesis.
+    aplicarInstruccion({ instruccion: job.instruccion || '' });
     state.materialesAdicionales = job.materialesAdicionales || [];
     state.encuadres = job.encuadres || null;   // de qué va cada video (se propuso en la lectura)
     renderMaterialesLista();
