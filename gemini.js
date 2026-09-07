@@ -137,6 +137,8 @@ PROHIBIDO:
 - Explicar el contexto antes del clímax (arranca directo en la acción).
 - Párrafos separados (TODO en un solo párrafo).
 - Numerar, listar o contar palabras en la salida: entrega SOLO el texto del guion.
+- Mostrar borradores, versiones, correcciones o cualquier comentario tuyo sobre el guion. Tu
+  respuesta ENTERA es el guion final y nada más: ni una palabra antes, ni una después.
 - Presentar como hecho probado un delito, una infidelidad o cualquier acusación que el MATERIAL BASE no dé por confirmada.`,
 
   marcas: `Rol: Senior Audio Engineer & Prompting Strategist para ElevenLabs v3.
@@ -856,7 +858,7 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
   const fn = MOTORES_GUION[motor];
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
   exigirCronica(cronica);
-  const guion = await fn(cronica, angle, angleContent, citas, guionEvitar);
+  const guion = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar));
   const palabras = contarPalabras(guion);
   if (palabras >= PALABRAS_MIN) return entregar(guion);
 
@@ -865,7 +867,7 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
     const nota = `AVISO: el intento anterior de este mismo guion salió de ${palabras} palabras, `
       + `demasiado corto. La longitud NO es opcional: de ella sale la duración del video. `
       + `Escribe entre 205 y 220 palabras, sin recortar el desarrollo.`;
-    const reintento = await fn(cronica, angle, angleContent, citas, guionEvitar, nota);
+    const reintento = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, nota));
     const nuevas = contarPalabras(reintento);
     if (nuevas > palabras) {
       console.log(`  ✏️ Reintento: ${nuevas} palabras`);
@@ -877,6 +879,77 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
     console.warn(`  ⚠️ El reintento del guion falló (${e.message}); se usa el primero`);
     return entregar(guion);
   }
+}
+
+// El guion, y NADA más que el guion.
+//
+// El razonamiento interno de Gemini está apagado (`thinkingBudget: 0`) porque se comía el límite de
+// tokens y cortaba la salida a la mitad. El efecto de rebote apareció el 2026-09-07: sin lugar
+// donde pensar, el modelo piensa EN LA SALIDA. Con el guion de Miss Grand escribió el guion, después
+// contó sus palabras una por una —"Boletos (1) de (2) avión (3)..."—, se autocorrigió cuatro veces
+// y recién al final pegó la versión buena: 2.182 palabras donde tenían que ir 213. El pedido de una
+// longitud exacta (205-220) es justo lo que lo empuja a contar en voz alta.
+//
+// El prompt ya lo prohíbe ("Numerar, listar o contar palabras en la salida") y aun así pasó, así
+// que la defensa tiene que estar en el código. Se queda con el ÚLTIMO bloque de prosa que parezca
+// un guion: cuando el modelo itera, su versión final es la última.
+const PALABRAS_TOPE = 300;   // un guion legítimo ronda las 210; de acá para arriba hay basura
+
+// Marcas de que el modelo se puso a razonar en la salida.
+const SENALES_RAZONAMIENTO = [
+  /\(\d+\)\s*\S+\s*\(\d+\)/,                              // "Boletos (1) de (2)"
+  /^\s*(conteo|revisi[oó]n|ajust|probemos|veamos|idea:|longitud:|palabras:|total:)/im,
+  /^\s*\d+\.\s+\S+.*\(\d+\)/m,                             // "1. Boletos (1) de (2)..."
+  /^\s*-{3,}\s*$/m,                                            // separador markdown
+];
+
+// Un bloque es basura si tiene numeración de conteo, si abre como comentario del modelo, o si es
+// tan corto que no puede ser un guion.
+function pareceRazonamiento(bloque) {
+  if (/\(\d+\)/.test(bloque)) return true;
+  if (/^\s*(conteo|revisi[oó]n|ajust|probemos|veamos|idea:|longitud:|palabras:|total:|final:|inicio:|agreguemos|ampliemos)/i.test(bloque)) return true;
+  if (/^\s*(-{3,}|\d+\.)\s*$/.test(bloque.trim())) return true;
+  return false;
+}
+
+// El modelo a veces pega el guion bueno al final de una línea suya, sin salto de por medio:
+// "...Un solo bloque de texto.Boletos de avión cancelados...". Se corta en ese punto pegado.
+function despegar(bloque) {
+  const m = bloque.match(/\.([A-ZÁÉÍÓÚÑ¿¡"“][^]*)$/);
+  if (!m) return bloque;
+  const cola = m[1].trim();
+  return contarPalabras(cola) >= PALABRAS_MIN - 40 ? cola : bloque;
+}
+
+function limpiarGuion(texto) {
+  const guion = (texto || '').trim();
+  const palabras = contarPalabras(guion);
+  // El caso normal no se toca: solo se interviene cuando el largo ya delata que hay algo de más.
+  if (palabras <= PALABRAS_TOPE) return guion;
+  if (!SENALES_RAZONAMIENTO.some(re => re.test(guion))) {
+    // Largo pero sin rastros de razonamiento: es el modelo pasándose de largo, no basura. Se
+    // entrega igual (recortarlo a ciegas cortaría el guion a mitad de frase) y se avisa.
+    console.warn(`  ⚠️ Guion de ${palabras} palabras, muy por encima de las 220 pedidas; se entrega como vino`);
+    return guion;
+  }
+
+  // Por LINEA y no por parrafo: el modelo mete su conteo y su guion final en el mismo parrafo
+  // ("...Un solo bloque de texto.Boletos de avion cancelados..."), asi que partir por lineas en
+  // blanco tiraria a la basura el guion bueno junto con el conteo que lo precede.
+  const bloques = guion.split(/\n/).map(b => b.trim()).filter(Boolean);
+  const candidatos = bloques
+    .filter(b => !pareceRazonamiento(b))
+    .map(despegar)
+    .filter(b => !pareceRazonamiento(b) && contarPalabras(b) >= PALABRAS_MIN - 40);
+
+  if (!candidatos.length) {
+    console.warn(`  ⚠️ El guion vino con el razonamiento del modelo (${palabras} palabras) y no se pudo aislar el guion; se entrega como vino`);
+    return guion;
+  }
+  const elegido = candidatos[candidatos.length - 1];
+  console.warn(`  🧹 El modelo razonó en la salida (${palabras} palabras en ${bloques.length} lineas);`
+    + ` se usa su versión final: ${contarPalabras(elegido)} palabras`);
+  return elegido;
 }
 
 // Único lugar por el que sale TODO guion entregado, de cualquier motor: acá se anota su apertura
@@ -1282,6 +1355,7 @@ function getAngleName(angle) {
 
 module.exports = {
   escribirGuion, MOTORES_GUION, variarMetadatos,
+  limpiarGuion,   // guarda: el guion sale sin el razonamiento del modelo pegado
   bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, PROMPTS,
   procesarLectura,
   extraerActa,
