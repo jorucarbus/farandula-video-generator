@@ -89,6 +89,7 @@ function rehidratar() {
     if (ajenas) console.log(`ℹ️ Cola: ${ajenas} tarea(s) de otro entorno descartada(s) del respaldo compartido`);
     let interrumpidas = 0;
     let pendientes = 0;
+    let sinCartel = 0;
     for (const t of tareas) {
       if (t.estado === 'renderizando') {
         t.estado = 'error';
@@ -96,12 +97,24 @@ function rehidratar() {
         t.terminado = new Date().toISOString();
         interrumpidas++;
       } else if (t.estado === 'en_cola') {
-        pendientes++;
+        // El cartel de portada es un PNG que el navegador dibujó y dejó en el disco efímero ANTES
+        // de encolar: el reinicio se lo llevó y no hay de dónde recuperarlo (el audio sí se rescata
+        // de Drive por su token, el cartel no). Renderizarla igual daría un video sin portada,
+        // subido a Drive y publicable — peor que pedir que se regenere.
+        if (t.params?.cartelPath && !fs.existsSync(t.params.cartelPath)) {
+          t.estado = 'error';
+          t.error = 'El servidor se reinició antes de que le tocara el turno y se perdió el cartel de portada. Volvé a generarlo.';
+          t.terminado = new Date().toISOString();
+          sinCartel++;
+        } else {
+          pendientes++;
+        }
       }
     }
     podar();
-    if (interrumpidas || pendientes) {
-      console.log(`♻️ Cola de render rehidratada: ${pendientes} en espera, ${interrumpidas} interrumpida(s) por el reinicio`);
+    if (interrumpidas || pendientes || sinCartel) {
+      console.log(`♻️ Cola de render rehidratada: ${pendientes} en espera, ${interrumpidas} interrumpida(s) por el reinicio`
+        + `${sinCartel ? `, ${sinCartel} sin su cartel de portada` : ''}`);
     }
     guardar();
   } catch (e) {
@@ -150,6 +163,25 @@ function encolar({ renderId = null, jobId = null, variante = 'A', etiqueta = '',
   return tarea;
 }
 
+// Techo de tiempo de UN render. Medido: un video de 40 clips tarda 2-3 minutos de punta a punta,
+// así que 30 es un margen enorme — no está para apurar a nadie, está para que la cola nunca quede
+// muerta.
+//
+// Por qué existe (2026-09-07): una subida a Drive se colgó sin responder y, como la cola procesa
+// de a uno esperando a que termine el de adelante, los dos videos que venían detrás se quedaron
+// esperando para siempre. Con un solo punto de la cadena que se cuelgue, TODO el sistema de
+// renders se detiene sin que nada falle a la vista.
+//
+// La causa concreta de aquella vez ya está tapada (`SUBIDA_TIMEOUT_MS` en drive.js), pero esta
+// guarda es la general: cubre el próximo cuelgue, venga de donde venga.
+//
+// ⚠️ Vencido el plazo NO se puede cancelar el trabajo que quedó colgado — JavaScript no aborta una
+// promesa ajena. Lo que se hace es dejar de esperarlo: la tarea se marca en error y la cola sigue.
+// El render huérfano puede seguir vivo en segundo plano y, si termina, escribir en `historial.json`
+// mientras corre el siguiente. Es un riesgo aceptado a cambio de no perder la cola entera: pasa
+// solo cuando algo ya está roto, y el peor caso es que dos videos repitan una toma.
+const TOPE_RENDER_MS = 30 * 60 * 1000;
+
 async function bombear() {
   if (corriendo || !ejecutor) return;
   const siguiente = tareas.find(t => t.estado === 'en_cola');
@@ -162,8 +194,19 @@ async function bombear() {
   siguiente.etapa = 'Preparando…';
   guardar();
 
+  let reloj;
+  const seColgo = new Promise((_, reject) => {
+    reloj = setTimeout(() => reject(new Error(
+      `El render pasó de ${TOPE_RENDER_MS / 60000} minutos sin terminar (se quedó en "${siguiente.etapa || 'renderizando'}"). `
+      + 'Se abandona para no trabar los que están esperando; volvé a generarlo.')), TOPE_RENDER_MS);
+    if (reloj.unref) reloj.unref();
+  });
+
   try {
-    siguiente.resultado = await ejecutor(siguiente.params, siguiente.renderId);
+    siguiente.resultado = await Promise.race([
+      ejecutor(siguiente.params, siguiente.renderId),
+      seColgo,
+    ]);
     siguiente.estado = 'listo';
     siguiente.progreso = 100;
     siguiente.etapa = 'Listo';
@@ -172,6 +215,7 @@ async function bombear() {
     siguiente.error = e.message;
     console.error(`❌ [${siguiente.renderId}] Render fallido en la cola: ${e.message}`);
   }
+  clearTimeout(reloj);
   siguiente.terminado = new Date().toISOString();
   // Los params ya no hacen falta y son lo más pesado de la tarea (fragmentos completos): se
   // sueltan al terminar para no engordar cola.json ni el respaldo de Drive.

@@ -235,26 +235,53 @@ async function intentarDescarga(fileId, destDir, destPath) {
 // Fix: engancharle un listener de error al stream ANTES de dárselo a googleapis, y correr la
 // subida contra ESE error en carrera — así un stream roto rechaza la promesa (el try/catch de
 // quien llama sí lo atrapa) en vez de crashear el proceso.
+// Techo de espera de una subida. Un MP4 de un video de 80s pesa 20-40 MB y sube en segundos;
+// 10 minutos es holgadísimo y aun así corta el cuelgue.
+//
+// Por qué hace falta (2026-09-07): un render real se quedó clavado en "Subiendo el video a Drive"
+// **14 minutos**, y como la cola renderiza de a uno, los dos videos que venían detrás quedaron
+// esperando a algo que nunca iba a terminar. La subida no lanza error ni responde: se queda muda,
+// y `await` sin techo es para siempre. Mismo modo de falla que ya mordió dos veces —`apiCall` sin
+// timeout dejando el botón muerto, y el stream de descarga sin listener de error.
+const SUBIDA_TIMEOUT_MS = 10 * 60 * 1000;
+
 async function subirVideo(localPath, fileName, destFolderId, mimeType = 'video/mp4') {
   const cliente = getDriveOAuth() || getDrive();
   const stream = fs.createReadStream(localPath);
   const errorDeStream = new Promise((_, reject) => stream.once('error', reject));
-  const res = await Promise.race([
-    cliente.files.create({
-      requestBody: {
-        name: fileName,
-        parents: [destFolderId],
-      },
-      media: {
-        mimeType,
-        body: stream,
-      },
-      fields: 'id, name, webViewLink',
-      supportsAllDrives: true,
-    }),
-    errorDeStream,
-  ]);
-  return res.data;
+
+  let avisarTarde;
+  const seHizoTarde = new Promise((_, reject) => {
+    avisarTarde = setTimeout(
+      () => reject(new Error(`La subida de "${fileName}" a Drive pasó de ${SUBIDA_TIMEOUT_MS / 60000} minutos sin responder`)),
+      SUBIDA_TIMEOUT_MS);
+    if (avisarTarde.unref) avisarTarde.unref();
+  });
+
+  try {
+    const res = await Promise.race([
+      cliente.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [destFolderId],
+        },
+        media: {
+          mimeType,
+          body: stream,
+        },
+        fields: 'id, name, webViewLink',
+        supportsAllDrives: true,
+      }),
+      errorDeStream,
+      seHizoTarde,
+    ]);
+    return res.data;
+  } finally {
+    clearTimeout(avisarTarde);
+    // El stream queda a medio leer si la subida se abandonó: sin esto, el descriptor del archivo
+    // sigue abierto y el MP4 no se puede borrar en Windows.
+    stream.destroy();
+  }
 }
 
 // Renombrar un archivo existente (Fase 8c: etiquetar pistas de música con su offset de inicio
