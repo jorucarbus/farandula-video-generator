@@ -341,6 +341,11 @@ function pintarVista() {
     const editor = document.getElementById('guion-editor');
     if (editor) { editor.value = d.guion || ''; actualizarStatsGuion(); }
 
+    // La aprobacion de personas es por canal: si el guion de A quedo esperando y me paso a B,
+    // el bloque tiene que mostrar los nombres de B (o desaparecer si B todavia no llego ahi).
+    if (d.nombresGuion && !d.fragments) pintarNombresGuion(state.varianteActiva);
+    else document.getElementById('nombres-guion')?.classList.add('hidden');
+
     if (d.fragments) {
         renderAsignaciones(false, state.sourceData?.protagonista);
     } else {
@@ -1599,6 +1604,7 @@ async function leerFuente(sourceType, sourceInput, sesgo, canalId) {
         state.selectedAngle = null;
         state.guion = null;
         state.fragments = null;
+        state.nombresGuion = null;
         state.audioToken = null;
         state.selectedDestFolder = null;
         lockFrom('script-section');
@@ -1665,6 +1671,7 @@ async function procesarFuentes() {
         state.selectedAngle = null;
         state.guion = null;
         state.fragments = null;
+        state.nombresGuion = null;
         state.audioToken = null;
         state.selectedDestFolder = null;
         lockFrom('script-section');
@@ -1750,6 +1757,7 @@ async function handleGenerateScript() {
         state.varianteActiva = 'A';
         // Rehacer el guion (nuevo ángulo o regenerar) invalida asignaciones/audio/destino ya hechos
         state.fragments = null;
+        state.nombresGuion = null;
         state.audioToken = null;
         state.selectedDestFolder = null;
         lockFrom('guion-section');
@@ -1852,20 +1860,162 @@ async function aprobarGuion() {
         invalidarPasos(['asignaciones', 'audio'], v);
         lockFrom('revision-section', v);
 
-        showProgress(`${icon('folderOpen')} Asignando carpetas (${etiquetaVariante(v)})...`);
-        log(`📂 Asignando carpetas a los párrafos de ${etiquetaVariante(v)}...`);
+        // Antes de repartir nada: qué personas salen en ESTE guion y en qué carpeta cae cada una.
+        // El usuario aprueba la lista y solo esas carpetas entran al reparto.
+        showProgress(`${icon('userFocus')} Buscando las personas del guion (${etiquetaVariante(v)})...`);
+        updateProgress(50);
+        const nom = await apiCall('/nombres-guion', 'POST', {
+            script: d.guion,
+            protagonista: state.sourceData?.protagonista,
+            jobId: state.jobId,
+        });
+        hideProgress();
+        d.nombresGuion = nom.nombres || [];
+        state.carpetas = nom.carpetas || state.carpetas;
+        pintarNombresGuion(v);
+        setPasoDeVariante(v, 'guion-section', 'active');
+        return;   // sigue en `confirmarNombres()`, cuando el usuario decida
+    } catch (error) {
+        mostrarError(`Error buscando las personas del guion de ${etiquetaVariante(v)}: ${error.message}`,
+            () => aprobarGuion(), 'guion-section');
+    } finally {
+        desocupar(v, 'guion');
+    }
+}
+
+// Pinta el bloque de aprobación de personas. Marcadas de entrada las de carpeta segura; las
+// dudosas y las que no cayeron en ninguna carpeta quedan a la vista, sin marcar.
+function pintarNombresGuion(v) {
+    const caja = document.getElementById('nombres-guion');
+    const lista = document.getElementById('nombres-lista');
+    if (!caja || !lista) return;
+    const d = V(v);
+    const nombres = d.nombresGuion || [];
+
+    // Una fila por CARPETA, no por nombre: dos formas del mismo nombre (“Fátima” y “Fátima Bosch”)
+    // caen en la misma carpeta y marcarla dos veces no significa nada.
+    const porCarpeta = new Map();
+    const sinCarpeta = [];
+    for (const n of nombres) {
+        if (!n.carpeta) { sinCarpeta.push(n.leido); continue; }
+        const previo = porCarpeta.get(n.carpeta);
+        if (!previo) porCarpeta.set(n.carpeta, { ...n, leidos: [n.leido] });
+        else {
+            previo.leidos.push(n.leido);
+            if (n.confianza === 'alta') previo.confianza = 'alta';
+        }
+    }
+    // Lo que el usuario ya haya tocado en esta variante manda sobre lo detectado.
+    const marcadas = d.carpetasAprobadas
+        || [...porCarpeta.values()].filter(n => n.confianza === 'alta').map(n => n.carpeta);
+
+    lista.innerHTML = '';
+    for (const [carpeta, n] of porCarpeta) {
+        const label = document.createElement('label');
+        label.className = `nombre-item${n.confianza === 'media' ? ' dudoso' : ''}`;
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = carpeta;
+        cb.checked = marcadas.includes(carpeta);
+        label.append(cb, ` ${carpeta}`);
+        if (n.confianza === 'media') {
+            const aviso = document.createElement('span');
+            aviso.className = 'nombre-dudoso';
+            aviso.textContent = ' ¿es esta?';
+            label.appendChild(aviso);
+        }
+        const leidos = [...new Set(n.leidos)].filter(x => x !== carpeta);
+        if (leidos.length) {
+            const dice = document.createElement('span');
+            dice.className = 'nombre-leido';
+            dice.textContent = ` (el guion dice “${leidos.join('”, “')}”)`;
+            label.appendChild(dice);
+        }
+        lista.appendChild(label);
+    }
+
+    const avisoSin = document.getElementById('nombres-sin-carpeta');
+    if (sinCarpeta.length) {
+        avisoSin.textContent = `Sin carpeta en Drive: ${[...new Set(sinCarpeta)].join(', ')}.`
+            + ` Si alguno importa, creá su carpeta en Drive, actualizá la lista y volvé a aprobar el guion.`;
+        avisoSin.classList.remove('hidden');
+    } else {
+        avisoSin.classList.add('hidden');
+    }
+
+    // El desplegable de agregar trae TODAS las carpetas: el cotejo puede no haber encontrado a
+    // alguien que el usuario sí sabe que tiene que estar.
+    const extra = document.getElementById('nombres-extra');
+    extra.innerHTML = '<option value="">— Elegí una carpeta —</option>';
+    for (const c of state.carpetas || []) extra.appendChild(new Option(c, c));
+    extra.onchange = () => {
+        const c = extra.value;
+        extra.value = '';
+        if (!c) return;
+        const ya = [...lista.querySelectorAll('input')].find(i => i.value === c);
+        if (ya) { ya.checked = true; return; }
+        const label = document.createElement('label');
+        label.className = 'nombre-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = c; cb.checked = true;
+        label.append(cb, ` ${c}`);
+        lista.appendChild(label);
+    };
+
+    caja.classList.remove('hidden');
+    caja.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function carpetasMarcadas() {
+    return [...document.querySelectorAll('#nombres-lista input:checked')].map(i => i.value);
+}
+
+// Reparte las tomas usando SOLO las carpetas marcadas.
+async function confirmarNombres() {
+    const elegidas = carpetasMarcadas();
+    if (!elegidas.length) {
+        alert('Marcá al menos una carpeta, o usá el botón “Usar todas las carpetas”.');
+        return;
+    }
+    const v = state.varianteActiva;
+    V(v).carpetasAprobadas = elegidas;
+    await repartirTomas(v, elegidas);
+}
+
+// Escape: ninguna de las carpetas detectadas sirve y el usuario prefiere el comportamiento viejo
+// (que el modelo elija entre las 294). A mano y no automático: es el que producía las carpetas
+// que no tienen nada que ver.
+async function usarTodasLasCarpetas() {
+    const v = state.varianteActiva;
+    V(v).carpetasAprobadas = null;
+    await repartirTomas(v, null);
+}
+
+// El reparto en sí — lo que antes hacía `aprobarGuion()` de corrido.
+async function repartirTomas(v, carpetasAprobadas) {
+    const d = V(v);
+    document.getElementById('nombres-guion')?.classList.add('hidden');
+    ocupar(v, 'guion');
+    try {
+        showProgress(`${icon('folderOpen')} Repartiendo las tomas (${etiquetaVariante(v)})...`);
+        log(`📂 Repartiendo las tomas de ${etiquetaVariante(v)}`
+            + `${carpetasAprobadas ? ` entre ${carpetasAprobadas.length} carpeta(s): ${carpetasAprobadas.join(', ')}` : ' entre todas las carpetas'}...`);
         updateProgress(52);
         const result = await apiCall(cfg().asignar, 'POST', {
             [cfg().asignarParam]: d.guion,
             protagonista: state.sourceData?.protagonista,
             jobId: state.jobId,
             variante: v,
+            ...(carpetasAprobadas ? { carpetasAprobadas } : {}),
         });
         d.fragments = result[cfg().parrafosKey];
         d.avisoReconstruccion = result.avisoReconstruccion || null;
         // Las carpetas de famosos y el material adicional son del JOB, no de la variante: las dos
         // versiones eligen entre las mismas carpetas y comparten las fotos/videos de apoyo.
         state.carpetas = result.carpetas;
+        // Las de ESTA noticia van por variante: cada guion nombra a su gente. Es lo que pone las
+        // opciones buenas arriba en el desplegable de cada párrafo.
+        d.carpetasRelevantes = result.carpetasRelevantes || [];
         state.materialesAdicionales = result.materialesDisponibles || [];
         if (v === state.varianteActiva) renderAsignaciones(result.protagonistaSinCarpeta, result.protagonista);
 
@@ -1875,7 +2025,7 @@ async function aprobarGuion() {
         setPasoDeVariante(v, 'revision-section', 'active');
     } catch (error) {
         mostrarError(`Error asignando las carpetas de ${etiquetaVariante(v)}: ${error.message}`,
-            () => aprobarGuion(), 'guion-section');
+            () => repartirTomas(v, carpetasAprobadas), 'guion-section');
     } finally {
         desocupar(v, 'guion');
     }
@@ -1905,20 +2055,73 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     const lista = document.getElementById('lista-asignaciones');
     lista.innerHTML = '';
     const itemsMaterial = aplanarMaterialesCliente(state.materialesAdicionales);
-    V().fragments.forEach((f, i) => {
+    const dv = V();
+    // Las carpetas aprobadas para esta noticia van PRIMERO y aparte. El desplegable tenía las 294
+    // en orden alfabético, así que corregir un párrafo era buscar el nombre entre 294 opciones,
+    // párrafo por párrafo. Las de la noticia son dos o tres y están arriba.
+    // Solo como respaldo, cuando no hay lista aprobada (job viejo recuperado), se usan las que ya
+    // estan asignadas a algun parrafo. NO se mezclan con las aprobadas: si el modelo metio Aaron
+    // por error, sumarlo al grupo bueno seria repetir el problema que este bloque vino a resolver.
+    const asignadas = [...new Set((dv.fragments || []).map(f => f.famoso).filter(Boolean))];
+    const relevantes = (dv.carpetasRelevantes?.length ? dv.carpetasRelevantes : asignadas)
+        .filter(c => (state.carpetas || []).includes(c))
+        .sort((a, b) => a.localeCompare(b));
+    const armarOpciones = (sel, elegida) => {
+        sel.innerHTML = '';
+        const poner = (destino, c) => {
+            const o = document.createElement('option');
+            o.value = c; o.textContent = c;
+            if (c === elegida) o.selected = true;
+            destino.appendChild(o);
+        };
+        if (relevantes.length) {
+            const g1 = document.createElement('optgroup');
+            g1.label = 'De esta noticia';
+            for (const c of relevantes) poner(g1, c);
+            sel.appendChild(g1);
+            const g2 = document.createElement('optgroup');
+            g2.label = 'Todas las carpetas';
+            for (const c of state.carpetas) if (!relevantes.includes(c)) poner(g2, c);
+            sel.appendChild(g2);
+        } else {
+            for (const c of state.carpetas) poner(sel, c);
+        }
+    };
+
+    // Poner la misma carpeta en TODOS los párrafos de una vez. Con un solo protagonista es lo que
+    // hace falta el 90% de las veces, y hacerlo párrafo por párrafo era el trabajo lento.
+    if (relevantes.length) {
+        const fila = document.createElement('div');
+        fila.className = 'asignacion-todos';
+        const etq = document.createElement('label');
+        etq.textContent = 'Poner en TODOS los párrafos:';
+        const selTodos = document.createElement('select');
+        selTodos.appendChild(new Option('— Elegí una carpeta —', ''));
+        for (const c of relevantes) selTodos.appendChild(new Option(c, c));
+        for (const c of state.carpetas) if (!relevantes.includes(c)) selTodos.appendChild(new Option(c, c));
+        selTodos.onchange = () => {
+            const c = selTodos.value;
+            selTodos.value = '';
+            if (!c) return;
+            dv.fragments.forEach(fr => { fr.famoso = c; });
+            renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre);
+            log(`📂 Los ${dv.fragments.length} párrafos quedaron en ${c}`);
+        };
+        fila.append(etq, selTodos);
+        lista.appendChild(fila);
+    }
+
+    dv.fragments.forEach((f, i) => {
         const div = document.createElement('div');
         div.className = 'asignacion-row';
         const p = document.createElement('p');
         p.className = 'asignacion-label';
         p.textContent = `${i + 1}. (${f.porcentaje}%) ${f.texto}`;
         const sel = document.createElement('select');
-        state.carpetas.forEach(c => {
-            const o = document.createElement('option');
-            o.value = c; o.textContent = c;
-            if (c === f.famoso) o.selected = true;
-            sel.appendChild(o);
-        });
-        sel.onchange = () => { state.fragments[i].famoso = sel.value; };
+        armarOpciones(sel, f.famoso);
+        // `dv`, no `state`: con gemelos, editar la carpeta de un párrafo del video B escribía en
+        // los fragmentos del A (state === variante A) y el B se renderizaba con lo viejo.
+        sel.onchange = () => { dv.fragments[i].famoso = sel.value; };
         div.appendChild(p);
         div.appendChild(sel);
 
@@ -1999,9 +2202,9 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
 
             const aplicarSeleccion = () => {
                 const item = itemsMaterial.find(it => it.id === selMat.value);
-                if (!item) { state.fragments[i].materialAdicional = null; }
+                if (!item) { dv.fragments[i].materialAdicional = null; }
                 else {
-                    state.fragments[i].materialAdicional = {
+                    dv.fragments[i].materialAdicional = {
                         materialId: item.materialId, tipo: item.tipo, citaId: item.citaId || undefined,
                         ...(item.tipo === 'cita' ? { inicio: parseFloat(inIni.value) || 0, fin: parseFloat(inFin.value) || 0 } : {}),
                     };
@@ -2261,6 +2464,7 @@ async function regenerarSoloGemelo() {
         const d = V('B');
         // Rehacer el guion del gemelo invalida SUS asignaciones y SU locución; el primero no se toca.
         d.fragments = null;
+        d.nombresGuion = null;
         d.audioToken = null;
         d.selectedDestFolder = null;
         lockFrom('guion-section', 'B');
@@ -3125,6 +3329,7 @@ async function otroSesgo(sesgo) {
         state.selectedAngle = null;
         state.guion = null;
         state.fragments = null;
+        state.nombresGuion = null;
         state.audioToken = null;
         state.selectedDestFolder = null;
         lockFrom('script-section');

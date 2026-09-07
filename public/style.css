@@ -871,6 +871,65 @@ footer {
     margin-bottom: 6px;
 }
 
+/* Aprobación de las personas del guion, antes de repartir las tomas */
+.nombres-guion {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--accent-tint);
+    border: 1px solid var(--accent-border);
+    border-radius: var(--radius);
+}
+.nombres-guion h3 {
+    font-size: 1rem;
+    margin-bottom: 4px;
+}
+.nombres-lista {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 12px 0;
+}
+.nombre-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
+    cursor: pointer;
+}
+/* El cotejo fonético encontró una carpeta parecida pero no idéntica. Se muestra sin marcar y
+   señalada: "Camila" y "Camilo" suenan casi igual, y quien decide es el usuario. */
+.nombre-item.dudoso { border-color: var(--warning-border); background: var(--warning-tint); }
+.nombre-dudoso { color: var(--warning); font-weight: 700; font-size: 0.8rem; }
+.nombre-leido { color: var(--text-muted); font-size: 0.8rem; }
+.nombres-agregar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+.nombres-agregar label { font-size: 0.85rem; color: var(--text-muted); }
+.nombres-agregar select { width: auto; min-width: 220px; max-width: 100%; }
+
+/* "Poner en TODOS los párrafos", arriba de la lista de asignaciones */
+.asignacion-todos {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+.asignacion-todos label { font-size: 0.85rem; font-weight: 700; margin: 0; }
+.asignacion-todos select { width: auto; min-width: 220px; max-width: 100%; }
+
 /* Avance del render por canal, debajo de los botones del Paso 6 */
 .render-avance { margin-top: 14px; }
 .render-avance-fila { margin-bottom: 10px; }

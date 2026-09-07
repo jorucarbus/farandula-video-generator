@@ -1527,22 +1527,36 @@ app.post('/api/generate-script', async (req, res) => {
 // Devuelve [] si no encuentra ninguna — quien llama decide qué hacer (hoy: usar todas, que es el
 // comportamiento viejo).
 function filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista) {
-  const candidatos = new Set();
-  const sumar = (n) => { const v = (n || '').trim(); if (v.length > 2) candidatos.add(v); };
+  const encontradas = new Set();
+  for (const n of detectarNombresDeLaNoticia(script, carpetas, job, protagonista)) {
+    if (n.carpeta && n.confianza === 'alta') encontradas.add(n.carpeta);
+  }
+  return [...encontradas].sort((a, b) => a.localeCompare(b));
+}
 
-  sumar(protagonista);
-  sumar(job?.protagonista);
-  sumar(job?.secundario);
-  for (const f of job?.fuentes || []) for (const p of f.acta?.personas || []) sumar(p);
+// Igual que el filtro de arriba, pero devolviendo el DETALLE: qué nombre se leyó, en qué carpeta
+// cayó y de dónde salió. Es lo que el usuario aprueba antes de repartir las tomas — hasta acá el
+// cotejo corría a ciegas y, cuando fallaba, la corrección era carpeta por carpeta en cada párrafo
+// ("como me toca cambiar de 1 en 1 es muy tardado", 2026-09-06).
+function detectarNombresDeLaNoticia(script, carpetas, job, protagonista) {
+  const candidatos = new Map();   // nombre -> de dónde salió (el primero que lo aportó)
+  const sumarCon = (n, origen) => {
+    const v = (n || '').trim();
+    if (v.length > 2 && !candidatos.has(v)) candidatos.set(v, origen);
+  };
+  sumarCon(protagonista, 'protagonista');
+  sumarCon(job?.protagonista, 'protagonista');
+  sumarCon(job?.secundario, 'secundario');
+  for (const f of job?.fuentes || []) for (const p of f.acta?.personas || []) sumarCon(p, 'lectura');
 
   // Nombres propios del guion: secuencias de palabras capitalizadas. Es un tamiz grueso a
   // propósito — lo que sobre se descarta solo en el cotejo, que exige una carpeta que suene igual.
   for (const m of (script || '').matchAll(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+(?:de|del|la|los)?\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})*)/g)) {
-    sumar(m[1]);
+    sumarCon(m[1], 'guion');
   }
 
-  const encontradas = new Set();
-  for (const nombre of candidatos) {
+  const detectados = [];
+  for (const [nombre, origen] of candidatos) {
     // Se prueba el nombre completo y, si no encuentra, sus partes de izquierda a derecha.
     //
     // Hace falta porque las carpetas no siguen un formato único: algunas llevan nombre y apellido
@@ -1555,20 +1569,57 @@ function filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista) {
     // "Dayana_Moran" ni "Dayana_Zambrano".
     const partes = nombre.split(/\s+/).filter(p => p.length > 3);
     const variantes = [nombre, ...(partes.length > 1 ? [partes.slice(0, 2).join(' '), partes[0]] : [])];
+    let hallazgo = null;
     for (const v of variantes) {
       const r = famosos.cotejar(v, carpetas);
-      // Solo confianza ALTA: con 294 carpetas, aceptar parecidos mete a la persona equivocada, que
-      // es peor que no encontrarla. "Camila" y "Camilo" suenan casi igual.
-      if (r?.carpeta && r.confianza === 'alta') { encontradas.add(r.carpeta); break; }
+      // Solo confianza ALTA para dar la carpeta por buena: con 294 carpetas, aceptar parecidos mete
+      // a la persona equivocada, que es peor que no encontrarla. "Camila" y "Camilo" suenan casi
+      // igual. La confianza MEDIA sí viaja, pero como SUGERENCIA sin marcar: la decide el usuario
+      // en pantalla, que es justo lo que el cotejo automático no puede hacer solo.
+      if (r?.carpeta && r.confianza === 'alta') { hallazgo = { carpeta: r.carpeta, confianza: 'alta' }; break; }
+      if (r?.carpeta && r.confianza === 'media' && !hallazgo) hallazgo = { carpeta: r.carpeta, confianza: 'media' };
     }
+    detectados.push({ leido: nombre, origen, carpeta: hallazgo?.carpeta || null, confianza: hallazgo?.confianza || null });
   }
-  return [...encontradas].sort((a, b) => a.localeCompare(b));
+  // Primero los que tienen carpeta segura, después las sugerencias, y al final los que no cayeron
+  // en ninguna: el orden en que conviene revisarlos.
+  const peso = { alta: 0, media: 1 };
+  return detectados.sort((a, b) => (peso[a.confianza] ?? 2) - (peso[b.confianza] ?? 2)
+    || a.leido.localeCompare(b.leido));
 }
+
+// Los nombres que salen en el guion, con la carpeta de Drive en la que cae cada uno, para que el
+// usuario los APRUEBE antes de repartir las tomas. Es barato (no llama a ningún modelo: solo lista
+// carpetas y coteja fonéticamente), así que puede correr en cada aprobación de guion.
+app.post('/api/nombres-guion', async (req, res) => {
+  try {
+    const { script, protagonista, jobId } = req.body;
+    if (!script) return res.status(400).json({ error: 'Falta script' });
+
+    let carpetas = [];
+    if (driveClient) {
+      const folders = await listarCarpetasFamosos();
+      carpetas = folders.map(f => f.name).sort((a, b) => a.localeCompare(b));
+    }
+    if (carpetas.length === 0) {
+      return res.status(500).json({ error: 'No se encontraron carpetas de famosos en Drive' });
+    }
+
+    const job = jobId ? jobStore.obtenerJob(jobId) : null;
+    const nombres = detectarNombresDeLaNoticia(script, carpetas, job, protagonista);
+    const conCarpeta = nombres.filter(n => n.confianza === 'alta').length;
+    console.log(`🧾 Nombres del guion: ${nombres.length} detectado(s), ${conCarpeta} con carpeta segura`);
+    res.json({ status: 'success', nombres, carpetas });
+  } catch (error) {
+    console.error('Error detectando nombres:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ETAPA 3: Fragmentación + Carpetas
 app.post('/api/fragment', async (req, res) => {
   try {
-    const { script, protagonista, jobId, variante = 'A' } = req.body;
+    const { script, protagonista, jobId, variante = 'A', carpetasAprobadas } = req.body;
 
     if (!script) {
       return res.status(400).json({ error: 'Falta script' });
@@ -1594,11 +1645,20 @@ app.post('/api/fragment', async (req, res) => {
     // No es un problema de prompt sino de opciones: dándole 294 candidatos para una noticia de dos
     // personas, 292 son ruido. Con la lista corta, ante la duda solo puede elegir entre gente que sí
     // sale en la noticia.
+    // Si el usuario aprobó una lista en pantalla, esa MANDA y no se vuelve a cotejar nada: él vio
+    // los nombres y decidió. Solo se filtra contra las carpetas que existen de verdad en Drive, por
+    // si alguna se renombró entre la aprobación y el reparto.
     const job = jobId ? jobStore.obtenerJob(jobId) : null;
-    const carpetasRelevantes = filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista);
+    const aprobadas = Array.isArray(carpetasAprobadas)
+      ? carpetasAprobadas.filter(c => carpetas.includes(c))
+      : [];
+    const carpetasRelevantes = aprobadas.length
+      ? aprobadas
+      : filtrarCarpetasDeLaNoticia(script, carpetas, job, protagonista);
     const usadas = carpetasRelevantes.length ? carpetasRelevantes : carpetas;
 
-    console.log(`📂 Fragmentando guion en párrafos (${usadas.length} de ${carpetas.length} carpetas`
+    const deDonde = aprobadas.length ? ' aprobadas por el usuario' : '';
+    console.log(`📂 Fragmentando guion en párrafos (${usadas.length} de ${carpetas.length} carpetas${deDonde}`
       + `${carpetasRelevantes.length ? `: ${usadas.join(', ')}` : ' — sin coincidencias, se usan todas'})...`);
     const fragments = await gemini.fragmentarGuionParrafos(script, usadas);
 
@@ -1663,6 +1723,9 @@ app.post('/api/fragment', async (req, res) => {
       status: 'success',
       fragments: conPorcentaje,
       carpetas,
+      // Las que de verdad se le ofrecieron al modelo. El navegador las pone primero en el
+      // desplegable de cada párrafo: son las únicas que pueden estar bien en esta noticia.
+      carpetasRelevantes: carpetasRelevantes.length ? carpetasRelevantes : [],
       protagonista,
       protagonistaSinCarpeta,
       avisoReconstruccion,

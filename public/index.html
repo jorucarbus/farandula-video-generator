@@ -253,6 +253,24 @@
                 <p class="hint">
                     Puedes editar el texto directamente antes de aprobar. Solo el guion aprobado pasa a locución y edición.
                 </p>
+
+                <!-- Aprobación de los nombres que salen en el guion. Se llena al aprobar el guion y
+                     decide entre qué carpetas se reparten las tomas: sin esto, el cotejo automático
+                     se equivocaba y había que corregir párrafo por párrafo. -->
+                <div id="nombres-guion" class="nombres-guion hidden">
+                    <h3>Personas de esta noticia</h3>
+                    <p class="hint">Las tomas van a salir <strong>solo</strong> de las carpetas marcadas. Destildá a quien no debería aparecer y agregá quien falte.</p>
+                    <div id="nombres-lista" class="nombres-lista"></div>
+                    <div id="nombres-sin-carpeta" class="hint hidden"></div>
+                    <div class="nombres-agregar">
+                        <label for="nombres-extra">Agregar otra carpeta:</label>
+                        <select id="nombres-extra"><option value="">— Elegí una carpeta —</option></select>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-success" id="btn-confirmar-nombres" onclick="confirmarNombres()"><span class="icon-slot" data-icon="check"></span> Repartir las tomas con estas carpetas</button>
+                        <button class="btn btn-secondary" onclick="usarTodasLasCarpetas()"><span class="icon-slot" data-icon="folderOpen"></span> Usar todas las carpetas</button>
+                    </div>
+                </div>
             </div>
 
             <div class="form-section" id="revision-section" data-status="locked">
