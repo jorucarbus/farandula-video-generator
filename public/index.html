@@ -239,6 +239,19 @@
                     mismo hecho (con "neutral" no hay postura que invertir).
                 </p>
 
+                <!-- Videos cortos en los canales que todavía no monetizan. Encendido por defecto;
+                     se apaga el día que esos canales empiecen a pagar y todo vuelve a 70 segundos. -->
+                <label class="gemelos-switch" for="chk-cortos">
+                    <input type="checkbox" id="chk-cortos" checked onchange="cambiarVideosCortos(this.checked)">
+                    <span><strong>Videos cortos donde todavía no se monetiza</strong> — La Naple y Supe Lupe salen de 30 a 40 segundos.</span>
+                </label>
+                <p class="hint" id="hint-cortos">
+                    La locución se paga por carácter, así que un guion de 110 palabras cuesta la mitad
+                    que uno de 215. Los canales que ya monetizan no se tocan: siguen en 70 segundos.
+                    <strong>Apagá esto cuando La Naple y Supe Lupe empiecen a monetizar</strong> y los
+                    cuatro canales vuelven al largo de siempre.
+                </p>
+
                 <button class="btn btn-primary" id="btn-generate-script" onclick="handleGenerateScript()">
                     <span class="icon-slot" data-icon="pencilSimple"></span> Generar guion
                 </button>

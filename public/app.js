@@ -144,6 +144,9 @@ let state = {
     audioToken: null,
     fuentes: [],    // [{type, content, tipoReal, fuenteResumen}, ...] — hasta 3 por noticia (Fase 4)
     sesgo: 'neutral',
+    // Arranca igual que el valor de fábrica del servidor, para que el contador de palabras del
+    // Paso 3 no mienta en el instante entre que carga la página y llega la respuesta de /ajustes.
+    videosCortos: true,
     avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
     previewToken: null, // token del preview del último video renderizado, para /api/portada
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
@@ -1856,12 +1859,66 @@ async function handleGenerateScript() {
 }
 
 // Conteo de palabras en vivo mientras se edita el guion
+// Los canales que todavía no monetizan publican videos de 30-40 segundos para no gastar locución
+// de más. El interruptor vive en el servidor (vale para todas las ventanas) y acá solo se refleja.
+const CANALES_CORTOS = ['lanaple', 'supelupe'];
+const LARGO_CORTO = { min: 95, max: 125, esperado: 110 };
+const LARGO_NORMAL = { min: 205, max: 220, esperado: 215 };
+
+// Cuánto se espera que dure el guion de la pestaña que se está mirando. Sirve para el contador de
+// palabras: sin esto, un guion corto perfecto se vería con la alerta amarilla de "corto" siempre.
+function largoDeVariante(v) {
+    if (!state.videosCortos) return LARGO_NORMAL;
+    const canal = etiquetaVariante(v || state.varianteActiva);
+    return CANALES_CORTOS.includes(normalizarCanal(canal)) ? LARGO_CORTO : LARGO_NORMAL;
+}
+
 function actualizarStatsGuion() {
     const texto = document.getElementById('guion-editor').value;
     const numPalabras = texto.split(/\s+/).filter(Boolean).length;
-    const alerta = numPalabras < 180 ? ' ⚠️ corto' : '';
+    const largo = largoDeVariante();
+    const alerta = numPalabras < largo.min - 15 ? ' ⚠️ corto'
+        : (numPalabras > largo.max + 25 ? ' ⚠️ largo' : '');
+    const marca = largo === LARGO_CORTO ? ' · formato corto' : '';
     document.getElementById('guion-stats').textContent =
-        `Guion (${numPalabras} palabras, ~${Math.round(numPalabras / 3)}s de locución)${alerta}`;
+        `Guion (${numPalabras} palabras, ~${Math.round(numPalabras / 3)}s de locución${marca})${alerta}`;
+}
+
+// El interruptor de videos cortos. Se guarda en el SERVIDOR, no en el navegador: el usuario trabaja
+// con varias ventanas abiertas y a veces desde otra máquina — prendido en una y apagado en otra
+// daría videos distintos sin ninguna explicación a la vista.
+async function cargarAjustes() {
+    try {
+        const r = await apiCall('/ajustes', 'GET');
+        state.videosCortos = r.ajustes?.videosCortos !== false;
+    } catch {
+        state.videosCortos = true;   // el valor de fábrica; si el servidor no contesta, no se miente
+    }
+    const chk = document.getElementById('chk-cortos');
+    if (chk) chk.checked = state.videosCortos;
+    actualizarStatsGuion();
+}
+
+async function cambiarVideosCortos(activo) {
+    state.videosCortos = Boolean(activo);
+    try {
+        await apiCall('/ajustes', 'PUT', { videosCortos: state.videosCortos });
+        log(state.videosCortos
+            ? '⏱️ Videos cortos activados: La Naple y Supe Lupe salen de 30 a 40 segundos'
+            : '⏱️ Videos cortos apagados: los cuatro canales vuelven a ~70 segundos');
+    } catch (e) {
+        // Si no se pudo guardar, el interruptor vuelve a como estaba: mostrar una cosa y hacer otra
+        // es peor que no poder cambiarlo.
+        state.videosCortos = !state.videosCortos;
+        const chk = document.getElementById('chk-cortos');
+        if (chk) chk.checked = state.videosCortos;
+        log(`⚠️ No se pudo guardar el ajuste: ${e.message}`);
+    }
+    // El checkbox se deja siempre igual al estado real, no solo cuando falla: así la casilla dice
+    // la verdad aunque el cambio venga de otro lado y no de un clic.
+    const chkFinal = document.getElementById('chk-cortos');
+    if (chkFinal) chkFinal.checked = state.videosCortos;
+    actualizarStatsGuion();
 }
 
 function copyGuion() {
@@ -4193,6 +4250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initPortadaCaja();
     cargarTonosMusica();
     if (API_KEY) iniciarPanelCola();
+    if (API_KEY) cargarAjustes();   // el interruptor de videos cortos vive en el servidor
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

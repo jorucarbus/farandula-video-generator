@@ -67,7 +67,7 @@ async function restaurar(localPath, nombreDrive) {
 // local NO lo es, así que respaldarlos desde local no aporta nada y solo puede destruir. Los
 // archivos de material adicional sí se suben desde donde sea: son de un job puntual, no pisan
 // estado de nadie.
-const ESTADO_COMPARTIDO = new Set(['jobs.json', 'historial.json', 'cola.json', 'famosos.json']);
+const ESTADO_COMPARTIDO = new Set(['jobs.json', 'historial.json', 'cola.json', 'famosos.json', 'ajustes.json']);
 const EN_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_NAME);
 
 // Respalda (crea o actualiza) un archivo local en la carpeta caché de Drive.

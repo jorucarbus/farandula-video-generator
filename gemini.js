@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const expresiones = require('./expresiones');
 const instruccion = require('./instruccion');
+const largos = require('./largos');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -121,7 +122,7 @@ RESTRICCIONES:
   guion: `Rol: Guionista Senior de Contenido Viral de Farándula. Tu estilo es ágil, picante, cargado de cinismo, tensión dramática y ritmo rápido.
 
 INSTRUCCIONES CRÍTICAS:
-1. LONGITUD: El guion DEBE tener entre 205 y 220 palabras (unos 70 segundos de locución). Nunca menos de 200.
+{{LONGITUD}}
 2. Efecto Bucle Perfecto: La última frase debe conectar orgánicamente con la primera POR LA IDEA, nunca por las palabras. PROHIBIDO repetir la primera frase (ni completa ni sus primeras palabras) al final. La última frase deja una pregunta o tensión abierta que la primera frase del guion parece responder al reiniciarse el video — con vocabulario totalmente distinto.
 3. Apertura de Impacto Directo: Cero introducciones. Arranca con el clímax del escándalo EN LA PRIMERA FRASE.
 4. Ritmo: Alterna frases cortas e incisivas (2-5 palabras) con medianas explicativas (10-15 palabras). Mantén tensión constante.
@@ -168,6 +169,15 @@ REGLAS DE ORO:
 FORMATO DE RESPUESTA:
 Un solo bloque con el guion fragmentado saturado de etiquetas. Nunca el nombre del famoso.`
 };
+
+// El prompt maestro con el largo que le toca a ESTE canal. La regla 1 viaja como hueco
+// (`{{LONGITUD}}`) en vez de estar escrita fija: los canales que todavía no monetizan publican
+// videos de 30-40 segundos para no gastar locución de más, y el resto sigue en 70 (ver largos.js).
+// Un solo prompt con un hueco, y no dos prompts, porque dos se desincronizan — es el bug que costó
+// una semana con la geometría del cartel.
+function promptGuion(objetivo) {
+  return PROMPTS.guion.replace('{{LONGITUD}}', largos.reglaDeLongitud(objetivo));
+}
 
 // Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
 // Marca el error con _geminiTemporal para que callGemini sepa si vale la pena caer al siguiente modelo.
@@ -220,6 +230,19 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
       // diagnosticar). Lo adjuntamos para que el log/registro diga QUÉ rechazó Gemini.
       const detalleApi = error.response?.data?.error?.message;
       if (detalleApi) error.message = `${modelo} → ${status}: ${detalleApi}`;
+
+      // Un 429 casi siempre es "esperá un rato", pero hay uno que NO: el de crédito agotado. Es de
+      // la CUENTA, no del modelo, así que esperar no arregla nada y probar los otros tres tampoco
+      // — todos cobran de la misma billetera. Sin esta distinción, cada llamada pagaba 4 modelos ×
+      // 20 segundos de espera para terminar en el mismo error (medido: 80s tirados, 2026-09-07).
+      const sinCredito = status === 429 && /credit|billing|quota.*exceeded|depleted/i.test(detalleApi || '');
+      if (sinCredito) {
+        error.message = 'Se acabó el crédito de la cuenta de Gemini. Recargá en https://ai.studio/projects '
+          + `(dijo: ${detalleApi})`;
+        error._geminiSiguienteModelo = false;   // ningún modelo de la cadena va a andar
+        throw error;
+      }
+
       const temporal = status === 429 || status === 503 || status === 500;
       if (temporal && intento < MAX_INTENTOS) {
         const espera = (status === 429 ? 20000 : 8000) * intento;
@@ -759,7 +782,7 @@ REGLAS OBLIGATORIAS PARA NO PARECERTE:
 - Mismo largo, mismo ritmo, misma calidad. No es un resumen ni una segunda parte.`;
 }
 
-async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null, instruccionUsuario = '') {
+async function generarGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, nota = null, instruccionUsuario = '', objetivo = largos.NORMAL) {
   try {
     let descripcionEnfoque;
 
@@ -788,15 +811,15 @@ ${cronica}
 
 === ENFOQUE NARRATIVO (esto NO es contenido; es solo la LENTE con la que debes contar los hechos) ===
 ${descripcionEnfoque}
-=== FIN DEL ENFOQUE ===${instruccion.bloqueParaGuion(instruccionUsuario)}
+=== FIN DEL ENFOQUE ===${largos.bloqueDeFormatoCorto(objetivo)}${instruccion.bloqueParaGuion(instruccionUsuario)}
 
-TAREA: Escribe el guion de 205-220 palabras usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.
+TAREA: Escribe el guion de ${largos.tareaDeLongitud(objetivo)} usando ÚNICAMENTE los hechos del MATERIAL BASE, contados a través del ENFOQUE NARRATIVO. No copies el texto del enfoque en el guion; úsalo solo para decidir el ángulo, el tono y el orden de la revelación.
 
 REGISTRO: ${bloqueTono}${bloqueAperturas}${bloqueCitas}${bloqueEvitar}${nota ? `
 
 ${nota}` : ''}`;
 
-    const { texto: response } = await callGemini(PROMPTS.guion, userMessage, TAREAS.guion);
+    const { texto: response } = await callGemini(promptGuion(objetivo), userMessage, TAREAS.guion);
     return response.trim();
   } catch (error) {
     throw new Error(`Error generando guion: ${error.message}`);
@@ -821,7 +844,8 @@ const MOTORES_GUION = {
 // siempre cumple (206-212), y el del grafo se queda corto seguido (190-203) — al sumarle el bloque
 // de estructura, el modelo recorta. Un solo reintento avisando que se quedó corto; si vuelve corto,
 // se usa igual (Regla de robustez: esta guarda no puede tumbar el paso del guion).
-const PALABRAS_MIN = 200;
+// El mínimo de cada formato vive en largos.js (`minAceptable`), no acá: había que poder tener dos
+// (70 segundos y 30-40) sin que una constante suelta contradijera a la otra.
 
 function contarPalabras(t) {
   return String(t || '').split(/\s+/).filter(Boolean).length;
@@ -858,20 +882,24 @@ function exigirCronica(cronica) {
   return texto;
 }
 
-async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini', instruccionUsuario = '') {
+async function escribirGuion(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini', instruccionUsuario = '', objetivo = largos.NORMAL) {
   const fn = MOTORES_GUION[motor];
   if (!fn) throw new Error(`Motor de guion desconocido: ${motor}`);
   exigirCronica(cronica);
-  const guion = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, null, instruccionUsuario));
+  const meta = objetivo || largos.NORMAL;
+  const guion = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, null, instruccionUsuario, meta), meta);
   const palabras = contarPalabras(guion);
-  if (palabras >= PALABRAS_MIN) return entregar(guion);
+  // El mínimo sale del objetivo del canal, no de una constante: con el formato corto, exigir 200
+  // palabras haría que TODOS los guiones cortos dispararan el reintento — una llamada extra a
+  // Gemini por video, gastando de un lado justo lo que se ahorra del otro.
+  if (palabras >= meta.minAceptable) return entregar(guion);
 
-  console.warn(`  ⚠️ El guion salió con ${palabras} palabras (mínimo ${PALABRAS_MIN}); se pide una vez más`);
+  console.warn(`  ⚠️ El guion salió con ${palabras} palabras (mínimo ${meta.minAceptable}); se pide una vez más`);
   try {
     const nota = `AVISO: el intento anterior de este mismo guion salió de ${palabras} palabras, `
       + `demasiado corto. La longitud NO es opcional: de ella sale la duración del video. `
-      + `Escribe entre 205 y 220 palabras, sin recortar el desarrollo.`;
-    const reintento = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, nota, instruccionUsuario));
+      + `Escribe entre ${meta.min} y ${meta.max} palabras, sin recortar el desarrollo.`;
+    const reintento = limpiarGuion(await fn(cronica, angle, angleContent, citas, guionEvitar, nota, instruccionUsuario, meta), meta);
     const nuevas = contarPalabras(reintento);
     if (nuevas > palabras) {
       console.log(`  ✏️ Reintento: ${nuevas} palabras`);
@@ -897,7 +925,15 @@ async function escribirGuion(cronica, angle, angleContent = null, citas = [], gu
 // El prompt ya lo prohíbe ("Numerar, listar o contar palabras en la salida") y aun así pasó, así
 // que la defensa tiene que estar en el código. Se queda con el ÚLTIMO bloque de prosa que parezca
 // un guion: cuando el modelo itera, su versión final es la última.
-const PALABRAS_TOPE = 300;   // un guion legítimo ronda las 210; de acá para arriba hay basura
+// Los dos umbrales de la limpieza salen del objetivo del canal, no de un número fijo: con el
+// formato corto (95-125 palabras) un tope de 300 dejaría pasar el doble de basura, y exigirle 160
+// palabras a un candidato descartaría el guion bueno junto con el conteo.
+function topeDeBasura(objetivo) {
+  return Math.round((objetivo || largos.NORMAL).max * 1.4);   // 308 en el normal, 175 en el corto
+}
+function minimoDeCandidato(objetivo) {
+  return Math.round((objetivo || largos.NORMAL).minAceptable * 0.8);   // 160 en el normal, 72 en el corto
+}
 
 // Marcas de que el modelo se puso a razonar en la salida.
 const SENALES_RAZONAMIENTO = [
@@ -918,22 +954,24 @@ function pareceRazonamiento(bloque) {
 
 // El modelo a veces pega el guion bueno al final de una línea suya, sin salto de por medio:
 // "...Un solo bloque de texto.Boletos de avión cancelados...". Se corta en ese punto pegado.
-function despegar(bloque) {
+function despegar(bloque, minimo) {
   const m = bloque.match(/\.([A-ZÁÉÍÓÚÑ¿¡"“][^]*)$/);
   if (!m) return bloque;
   const cola = m[1].trim();
-  return contarPalabras(cola) >= PALABRAS_MIN - 40 ? cola : bloque;
+  return contarPalabras(cola) >= minimo ? cola : bloque;
 }
 
-function limpiarGuion(texto) {
+function limpiarGuion(texto, objetivo = largos.NORMAL) {
   const guion = (texto || '').trim();
   const palabras = contarPalabras(guion);
+  const tope = topeDeBasura(objetivo);
+  const minimo = minimoDeCandidato(objetivo);
   // El caso normal no se toca: solo se interviene cuando el largo ya delata que hay algo de más.
-  if (palabras <= PALABRAS_TOPE) return guion;
+  if (palabras <= tope) return guion;
   if (!SENALES_RAZONAMIENTO.some(re => re.test(guion))) {
     // Largo pero sin rastros de razonamiento: es el modelo pasándose de largo, no basura. Se
     // entrega igual (recortarlo a ciegas cortaría el guion a mitad de frase) y se avisa.
-    console.warn(`  ⚠️ Guion de ${palabras} palabras, muy por encima de las 220 pedidas; se entrega como vino`);
+    console.warn(`  ⚠️ Guion de ${palabras} palabras, muy por encima de las ${(objetivo || largos.NORMAL).max} pedidas; se entrega como vino`);
     return guion;
   }
 
@@ -943,8 +981,8 @@ function limpiarGuion(texto) {
   const bloques = guion.split(/\n/).map(b => b.trim()).filter(Boolean);
   const candidatos = bloques
     .filter(b => !pareceRazonamiento(b))
-    .map(despegar)
-    .filter(b => !pareceRazonamiento(b) && contarPalabras(b) >= PALABRAS_MIN - 40);
+    .map(b => despegar(b, minimo))
+    .filter(b => !pareceRazonamiento(b) && contarPalabras(b) >= minimo);
 
   if (!candidatos.length) {
     console.warn(`  ⚠️ El guion vino con el razonamiento del modelo (${palabras} palabras) y no se pudo aislar el guion; se entrega como vino`);
@@ -1359,6 +1397,7 @@ function getAngleName(angle) {
 
 module.exports = {
   escribirGuion, MOTORES_GUION, variarMetadatos,
+  promptGuion,   // el prompt maestro con el largo del canal ya puesto
   limpiarGuion,   // guarda: el guion sale sin el razonamiento del modelo pegado
   bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, PROMPTS,
   procesarLectura,

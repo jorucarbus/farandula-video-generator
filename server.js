@@ -15,6 +15,8 @@ const seleccion = require('./seleccion');
 const tiempos = require('./tiempos');
 const encuadres = require('./encuadres');
 const instruccion = require('./instruccion');
+const largos = require('./largos');
+const ajustes = require('./ajustes');
 const subtitulos = require('./subtitulos');
 const musica = require('./musica');
 const jobStore = require('./jobStore');
@@ -113,6 +115,53 @@ const CANALES_HERMANOS = {
 };
 function normalizarCanal(nombre) {
   return (nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+// El nombre del canal al que va CADA video. El A publica en el canal elegido en el Paso 1; el B,
+// en su hermano. Hace falta antes de escribir el guion porque de ahí sale cuán largo tiene que ser
+// (La Naple y Supe Lupe todavía no monetizan y van de 30-40 segundos — ver largos.js).
+//
+// Ojo: la carpeta de destino se elige recién en el Paso 6, así que a la hora del guion el ÚNICO
+// dato disponible es el canal del Paso 1. Por eso se resuelve por ahí y no por el destino.
+const cacheNombreCanal = new Map();   // los canales no cambian de nombre durante una corrida
+
+async function nombreDeCanal(canalId) {
+  if (!canalId) return null;
+  if (cacheNombreCanal.has(canalId)) return cacheNombreCanal.get(canalId);
+  try {
+    const canales = await driveHelper.listarCanales();
+    for (const c of canales) cacheNombreCanal.set(c.id, c.name);
+    return cacheNombreCanal.get(canalId) || null;
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudo resolver el nombre del canal ${canalId}: ${e.message}`);
+    return null;
+  }
+}
+
+async function canalDeVariante(job, variante) {
+  const propio = await nombreDeCanal(job?.canalId);
+  if (variante !== 'B') return propio;
+  const objetivo = CANALES_HERMANOS[normalizarCanal(propio)];
+  if (!objetivo) return null;   // canal renombrado o nuevo: sin hermano identificable
+  try {
+    const canales = await driveHelper.listarCanales();
+    return canales.find(c => normalizarCanal(c.name) === objetivo)?.name || null;
+  } catch {
+    return null;
+  }
+}
+
+// Cuánto tiene que durar el guion de esta variante. Con el interruptor apagado devuelve el largo
+// de siempre para todos, que es exactamente el comportamiento anterior.
+async function objetivoDeVariante(job, variante) {
+  const activo = ajustes.obtener().videosCortos;
+  if (!activo) return largos.NORMAL;
+  const canal = await canalDeVariante(job, variante);
+  const obj = largos.objetivoPara(canal, true);
+  if (obj.id === 'corto') {
+    console.log(`  ⏱️ "${canal}" todavía no monetiza: guion de ${obj.min}-${obj.max} palabras (${obj.segundos})`);
+  }
+  return obj;
 }
 
 // Carpeta de insumos donde va el material de una variante. El video A usa la del canal elegido en
@@ -1401,7 +1450,11 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
         cronicaB = (await cronicaConSesgo(job, opuesto)) || cronica;
       }
     }
-    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent, citasB, scriptA, motorElegido, job?.instruccion);
+    const objetivoB = await objetivoDeVariante(job, 'B');
+    // Las citas se recortan al máximo que aguanta este largo: en un video de 35 segundos, dos citas
+    // de entrevista son el 20% del video y a la narración propia no le queda nada.
+    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent,
+      citasB.slice(0, largos.citasMaximas(objetivoB)), scriptA, motorElegido, job?.instruccion, objetivoB);
     const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
     // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
     // texto del post tiene que acompañarla, no repetir el enfoque del primero.
@@ -1515,7 +1568,9 @@ app.post('/api/generate-script', async (req, res) => {
 
     const comoElige = motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`;
     console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
-    const script = await gemini.escribirGuion(cronicaA, angle, angleContent, citasA, null, motorElegido, job?.instruccion);
+    const objetivoA = await objetivoDeVariante(job, 'A');
+    const script = await gemini.escribirGuion(cronicaA, angle, angleContent,
+      citasA.slice(0, largos.citasMaximas(objetivoA)), null, motorElegido, job?.instruccion, objetivoA);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
@@ -1648,6 +1703,18 @@ app.post('/api/nombres-guion', async (req, res) => {
     console.error('Error detectando nombres:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// Interruptores del sistema. Uno solo por ahora (`videosCortos`), pero el endpoint es genérico
+// para no tener que inventar otro la próxima vez.
+app.get('/api/ajustes', (req, res) => {
+  res.json({ status: 'success', ajustes: ajustes.obtener() });
+});
+
+app.put('/api/ajustes', (req, res) => {
+  const guardados = ajustes.guardar(req.body || {});
+  console.log(`⚙️ Ajustes: ${JSON.stringify(guardados)}`);
+  res.json({ status: 'success', ajustes: guardados });
 });
 
 // ETAPA 3: Fragmentación + Carpetas
@@ -2673,6 +2740,9 @@ initializeDrive();
 driveCache.restaurar(path.join(__dirname, 'historial.json'), 'historial.json');
 driveCache.restaurar(path.join(__dirname, 'data', 'jobs.json'), 'jobs.json');
 driveCache.restaurar(famosos.TABLA_PATH, famosos.NOMBRE_DRIVE);
+// Los interruptores del usuario (hoy: videos cortos en los canales que no monetizan). Sin esto,
+// cada redeploy los devolvería a su valor de fábrica sin avisar.
+ajustes.restaurar();
 
 // Cola de renderizado: primero traer del respaldo lo que el redeploy borró del disco, y recién
 // después rehidratar y arrancar el worker — al revés, la cola arrancaría vacía y los renders que
