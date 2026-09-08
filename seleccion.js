@@ -134,15 +134,45 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
   const cuentaTomas = {};
   for (const r of requerimientos) cuentaTomas[r.famoso] = (cuentaTomas[r.famoso] || 0) + 1;
 
+  // De quién se sacan las tomas de los fragmentos cuyo famoso no tiene carpeta: el que MÁS material
+  // tiene en esta noticia, que en la práctica es el protagonista.
+  //
+  // Por qué hace falta (2026-09-08): un fragmento sin videos devolvía `null`, y `montarVideoPlan`
+  // descarta los nulos — así que ese tiempo desaparecía del VIDEO pero no del AUDIO. En la noticia
+  // de Kike Jav, 18 de 28 fragmentos estaban asignados a "Tiboros", que no tiene carpeta en Drive:
+  // el video quedó con 37 segundos de imagen para 70 de locución, y el reproductor mostró el último
+  // fotograma congelado durante la mitad del video. El usuario lo vio así: "se queda congelada la
+  // imagen".
+  //
+  // Mostrar al protagonista mientras se habla de otro no es ideal, pero es MUCHO mejor que una
+  // imagen quieta: el video sigue vivo y el espectador no se va. Es el mismo criterio que ya se
+  // había tomado con los clips cortos ("un clip corto del famoso correcto es mejor que uno largo del
+  // equivocado") — solo que acá la alternativa no es otro famoso, es nada.
+  const conMaterial = Object.entries(inventario)
+    .filter(([, vs]) => Array.isArray(vs) && vs.length > 0)
+    .sort((a, b) => b[1].length - a[1].length);
+  const famosoDeRelleno = conMaterial.length ? conMaterial[0][0] : null;
+
   for (const [famoso, cantidad] of Object.entries(cuentaTomas)) {
-    const videos = inventario[famoso] || [];
+    let videos = inventario[famoso] || [];
     if (videos.length === 0) {
-      console.warn(`  ⚠️ Sin videos para ${famoso}`);
-      colas[famoso] = Array(cantidad).fill(null);
-      continue;
+      if (famosoDeRelleno) {
+        console.warn(`  ⚠️ Sin videos para ${famoso}: sus ${cantidad} toma(s) salen de ${famosoDeRelleno}`);
+        videos = inventario[famosoDeRelleno];
+      } else {
+        // Ni un solo famoso de la noticia tiene carpeta. Acá sí no hay nada que hacer, pero el
+        // aviso tiene que decir que el video va a quedar incompleto, no solo que falta uno.
+        console.warn(`  ⚠️ Sin videos para ${famoso} y sin ningún otro famoso con material: `
+          + `esas ${cantidad} toma(s) van a faltar en el video`);
+        colas[famoso] = Array(cantidad).fill(null);
+        continue;
+      }
     }
 
-    const h = (historial[famoso] ??= { ciclo: [], ultimaSecuencia: [], offsets: {} });
+    // El historial de rotación se lleva por DUEÑO de los videos: si las tomas salen prestadas del
+    // protagonista, tienen que gastar SU ciclo, o el mismo clip volvería a salir en el próximo video.
+    const dueno = (inventario[famoso] || []).length ? famoso : famosoDeRelleno;
+    const h = (historial[dueno] ??= { ciclo: [], ultimaSecuencia: [], offsets: {} });
 
     // Prioridad: videos aún no usados en el ciclo actual; luego los ya usados (barajados aparte)
     const frescos = shuffle(videos.filter(v => !h.ciclo.includes(v.id)));
@@ -175,7 +205,9 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
     const v = colas[r.famoso].shift();
     if (!v) { plan.push(null); continue; }
 
-    const h = historial[r.famoso];
+    // Igual que arriba: el offset se guarda a nombre del dueño de los videos.
+    const duenoR = (inventario[r.famoso] || []).length ? r.famoso : famosoDeRelleno;
+    const h = (historial[duenoR] ??= { ciclo: [], ultimaSecuencia: [], offsets: {} });
     if (!(v.id in consumo)) consumo[v.id] = h.offsets[v.id] || 0;
 
     let offset = RECORTE_INICIAL + consumo[v.id];

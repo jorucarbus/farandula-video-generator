@@ -410,6 +410,24 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     .map((clip, i) => ({ clip, i }))
     .filter(x => x.clip && archivos[x.clip.videoId]);
 
+  // Los clips que se cayeron (sin famoso con carpeta, o con el archivo perdido) NO devuelven su
+  // tiempo: ese tramo desaparece del video pero sigue estando en el audio, y el reproductor se
+  // queda mostrando el último fotograma mientras la locución continúa. Es exactamente el fallo de
+  // la noticia de Kike Jav (2026-09-08): 37 segundos de imagen para 70 de locución.
+  //
+  // Acá ya no se puede arreglar —el metraje no existe— pero SÍ se puede dejar de fallar en
+  // silencio: hasta hoy no había ni una línea en el log que dijera que el video iba a salir así.
+  const perdidos = plan.filter(c => c && !archivos[c.videoId]).length
+    + plan.filter(c => !c).length;
+  if (perdidos > 0) {
+    const segPerdidos = plan
+      .filter(c => !c || !archivos[c.videoId])
+      .reduce((t, c) => t + (c?.duracion || 0), 0);
+    console.warn(`  ⚠️ [${jobId}] ${perdidos} toma(s) sin material: el video va a tener `
+      + `${segPerdidos ? `~${segPerdidos.toFixed(1)}s ` : ''}menos imagen que audio, y esa parte se ve `
+      + `como un fotograma congelado. Revisá que todos los famosos del guion tengan carpeta en Drive.`);
+  }
+
   const segmentos = [];
   const duracionesVisibles = []; // duración QUE VE el espectador (sin cola de mezcla), mismo orden que segmentos
 

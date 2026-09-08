@@ -2098,6 +2098,7 @@ async function repartirTomas(v, carpetasAprobadas) {
         });
         d.fragments = result[cfg().parrafosKey];
         d.avisoReconstruccion = result.avisoReconstruccion || null;
+        d.avisoReasignados = result.avisoReasignados || null;
         // Las carpetas de famosos y el material adicional son del JOB, no de la variante: las dos
         // versiones eligen entre las mismas carpetas y comparten las fotos/videos de apoyo.
         state.carpetas = result.carpetas;
@@ -2132,6 +2133,15 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
     // Los fragmentos deben reconstruir el guion palabra por palabra: el tiempo en pantalla de
     // cada clip sale de su proporción de caracteres. Si no coinciden, todos los clips quedan
     // corridos respecto de la locución — y no falla nada a la vista, por eso hay que avisarlo.
+    // Carpetas que no existían: el servidor movió esos párrafos a otra. Se avisa porque, sin
+    // corregirlo, esa parte del video sale con la cara de otro — y sin el arreglo salía sin imagen.
+    const avisoReasig = document.getElementById('aviso-reasignados');
+    if (avisoReasig) {
+        const texto = V().avisoReasignados;
+        avisoReasig.textContent = texto ? `⚠️ ${texto}` : '';
+        avisoReasig.classList.toggle('hidden', !texto);
+    }
+
     const avisoRec = document.getElementById('aviso-reconstruccion');
     if (V().avisoReconstruccion) {
         avisoRec.textContent = `⚠️ ${V().avisoReconstruccion}`;

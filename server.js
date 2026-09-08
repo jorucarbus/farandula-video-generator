@@ -1763,6 +1763,38 @@ app.post('/api/fragment', async (req, res) => {
       + `${carpetasRelevantes.length ? `: ${usadas.join(', ')}` : ' — sin coincidencias, se usan todas'})...`);
     const fragments = await gemini.fragmentarGuionParrafos(script, usadas);
 
+    // NINGÚN fragmento puede quedar con un famoso que no tenga carpeta en Drive.
+    //
+    // El modelo devuelve `famoso` como texto libre y a veces escribe un nombre que no está en la
+    // lista que se le dio. Ese fragmento después no genera ningún clip, su tiempo desaparece del
+    // video pero no del audio, y el reproductor muestra un fotograma congelado el resto de la
+    // locución. Pasó con la noticia de Kike Jav: 18 de 28 fragmentos quedaron en "Tiboros", que no
+    // tiene carpeta, y el video salió con 37 segundos de imagen para 70 de audio (2026-09-08).
+    //
+    // Se corrige acá y no en el render porque acá todavía se puede: el usuario ve el resultado en
+    // el Paso 4 y puede cambiarlo si el reemplazo no le gusta.
+    const validas = new Set(usadas);
+    // El respaldo es la carpeta del protagonista si la tiene; si no, la primera de las ofrecidas.
+    const cotejoProta = famosos.cotejar(protagonista || '', usadas);
+    const respaldo = (cotejoProta?.confianza === 'alta' && validas.has(cotejoProta.carpeta))
+      ? cotejoProta.carpeta
+      : usadas[0];
+    const reasignados = [];
+    for (const f of fragments) {
+      if (validas.has(f.famoso)) continue;
+      // Primero se prueba si es el mismo nombre escrito distinto ("Kike Jav" por "Kike_Jav_Cuy").
+      const r = famosos.cotejar(f.famoso, usadas);
+      const destino = (r?.confianza === 'alta' && validas.has(r.carpeta)) ? r.carpeta : respaldo;
+      reasignados.push(`${f.famoso} → ${destino}`);
+      f.famoso = destino;
+    }
+    if (reasignados.length) {
+      const cuenta = {};
+      for (const r of reasignados) cuenta[r] = (cuenta[r] || 0) + 1;
+      console.warn(`  ⚠️ ${reasignados.length} fragmento(s) apuntaban a una carpeta que no existe: `
+        + Object.entries(cuenta).map(([k, v]) => `${k} (${v})`).join(', '));
+    }
+
     // Porcentaje de tiempo de cada párrafo (por caracteres, incluye espacios)
     const totalChars = fragments.reduce((s, f) => s + f.caracteres, 0);
     const conPorcentaje = fragments.map(f => ({
@@ -1827,6 +1859,11 @@ app.post('/api/fragment', async (req, res) => {
       // Las que de verdad se le ofrecieron al modelo. El navegador las pone primero en el
       // desplegable de cada párrafo: son las únicas que pueden estar bien en esta noticia.
       carpetasRelevantes: carpetasRelevantes.length ? carpetasRelevantes : [],
+      // Fragmentos que apuntaban a una carpeta inexistente y se movieron a otra. El usuario tiene
+      // que enterarse: si el reemplazo no le sirve, lo cambia ahí mismo en el Paso 4.
+      avisoReasignados: reasignados.length
+        ? `${reasignados.length} de ${fragments.length} párrafos estaban asignados a una carpeta que no existe en Drive y se movieron: ${[...new Set(reasignados)].join(', ')}. Revisalos abajo.`
+        : null,
       protagonista,
       protagonistaSinCarpeta,
       avisoReconstruccion,
