@@ -16,6 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const driveCache = require('./driveCache');
+const metricas = require('./metricas');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const COLA_FILE = path.join(DATA_DIR, 'cola.json');
@@ -193,6 +194,7 @@ async function bombear() {
   siguiente.progreso = 0;
   siguiente.etapa = 'Preparando…';
   guardar();
+  cronos.set(siguiente.renderId, { etapa: 'plan', desde: Date.now(), etapas: {} });
 
   let reloj;
   const seColgo = new Promise((_, reject) => {
@@ -217,6 +219,7 @@ async function bombear() {
   }
   clearTimeout(reloj);
   siguiente.terminado = new Date().toISOString();
+  anotarMetrica(siguiente);
   // Los params ya no hacen falta y son lo más pesado de la tarea (fragmentos completos): se
   // sueltan al terminar para no engordar cola.json ni el respaldo de Drive.
   siguiente.params = null;
@@ -224,6 +227,44 @@ async function bombear() {
   guardar();
 
   setImmediate(bombear); // el resto de la cola, una por una
+}
+
+// Cronómetro por etapa de cada render en curso, y el contexto que lo explica (clips, MB, encoder).
+// En memoria y no dentro de la tarea a propósito: la tarea se serializa a cola.json en cada cambio,
+// y esto es un dato de trabajo que al terminar se vuelca entero en `metricas.js`.
+const cronos = new Map();     // renderId -> { etapa, desde, etapas: {clave: segundos} }
+const contextos = new Map();  // renderId -> { clips, mbBajados, encoder, ... }
+
+// La etapa sale del PORCENTAJE que ya reporta cada paso, no de su texto: el texto cambia ("Bajando
+// clips (3 de 40)", "Cortando toma 7 de 12") y el porcentaje de cada tramo es fijo. Así no hay que
+// tocar cada punto del render para medirlo — y si algún día se agrega un paso, basta con que
+// reporte su porcentaje como los demás.
+function claveDeEtapa(progreso) {
+  if (progreso < 15) return 'plan';
+  if (progreso < 32) return 'descarga';
+  if (progreso < 38) return 'subtitulos';
+  if (progreso < 45) return 'musica';
+  if (progreso < 80) return 'cortes';
+  if (progreso < 84) return 'union';
+  if (progreso < 88) return 'mezcla';
+  return 'subida';
+}
+
+function marcarEtapa(renderId, clave) {
+  const c = cronos.get(renderId);
+  if (!c || c.etapa === clave) return;
+  const ahora = Date.now();
+  c.etapas[c.etapa] = Math.round(((c.etapas[c.etapa] || 0) + (ahora - c.desde) / 1000) * 10) / 10;
+  c.etapa = clave;
+  c.desde = ahora;
+}
+
+// Datos que explican el tiempo. Los manda el ejecutor cuando los conoce; se van sumando.
+function contexto(renderId, datos) {
+  // Solo para renders con el cronómetro corriendo: si la cola ya abandonó uno por el tope de tiempo,
+  // el trabajo huérfano puede seguir mandando datos y quedarían en memoria para siempre.
+  if (!renderId || !datos || !cronos.has(renderId)) return;
+  contextos.set(renderId, { ...(contextos.get(renderId) || {}), ...datos });
 }
 
 // Avance del render que se está haciendo AHORA. Lo llama el ejecutor a medida que avanza.
@@ -238,8 +279,44 @@ async function bombear() {
 function reportar(renderId, progreso, etapa) {
   const t = tareas.find(x => x.renderId === renderId);
   if (!t || t.estado !== 'renderizando') return;
+  if (Number.isFinite(progreso)) marcarEtapa(renderId, claveDeEtapa(progreso));
   if (Number.isFinite(progreso)) t.progreso = Math.max(0, Math.min(99, Math.round(progreso)));
   if (etapa) t.etapa = etapa;
+}
+
+// Cierra el cronómetro y guarda el render en la historia de métricas. Se anotan también los que
+// fallan, con la etapa donde se quedaron: un render que se cuelga siempre en la subida es un dato
+// tan útil como uno lento.
+function anotarMetrica(t) {
+  try {
+    const c = cronos.get(t.renderId);
+    // Dónde estaba al terminar, leído ANTES de cerrar el cronómetro (que pisa la etapa actual).
+    // En un render que falló es el dato más útil: dice en qué paso se rompió.
+    const etapaAlTerminar = c?.etapa || null;
+    if (c) marcarEtapa(t.renderId, '__fin__');
+    const seg = (a, b) => (a && b ? Math.round((new Date(b) - new Date(a)) / 100) / 10 : null);
+    metricas.registrar({
+      renderId: t.renderId,
+      jobId: t.jobId,
+      variante: t.variante,
+      canal: t.canal,
+      etiqueta: t.etiqueta,
+      estado: t.estado,
+      encolado: t.encolado,
+      terminado: t.terminado,
+      esperaSeg: seg(t.encolado, t.iniciado),
+      trabajoSeg: seg(t.iniciado, t.terminado),
+      etapaFinal: t.estado === 'listo' ? null : etapaAlTerminar,
+      etapas: c ? Object.fromEntries(Object.entries(c.etapas).filter(([k]) => k !== '__fin__')) : {},
+      contexto: contextos.get(t.renderId) || {},
+      error: t.error ? String(t.error).slice(0, 200) : null,
+    });
+  } catch (e) {
+    console.warn(`⚠️ No se pudo anotar la métrica de ${t.renderId}: ${e.message}`);
+  } finally {
+    cronos.delete(t.renderId);
+    contextos.delete(t.renderId);
+  }
 }
 
 // Vista pública de una tarea (sin `params`, que es interno y pesado) + su puesto en la fila.
@@ -303,4 +380,4 @@ function audioTokensPendientes() {
     .map(t => t.params.audioToken);
 }
 
-module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, audioTokensPendientes, nuevoRenderId, reportar };
+module.exports = { configurar, encolar, obtener, listar, rehidratar, rutasProtegidas, audioTokensPendientes, nuevoRenderId, reportar, contexto };

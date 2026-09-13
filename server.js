@@ -17,6 +17,7 @@ const encuadres = require('./encuadres');
 const instruccion = require('./instruccion');
 const largos = require('./largos');
 const ajustes = require('./ajustes');
+const metricas = require('./metricas');
 const subtitulos = require('./subtitulos');
 const musica = require('./musica');
 const jobStore = require('./jobStore');
@@ -1707,6 +1708,12 @@ app.post('/api/nombres-guion', async (req, res) => {
 
 // Interruptores del sistema. Uno solo por ahora (`videosCortos`), pero el endpoint es genérico
 // para no tener que inventar otro la próxima vez.
+// Cuánto tardan los renders, etapa por etapa (mediana, p90 y máximo), separado por formato.
+app.get('/api/metricas-render', (req, res) => {
+  const limite = Math.min(500, Math.max(5, Number(req.query.limite) || 50));
+  res.json({ status: 'success', ...metricas.resumen({ limite }) });
+});
+
 app.get('/api/ajustes', (req, res) => {
   res.json({ status: 'success', ajustes: ajustes.obtener() });
 });
@@ -2242,6 +2249,16 @@ async function renderizarVideo(params, renderId) {
     if (porBajar.length) {
       console.log(`  ✅ ${porBajar.length} clips listos en ${((Date.now() - arranque) / 1000).toFixed(1)}s`);
     }
+    // Lo que explica el tiempo de la descarga y del montaje (ver metricas.js).
+    let bytesBajados = 0;
+    for (const id of porBajar) { try { bytesBajados += fs.statSync(archivos[id]).size; } catch {} }
+    colaRender.contexto(renderId, {
+      clips: clipsValidos.length,
+      archivosBajados: porBajar.length,
+      mbBajados: Math.round(bytesBajados / 1048576 * 10) / 10,
+      audioSegundos: Math.round(durAudio * 10) / 10,
+      materiales: materialesPorFragmento.size,
+    });
 
     // 5. Subtítulos (Fase 6): palabra por palabra resaltada, timing real si el audio aprobado
     // lo trae (Fase 5). Opt-out con efectos.subtitulos===false. Nunca aborta el render: si algo
@@ -2345,6 +2362,15 @@ async function renderizarVideo(params, renderId) {
       cartelPath,
     }, (pct, etapa) => colaRender.reportar(renderId, pct, etapa));
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
+    colaRender.contexto(renderId, {
+      segmentos: resultado.clips,
+      encoder: resultado.encoder,
+      transiciones: resultado.transiciones,
+      tandas: resultado.tandas,
+      subtitulos: Boolean(subsPath),
+      musica: Boolean(resultado.conMusica),
+      cartel: Boolean(cartelPath),
+    });
 
     // 7. Guardar el video SUELTO en la carpeta del canal, sin subcarpeta por video.
     //
@@ -2780,6 +2806,8 @@ driveCache.restaurar(famosos.TABLA_PATH, famosos.NOMBRE_DRIVE);
 // Los interruptores del usuario (hoy: videos cortos en los canales que no monetizan). Sin esto,
 // cada redeploy los devolvería a su valor de fábrica sin avisar.
 ajustes.restaurar();
+// Historia de tiempos de render (ver metricas.js): sin esto, cada redeploy la borraría.
+metricas.restaurar();
 
 // Cola de renderizado: primero traer del respaldo lo que el redeploy borró del disco, y recién
 // después rehidratar y arrancar el worker — al revés, la cola arrancaría vacía y los renders que

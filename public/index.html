@@ -641,6 +641,14 @@
                 <div id="cola-lista"></div>
             </div>
 
+            <!-- Tiempos de render: dónde se va el tiempo de cada video, para saber qué optimizar. -->
+            <div class="form-section" id="metricas-section">
+                <details id="metricas-box" ontoggle="if (this.open) cargarMetricas()">
+                    <summary><strong>Tiempos de render</strong> <span class="hint">(dónde se va el tiempo)</span></summary>
+                    <div id="metricas-contenido" class="hint">Cargando…</div>
+                </details>
+            </div>
+
             <div class="form-section" id="historial-section">
                 <div id="historial-lista" class="scroll-snap-col"></div>
             </div>

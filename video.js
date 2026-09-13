@@ -666,7 +666,14 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     try { fs.unlinkSync(f); } catch {}
   });
 
-  return { finalPath, duracion: Math.round(durAudio), clips: segmentos.length, conMusica: Boolean(musicaPreparada) };
+  return {
+    finalPath, duracion: Math.round(durAudio), clips: segmentos.length, conMusica: Boolean(musicaPreparada),
+    // Para las métricas de tiempo (metricas.js): sin esto no se puede saber si un montaje fue lento
+    // por el encoder (CPU contra GPU) o por la cantidad de tandas de transiciones.
+    encoder: enc.includes('h264_nvenc') ? 'nvenc' : 'libx264',
+    transiciones: hayTransiciones,
+    tandas: hayTransiciones ? Math.ceil(segmentos.length / TANDA_MAX) : 0,
+  };
 }
 
 // Limpiar archivos temporales de un job. NO toca los clips fuente cacheados (src_*.mp4):

@@ -645,6 +645,50 @@ function iniciarPanelCola() {
     colaTimer = setInterval(tick, 4000);
 }
 
+// Nombres de las etapas para la pantalla, en el orden en que ocurren.
+const ETAPAS_RENDER = {
+    plan: 'Plan de tomas', descarga: 'Bajar clips', subtitulos: 'Subtítulos', musica: 'Música',
+    cortes: 'Cortar tomas', union: 'Unir (transiciones)', mezcla: 'Mezcla final', subida: 'Subir a Drive',
+};
+
+const fmtSeg = s => (Number.isFinite(s) ? (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s}s`) : '—');
+
+// Resumen de tiempos. Mediana y p90 en vez de promedio: un render colgado arruinaría el promedio.
+async function cargarMetricas() {
+    const cont = document.getElementById('metricas-contenido');
+    if (!cont) return;
+    try {
+        const m = await apiCall('/metricas-render?limite=50', 'GET');
+        const formatos = Object.entries(m.porFormato || {});
+        if (!formatos.length) {
+            cont.innerHTML = 'Todavía no hay renders medidos. Se empieza a contar desde el próximo video.';
+            return;
+        }
+        const nombreFormato = { corto: 'Videos cortos (30-40 s)', normal: 'Videos normales (~70 s)' };
+        cont.innerHTML = formatos.map(([formato, g]) => {
+            const filas = Object.entries(ETAPAS_RENDER)
+                .filter(([k]) => g.etapas[k])
+                .map(([k, nombre]) => {
+                    const e = g.etapas[k];
+                    return `<tr><td>${nombre}</td><td>${fmtSeg(e.mediana)}</td><td>${fmtSeg(e.p90)}</td>`
+                        + `<td><span class="metricas-barra" style="width:${Math.min(100, e.porcentaje || 0)}%"></span> ${e.porcentaje ?? '—'}%</td></tr>`;
+                }).join('');
+            return `<div class="metricas-grupo">
+                <p><strong>${nombreFormato[formato] || formato}</strong> · ${g.renders} render(s)</p>
+                <p>Trabajo: <strong>${fmtSeg(g.trabajo?.mediana)}</strong> (p90 ${fmtSeg(g.trabajo?.p90)})
+                   · Espera en cola: <strong>${fmtSeg(g.esperaEnCola?.mediana)}</strong> (p90 ${fmtSeg(g.esperaEnCola?.p90)})
+                   · ${g.clips?.mediana ?? '—'} clips · ${g.mbBajados?.mediana ?? '—'} MB</p>
+                <div class="metricas-tabla-wrap"><table class="metricas-tabla">
+                    <thead><tr><th>Etapa</th><th>Mediana</th><th>p90</th><th>% del trabajo</th></tr></thead>
+                    <tbody>${filas}</tbody>
+                </table></div>
+            </div>`;
+        }).join('') + (m.fallidos ? `<p class="hint">${m.fallidos} render(s) fallido(s) en el período (no cuentan en los tiempos).</p>` : '');
+    } catch (e) {
+        cont.textContent = `No se pudieron cargar los tiempos: ${e.message}`;
+    }
+}
+
 function pintarCola(datos) {
     const cont = document.getElementById('cola-lista');
     if (!cont) return;

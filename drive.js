@@ -509,15 +509,22 @@ async function streamArchivo(fileId, rango = null) {
 // permanente: si la limpieza automática se equivoca, el usuario puede restaurar.
 // Intenta con el Service Account (dueño de las carpetas de insumo) y cae a OAuth si no
 // tiene permiso sobre ese ítem en particular.
+// Primero con la cuenta OAuth: las carpetas de insumos las CREA esa cuenta, así que es la dueña y
+// la única que puede mandarlas a la papelera. El Service Account es solo editor y siempre recibía
+// 403 — medido el 2026-09-13 —, así que ir primero por él era un pedido fallido por cada carpeta
+// que se limpia. Queda de respaldo por si algún día no hay OAuth configurado.
 async function enviarAPapelera(fileId) {
   const cuerpo = { fileId, requestBody: { trashed: true }, supportsAllDrives: true };
-  try {
-    await getDrive().files.update(cuerpo);
-  } catch (e) {
-    const oauth = getDriveOAuth();
-    if (!oauth) throw e;
-    await oauth.files.update(cuerpo);
+  const oauth = getDriveOAuth();
+  if (oauth) {
+    try {
+      await oauth.files.update(cuerpo);
+      return;
+    } catch (e) {
+      console.warn(`  ⚠️ OAuth no pudo mandar ${fileId} a la papelera (${e.message}); probando con el Service Account`);
+    }
   }
+  await getDrive().files.update(cuerpo);
 }
 
 module.exports = {
