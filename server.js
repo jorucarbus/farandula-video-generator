@@ -2362,6 +2362,9 @@ async function renderizarVideo(params, renderId) {
       cartelPath,
     }, (pct, etapa) => colaRender.reportar(renderId, pct, etapa));
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
+    // Duraciones reales aprendidas en este render: evitan que un clip sin metadata en Drive
+    // repita siempre su parte final en los próximos videos.
+    seleccion.recordarDuraciones(plan, resultado.duracionesPorVideo);
     colaRender.contexto(renderId, {
       segmentos: resultado.clips,
       encoder: resultado.encoder,

@@ -670,6 +670,17 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     finalPath, duracion: Math.round(durAudio), clips: segmentos.length, conMusica: Boolean(musicaPreparada),
     // Para las métricas de tiempo (metricas.js): sin esto no se puede saber si un montaje fue lento
     // por el encoder (CPU contra GPU) o por la cantidad de tandas de transiciones.
+    // Duración REAL de cada archivo fuente, medida con ffprobe sobre el archivo ya descargado.
+    // Drive no siempre reporta la duración en su metadata (36 de 89 clips de una carpeta real no
+    // la traen, medido el 2026-09-16), y sin ese dato el reparto de tomas no puede saber que un
+    // clip se agotó: el offset sigue creciendo, acá se corrige al final del archivo, y ese mismo
+    // pedacito final termina saliendo una y otra vez en videos distintos. Devolviéndola, la
+    // rotación la aprende y no vuelve a pasar.
+    duracionesPorVideo: Object.fromEntries(
+      Object.entries(archivos)
+        .map(([videoId, ruta]) => [videoId, duracionesReales[ruta]])
+        .filter(([, seg]) => Number.isFinite(seg))
+    ),
     encoder: enc.includes('h264_nvenc') ? 'nvenc' : 'libx264',
     transiciones: hayTransiciones,
     tandas: hayTransiciones ? Math.ceil(segmentos.length / TANDA_MAX) : 0,

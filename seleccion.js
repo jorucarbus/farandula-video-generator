@@ -210,12 +210,16 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
     const h = (historial[duenoR] ??= { ciclo: [], ultimaSecuencia: [], offsets: {} });
     if (!(v.id in consumo)) consumo[v.id] = h.offsets[v.id] || 0;
 
+    // La duración sale de Drive o, si Drive no la reporta, de la que se aprendió en un render
+    // anterior (ver `recordarDuraciones`). Sin ninguna de las dos no hay con qué comprobar que la
+    // toma cabe, y el offset crece para siempre.
+    const duracionConocida = v.duracion || h.duraciones?.[v.id] || null;
     let offset = RECORTE_INICIAL + consumo[v.id];
-    if (v.duracion && offset + r.dur > v.duracion) {
+    if (duracionConocida && offset + r.dur > duracionConocida) {
       // No cabe donde iba: reiniciar desde el inicio del video
       consumo[v.id] = 0;
       offset = RECORTE_INICIAL;
-      if (offset + r.dur > v.duracion) offset = 0; // video muy corto: usar desde el segundo 0
+      if (offset + r.dur > duracionConocida) offset = 0; // video muy corto: usar desde el segundo 0
     }
     consumo[v.id] += r.dur;
     h.offsets[v.id] = Math.round(consumo[v.id] * 100) / 100;
@@ -253,6 +257,42 @@ function planificarClips(parrafos, duracionAudio, inventario, duracionesReales =
 
   guardarHistorial(historial);
   return plan;
+}
+
+// Guarda la duración real de los clips que se acaban de usar, por si Drive no la reportaba.
+//
+// Se llama al terminar el montaje, que mide cada archivo con ffprobe para poder cortar bien. Sin
+// esto, un clip sin duración en la metadata de Drive no se "agota" nunca para la rotación: su
+// offset crece sin techo, el montaje lo corrige al final del archivo, y el mismo pedacito final
+// aparece repetido en un video tras otro (encontrado el 2026-09-16 investigando por qué un video
+// parecía tener tomas repetidas).
+//
+// La duración se guarda junto al famoso dueño de esos clips, que es donde ya viven sus offsets.
+function recordarDuraciones(plan, duracionesPorVideo) {
+  if (!duracionesPorVideo || !Object.keys(duracionesPorVideo).length) return;
+  try {
+    const historial = cargarHistorial();
+    let nuevas = 0;
+    for (const clip of plan || []) {
+      if (!clip) continue;
+      const seg = duracionesPorVideo[clip.videoId];
+      if (!Number.isFinite(seg)) continue;
+      const h = (historial[clip.famoso] ??= { ciclo: [], ultimaSecuencia: [], offsets: {} });
+      h.duraciones ??= {};
+      if (h.duraciones[clip.videoId]) continue;
+      h.duraciones[clip.videoId] = Math.round(seg * 10) / 10;
+      nuevas++;
+      // Si el offset guardado ya se pasó del final real, la próxima toma arrancaría del final otra
+      // vez: se reinicia ahora que por fin se sabe cuánto dura el archivo.
+      if ((h.offsets?.[clip.videoId] || 0) + CLIP_MIN > seg) h.offsets[clip.videoId] = 0;
+    }
+    if (nuevas) {
+      guardarHistorial(historial);
+      console.log(`  📏 ${nuevas} clip(s) sin duración en Drive: se aprendió la real para no repetir sus tomas`);
+    }
+  } catch (e) {
+    console.warn(`  ⚠️ No se pudieron recordar las duraciones reales: ${e.message}`);
+  }
 }
 
 // ---- Fase 8b del plan maestro: música por sentido — carpeta + selección ----
@@ -359,5 +399,4 @@ function insertarMaterialesEnPlan(plan, materialesPorFragmento) {
 module.exports = {
   planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL,
   emparejarCarpetaTono, elegirPista,
-  insertarMaterialesEnPlan,
-};
+  insertarMaterialesEnPlan, recordarDuraciones};
