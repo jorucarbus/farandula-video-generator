@@ -117,8 +117,15 @@ function guardarApiKey() {
 async function iniciarSesion() {
     await cargarCanales(); // primero: cargarHistorial usa canalesMap para mostrar el nombre del canal
     cargarHistorial();
-    const cargadoPorURL = await cargarDesdeURL();
-    if (!cargadoPorURL) chequearJobPendiente();
+    // Si la URL trae ?jobId= (lo que hace el historial al abrir un proceso en pestaña nueva), se
+    // carga ESE. Y nada más: la app no sale a buscar procesos sin terminar para ofrecerlos sola.
+    //
+    // Antes mostraba un aviso de "hay un proceso sin terminar" al abrir. Con varias noticias
+    // trabajándose en paralelo —que es como trabaja el usuario— ese aviso salía en cada pestaña
+    // nueva hablando del proceso de otra, y era ruido: "es molesto ese mensaje" (2026-09-15).
+    // Los procesos a medias no se pierden, siguen todos en el historial, que es de donde el
+    // usuario decide cuál retomar.
+    await cargarDesdeURL();
 }
 
 function pedirApiKeyDeNuevo() {
@@ -3755,63 +3762,8 @@ async function cargarHistorial() {
     }
 }
 
-// Recuperación de proceso pendiente (jobId guardado en localStorage de una sesión anterior)
+// El proceso que se está cargando desde el historial (lo pone `cargarDesdeURL`).
 let jobPendiente = null;
-
-async function chequearJobPendiente() {
-    if (!API_KEY) return;
-    const jobId = sessionStorage.getItem('farandula_job_id');
-
-    if (jobId) {
-        try {
-            const job = await apiCall(`/jobs/${jobId}`);
-            if (job && job.paso !== 'completado') {
-                ofrecerRecuperar(job);
-                return;
-            }
-            sessionStorage.removeItem('farandula_job_id');
-        } catch {
-            // Job no encontrado (expiró, se podó, o server reiniciado): limpiar referencia vieja
-            sessionStorage.removeItem('farandula_job_id');
-        }
-    }
-
-    // Sin referencia local, se le pregunta al SERVIDOR si quedó algo sin terminar.
-    //
-    // Por qué hace falta: el jobId se guarda cuando la respuesta de la lectura llega al navegador.
-    // Si ese pedido muere en el camino —el 502 del gateway con Gemini lento— el servidor SÍ creó el
-    // proceso y guardó la crónica, pero la pantalla nunca se enteró de que existía. Al recargar no
-    // había nada que ofrecer y el trabajo parecía perdido, aunque estaba entero del otro lado.
-    // Le pasó al usuario con cinco procesos a la vez (2026-08-30).
-    try {
-        const r = await apiCall('/jobs');
-        const abiertos = (r?.jobs || [])
-            .filter(j => j && j.paso && j.paso !== 'completado' && j.cronica)
-            .sort((a, b) => (b.actualizado || '').localeCompare(a.actualizado || ''));
-        if (!abiertos.length) return;
-        // Solo lo de las últimas 24h: más viejo que eso, el usuario ya lo dio por perdido y
-        // ofrecérselo al abrir la app es ruido.
-        const limite = Date.now() - 24 * 60 * 60 * 1000;
-        const reciente = abiertos.find(j => new Date(j.actualizado || 0).getTime() > limite);
-        if (reciente) ofrecerRecuperar(reciente, abiertos.length);
-    } catch { /* si no se puede consultar, la app arranca limpia como antes */ }
-}
-
-function ofrecerRecuperar(job, cuantos = 1) {
-    jobPendiente = job;
-    const banner = document.getElementById('recuperar-banner');
-    if (!banner) return;
-    banner.classList.remove('hidden');
-    const detalle = banner.querySelector('.recuperar-detalle') || (() => {
-        const p = document.createElement('p');
-        p.className = 'hint recuperar-detalle';
-        banner.insertBefore(p, banner.querySelector('.btn-row'));
-        return p;
-    })();
-    const cuando = job.actualizado ? new Date(job.actualizado).toLocaleString() : '';
-    detalle.textContent = `“${job.titulo || 'sin título'}” — quedó en el paso “${job.paso}”${cuando ? `, ${cuando}` : ''}.`
-        + (cuantos > 1 ? ` Hay ${cuantos} procesos sin terminar; este es el más reciente (los otros están en el historial).` : '');
-}
 
 // Carga directa (sin banner) de un job pasado por ?jobId= en la URL — usado al abrir
 // un proceso del historial en una pestaña nueva. true si logró cargar algo.
@@ -3873,7 +3825,6 @@ function pasosSegunDatos(d) {
 async function recuperarJobPendiente() {
     if (!jobPendiente) return;
     const job = jobPendiente;
-    document.getElementById('recuperar-banner').classList.add('hidden');
 
     state.jobId = job.jobId;
     // El titular del cartel no se guarda en el job, así que lo que quede en pantalla al retomar es
@@ -3973,13 +3924,6 @@ async function recuperarJobPendiente() {
     log('🔁 Confirma las asignaciones para regenerar locución y crear OTRO video con el mismo guion (o edita el guion/ángulo arriba antes de confirmar).');
     renderAsignaciones(false, state.sourceData.protagonista);
     setStepStatus('revision-section', 'active');
-}
-
-function descartarJobPendiente() {
-    sessionStorage.removeItem('farandula_job_id');
-    jobPendiente = null;
-    document.getElementById('recuperar-banner').classList.add('hidden');
-    log('🗑️ Proceso pendiente descartado');
 }
 
 // Nombre de canal a partir de su id (poblado por cargarCanales) — para mostrarlo en el historial
