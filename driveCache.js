@@ -16,12 +16,25 @@ function cliente() {
 async function buscarArchivo(nombre) {
   const res = await cliente().files.list({
     q: `'${CACHE_FOLDER_ID}' in parents and name='${nombre}' and trashed=false`,
-    fields: 'files(id, name)',
+    fields: 'files(id, name, size)',
     pageSize: 1,
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
   });
   return res.data.files[0] || null;
+}
+
+// ¿El archivo es JSON sin nada adentro (`{}`, `[]`, vacío)? Si no se puede leer, se lo trata como
+// no vacío: la guarda de abajo solo debe frenar el caso claro, nunca un archivo real.
+function estaVacio(ruta) {
+  try {
+    const texto = fs.readFileSync(ruta, 'utf8').trim();
+    if (!texto) return true;
+    const datos = JSON.parse(texto);
+    return Array.isArray(datos) ? datos.length === 0 : (datos && typeof datos === 'object' && !Object.keys(datos).length);
+  } catch {
+    return false;
+  }
 }
 
 // Al arrancar: si el archivo local no existe (o está vacío), lo trae de la carpeta caché.
@@ -92,8 +105,23 @@ async function respaldar(localPath, nombreDrive, mimeType = 'application/json') 
     if (!EN_RAILWAY && ESTADO_COMPARTIDO.has(nombreDrive)) return;
     if (MODO_RESPALDO && ESTADO_COMPARTIDO.has(nombreDrive)) return;   // ver MODO_RESPALDO
     if (!fs.existsSync(localPath)) return;
-    const media = { mimeType, body: fs.createReadStream(localPath) };
     const archivo = await buscarArchivo(nombreDrive);
+
+    // Nunca subir un estado VACÍO encima de uno con contenido.
+    //
+    // Pasó el 2026-09-20: una prueba mal aislada subió `{}` a jobs.json e historial.json, los dos
+    // entornos se reiniciaron, restauraron el archivo vacío y quedaron sin un solo proceso. Se
+    // recuperó desde las revisiones de Drive, pero no tiene que poder volver a pasar — ni por una
+    // prueba, ni por un bug que vacíe la lista en memoria. Un estado compartido que de verdad quede
+    // vacío es tan raro que conviene exigir que alguien lo borre a mano en Drive.
+    if (archivo && ESTADO_COMPARTIDO.has(nombreDrive) && Number(archivo.size) > 100 && estaVacio(localPath)) {
+      console.warn(`🛑 No se respalda ${nombreDrive}: el archivo local está VACÍO y el de Drive tiene `
+        + `${archivo.size} bytes. Subirlo borraría el estado compartido de todos los entornos.`);
+      return;
+    }
+    // El archivo se abre recién ahora, cuando ya se sabe que se va a subir: abrirlo antes dejaba
+    // un descriptor abierto que nadie leía cada vez que la guarda de arriba frenaba la subida.
+    const media = { mimeType, body: fs.createReadStream(localPath) };
     if (archivo) {
       await cliente().files.update({ fileId: archivo.id, media, supportsAllDrives: true });
     } else {
