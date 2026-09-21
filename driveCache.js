@@ -70,6 +70,19 @@ async function restaurar(localPath, nombreDrive) {
 const ESTADO_COMPARTIDO = new Set(['jobs.json', 'historial.json', 'cola.json', 'famosos.json', 'ajustes.json', 'metricas-render.json']);
 const EN_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_SERVICE_NAME);
 
+// MODO RESPALDO (`MODO_RESPALDO=1`): el despliegue LEE el estado compartido pero nunca lo escribe.
+//
+// Por qué existe (2026-09-20): el usuario trabaja a diario en staging y deja producción como la
+// "versión que sé que funciona", para volver a ella si algo se rompe. Los dos entornos comparten la
+// carpeta `cache-estado`, y producción, aunque nadie la use, no está quieta: su limpieza de insumos
+// marca procesos cada 6 horas y guarda SU copia de jobs.json — que es la del día en que arrancó. Esa
+// escritura pisaría en Drive todos los procesos que el usuario creó después en staging.
+//
+// En modo respaldo se sigue RESTAURANDO al arrancar: cada reinicio trae el estado más reciente, así
+// que el día que haga falta volver a producción, arranca con todo el historial. Para usar producción
+// de verdad (no como respaldo), se quita la variable.
+const MODO_RESPALDO = /^(1|true|si|sí)$/i.test(process.env.MODO_RESPALDO || '');
+
 // Respalda (crea o actualiza) un archivo local en la carpeta caché de Drive.
 // Fire-and-forget: nunca debe tumbar el flujo principal si Drive falla.
 // mimeType: 'application/json' por defecto (jobs.json/historial.json, los 2 usos originales);
@@ -77,6 +90,7 @@ const EN_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.R
 async function respaldar(localPath, nombreDrive, mimeType = 'application/json') {
   try {
     if (!EN_RAILWAY && ESTADO_COMPARTIDO.has(nombreDrive)) return;
+    if (MODO_RESPALDO && ESTADO_COMPARTIDO.has(nombreDrive)) return;   // ver MODO_RESPALDO
     if (!fs.existsSync(localPath)) return;
     const media = { mimeType, body: fs.createReadStream(localPath) };
     const archivo = await buscarArchivo(nombreDrive);
@@ -106,4 +120,4 @@ async function borrar(nombreDrive) {
   }
 }
 
-module.exports = { restaurar, respaldar, borrar, CACHE_FOLDER_ID };
+module.exports = { restaurar, respaldar, borrar, CACHE_FOLDER_ID, MODO_RESPALDO};

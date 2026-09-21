@@ -110,6 +110,12 @@ async function limpiar() {
 const DEMORA_PRIMERA = 60 * 1000;
 
 function start() {
+  // En modo respaldo la limpieza la hace el entorno que se usa a diario. Correrla también acá sería
+  // escribir jobs.json en el respaldo compartido — justo lo que el modo respaldo existe para evitar.
+  if (require('./driveCache').MODO_RESPALDO) {
+    console.log('🛟 Modo respaldo: este despliegue solo LEE el estado compartido (no lo escribe) y no corre la limpieza de insumos');
+    return;
+  }
   console.log(`🔄 Limpieza de insumos activa: cada ${INTERVALO_HORAS}h, retención ${RETENCION_HORAS}h`);
   setTimeout(limpiar, DEMORA_PRIMERA);
   setInterval(limpiar, INTERVALO_HORAS * HORA_MS);
