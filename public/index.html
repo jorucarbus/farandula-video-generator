@@ -556,29 +556,34 @@
 
                 <!-- Solo visible en modo gemelos: sin esto, con dos juegos de título/descripción en
                      pantalla no se sabría cuál es de cuál canal. -->
-                <h3 id="lectura-propia-titulo" class="hidden">Para el canal principal</h3>
+                <!-- Los textos que se copian para publicar van con un color pastel según el FORMATO
+                     del canal (largo o corto). Con dos juegos en pantalla, el color evita pegar el
+                     texto del video equivocado al momento de postear (pedido del usuario). -->
+                <div id="lectura-propia" class="lectura-lado">
+                    <h3 id="lectura-propia-titulo" class="hidden">Para el canal principal</h3>
 
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Título</label>
-                        <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    <div class="copy-block">
+                        <div class="copy-header">
+                            <label>Título</label>
+                            <button class="btn-copy" onclick="copyText('res-titulo')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                        </div>
+                        <p class="copy-content" id="res-titulo"></p>
                     </div>
-                    <p class="copy-content" id="res-titulo"></p>
-                </div>
 
-                <div class="copy-block">
-                    <div class="copy-header">
-                        <label>Descripción + Hashtags (para redes)</label>
-                        <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                    <div class="copy-block">
+                        <div class="copy-header">
+                            <label>Descripción + Hashtags (para redes)</label>
+                            <button class="btn-copy" onclick="copyText('res-descripcion')"><span class="icon-slot" data-icon="copy"></span> Copiar</button>
+                        </div>
+                        <p class="copy-content" id="res-descripcion"></p>
                     </div>
-                    <p class="copy-content" id="res-descripcion"></p>
                 </div>
 
                 <!-- Videos gemelos: el segundo video tiene título y descripción PROPIOS (los genera
                      gemini.variarMetadatos para que los dos canales no publiquen el mismo texto).
                      Se muestran acá, junto a los del primero y no en una pestaña, porque a la hora
                      de publicar hacen falta los dos a mano. La crónica no se repite: es compartida. -->
-                <div id="lectura-gemela" class="lectura-gemela hidden">
+                <div id="lectura-gemela" class="lectura-gemela lectura-lado hidden">
                     <h3 id="lectura-gemela-titulo">Para el canal hermano</h3>
                     <p id="aviso-meta-gemela" class="banner-warning hidden">
                         ⚠️ Salió el mismo título y descripción que el otro canal: no se pudo generar una

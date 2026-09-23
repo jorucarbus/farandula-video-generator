@@ -502,6 +502,30 @@ function pintarResultados() {
 // para publicar el segundo video.
 //
 // Se muestran los DOS a la vez, no en pestañas: a la hora de publicar hacen falta ambos a mano.
+// Pinta cada lado (A y B) con el color pastel de SU formato y le pone la etiqueta que lo dice.
+// El formato sale del canal y del interruptor de videos cortos, igual que el largo del guion, así
+// que si se cambia el destino o se apaga el interruptor, el color acompaña.
+function pintarFormatoTextos() {
+    for (const [v, idCaja, idRotulo] of [['A', 'lectura-propia', 'lectura-propia-titulo'], ['B', 'lectura-gemela', 'lectura-gemela-titulo']]) {
+        const caja = document.getElementById(idCaja);
+        if (!caja) continue;
+        const corto = largoDeVariante(v) === LARGO_CORTO;
+        caja.classList.toggle('formato-corto', corto);
+        caja.classList.toggle('formato-largo', !corto);
+
+        const rotulo = document.getElementById(idRotulo);
+        if (!rotulo) continue;
+        // El nombre del canal lo escribe quien llama; acá solo se agrega (o actualiza) la etiqueta.
+        let etiqueta = rotulo.querySelector('.formato-tag');
+        if (!etiqueta) {
+            etiqueta = document.createElement('span');
+            etiqueta.className = 'formato-tag';
+            rotulo.appendChild(etiqueta);
+        }
+        etiqueta.textContent = corto ? 'video corto · 30-40s' : 'video largo · +1 min';
+    }
+}
+
 function pintarLecturaGemela() {
     const caja = document.getElementById('lectura-gemela');
     const rotuloPropio = document.getElementById('lectura-propia-titulo');
@@ -514,9 +538,13 @@ function pintarLecturaGemela() {
         rotuloPropio.classList.toggle('hidden', !hay);
         rotuloPropio.textContent = hay ? `Para ${etiquetaVariante('A')}` : '';
     }
+    // El color va siempre, también con un solo video: ahí dice de un vistazo si ese canal publica
+    // largo o corto.
+    pintarFormatoTextos();
     if (!hay) return;
 
     document.getElementById('lectura-gemela-titulo').textContent = `Para ${etiquetaVariante('B')}`;
+    pintarFormatoTextos();   // el rótulo se acaba de reescribir: hay que reponer su etiqueta
     document.getElementById('res-titulo-b').textContent = meta.titulo || '';
     document.getElementById('res-descripcion-b').textContent = meta.descripcion || '';
 
@@ -1970,6 +1998,7 @@ async function cambiarVideosCortos(activo) {
     const chkFinal = document.getElementById('chk-cortos');
     if (chkFinal) chkFinal.checked = state.videosCortos;
     actualizarStatsGuion();
+    pintarFormatoTextos();
 }
 
 function copyGuion() {

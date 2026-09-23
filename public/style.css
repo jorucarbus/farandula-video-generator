@@ -967,6 +967,46 @@ footer {
 .asignacion-todos label { font-size: 0.85rem; font-weight: 700; margin: 0; }
 .asignacion-todos select { width: auto; min-width: 220px; max-width: 100%; }
 
+/* Textos para publicar, en pastel según el formato del canal: con dos juegos en pantalla, el
+   color es lo que evita copiar el del video equivocado. Pastel y no color pleno para no competir
+   con el texto, que es lo que se lee y se copia. */
+:root {
+    --pastel-largo: #eef3ff;        /* lavanda: video largo (+1 min) */
+    --pastel-largo-borde: #7c9cf5;
+    --pastel-corto: #eefaf1;        /* menta: video corto (30-40s) */
+    --pastel-corto-borde: #63b98a;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --pastel-largo: #1b2236;
+        --pastel-largo-borde: #5b78c7;
+        --pastel-corto: #16261d;
+        --pastel-corto-borde: #4d8f6b;
+    }
+}
+
+.lectura-lado {
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    border-left: 4px solid transparent;
+}
+.lectura-lado.formato-largo { background: var(--pastel-largo); border-left-color: var(--pastel-largo-borde); }
+.lectura-lado.formato-corto { background: var(--pastel-corto); border-left-color: var(--pastel-corto-borde); }
+.lectura-lado h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.formato-tag {
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: var(--text);
+    border: 1px solid transparent;
+}
+.formato-largo .formato-tag { background: var(--surface); border-color: var(--pastel-largo-borde); }
+.formato-corto .formato-tag { background: var(--surface); border-color: var(--pastel-corto-borde); }
+
 /* Tiempos de render */
 #metricas-box > summary { cursor: pointer; }
 .metricas-grupo { margin-top: 12px; }
