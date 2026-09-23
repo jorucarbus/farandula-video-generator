@@ -20,6 +20,9 @@ const NOMBRE_DRIVE = 'ajustes.json';
 // ("que esté todo el tiempo prendido"), y se apaga el día que La Naple y Supe Lupe moneticen.
 const POR_DEFECTO = {
   videosCortos: true,
+  // El guion largo se escribe en dos tiempos (núcleo + complemento). El usuario eligió este método
+  // a ciegas contra el de un solo pase, el 2026-09-22.
+  guionDosTiempos: true,
 };
 
 let cache = null;

@@ -154,6 +154,7 @@ let state = {
     // Arranca igual que el valor de fábrica del servidor, para que el contador de palabras del
     // Paso 3 no mienta en el instante entre que carga la página y llega la respuesta de /ajustes.
     videosCortos: true,
+    guionDosTiempos: true,
     avisoReconstruccion: null, // los fragmentos no reconstruyeron el guion (tiempos corridos)
     previewToken: null, // token del preview del último video renderizado, para /api/portada
     materialesAdicionales: [], // [{id, tipo, tieneVideo, descripcion, citas}, ...] — espejo de job.materialesAdicionales
@@ -685,6 +686,26 @@ const ETAPAS_RENDER = {
     plan: 'Plan de tomas', descarga: 'Bajar clips', subtitulos: 'Subtítulos', musica: 'Música',
     cortes: 'Cortar tomas', union: 'Unir (transiciones)', mezcla: 'Mezcla final', subida: 'Subir a Drive',
 };
+
+// Por debajo de esto, un video de canal largo no califica para los programas que pagan por vistas
+// (mismo número que `MINIMO_MONETIZA_SEG` en largos.js).
+const MINIMO_MONETIZA_SEG = 62;
+
+// Avisa si la locución de un canal largo se quedó corta para monetizar. Se mide sobre el audio
+// real, que es el único dato confiable: la cuenta por palabras se equivoca hasta un 20%.
+function avisarSiNoLlegaAlMinuto(v, duracion) {
+    const aviso = document.getElementById('aviso-minuto');
+    if (!aviso) return;
+    const esLargo = largoDeVariante(v) !== LARGO_CORTO;
+    const corto = esLargo && Number(duracion) > 0 && Number(duracion) < MINIMO_MONETIZA_SEG;
+    aviso.classList.toggle('hidden', !corto);
+    if (corto) {
+        aviso.textContent = `⚠️ Esta locución dura ${Math.round(duracion)}s y el video va a durar lo mismo. `
+            + `Para que ${etiquetaVariante(v)} califique para monetizar tiene que pasar del minuto: `
+            + `volvé al Paso 3, alargá un poco el guion y regenerá la locución.`;
+        log(`⚠️ ${etiquetaVariante(v)}: locución de ${Math.round(duracion)}s, no llega al minuto`);
+    }
+}
 
 const fmtSeg = s => (Number.isFinite(s) ? (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${s}s`) : '—');
 
@@ -1970,12 +1991,35 @@ async function cargarAjustes() {
     try {
         const r = await apiCall('/ajustes', 'GET');
         state.videosCortos = r.ajustes?.videosCortos !== false;
+        state.guionDosTiempos = r.ajustes?.guionDosTiempos !== false;
     } catch {
-        state.videosCortos = true;   // el valor de fábrica; si el servidor no contesta, no se miente
+        // Los valores de fábrica; si el servidor no contesta, la pantalla no miente.
+        state.videosCortos = true;
+        state.guionDosTiempos = true;
     }
     const chk = document.getElementById('chk-cortos');
     if (chk) chk.checked = state.videosCortos;
+    const chkDos = document.getElementById('chk-dos-tiempos');
+    if (chkDos) chkDos.checked = state.guionDosTiempos;
     actualizarStatsGuion();
+}
+
+// Interruptor del guion largo en dos tiempos. Igual que el de videos cortos: vive en el servidor,
+// así que vale para todas las ventanas.
+async function cambiarDosTiempos(activo) {
+    const antes = state.guionDosTiempos;
+    state.guionDosTiempos = Boolean(activo);
+    try {
+        await apiCall('/ajustes', 'PUT', { guionDosTiempos: state.guionDosTiempos });
+        log(state.guionDosTiempos
+            ? '✍️ Guion largo en dos tiempos: núcleo de 35s + complemento de 30s'
+            : '✍️ Guion largo de un solo pase (método anterior)');
+    } catch (e) {
+        state.guionDosTiempos = antes;
+        log(`⚠️ No se pudo guardar el ajuste: ${e.message}`);
+    }
+    const chk = document.getElementById('chk-dos-tiempos');
+    if (chk) chk.checked = state.guionDosTiempos;
 }
 
 async function cambiarVideosCortos(activo) {
@@ -2523,6 +2567,7 @@ async function regenerarAudio(modelo, v = state.varianteActiva) {
         if (v === state.varianteActiva) {
             document.getElementById('audio-info').textContent =
                 `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
+            avisarSiNoLlegaAlMinuto(v, result.duracion);
             const player = document.getElementById('audio-player');
             // La URL del audio es relativa al backend activo (importante en modo insumos)
             player.src = apiBase() + result.audioUrl + '?t=' + Date.now();
@@ -2583,6 +2628,7 @@ async function recargarAudioDeDrive() {
         if (v === state.varianteActiva) {
             document.getElementById('audio-info').textContent =
                 `Duración: ${result.duracion}s | Origen: Drive`;
+            avisarSiNoLlegaAlMinuto(v, result.duracion);
             const player = document.getElementById('audio-player');
             player.src = url;
             player.load();

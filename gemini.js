@@ -994,6 +994,42 @@ function limpiarGuion(texto, objetivo = largos.NORMAL) {
   return elegido;
 }
 
+// El guion largo, escrito en DOS TIEMPOS: primero un núcleo que se sostiene solo, después un
+// complemento que lo extiende sin repetirlo.
+//
+// Por qué (pedido del usuario, 2026-09-22): al escribir 215 palabras de una sola vez, el modelo
+// mete todo y el guion queda disperso. Pedirle primero 35 segundos lo obliga a elegir UN hecho y
+// contarlo completo — que es lo que hace buenos a los guiones cortos. El complemento llega después,
+// con el núcleo ya escrito delante, así que no puede repetirlo.
+//
+// El segundo tramo lo escribe siempre el motor de siempre, aunque el primero lo haya escrito el
+// del grafo: el complemento CONTINÚA algo que ya tiene estructura, no vuelve a estructurar.
+//
+// Degradación: si el complemento falla, se cae al guion de un solo pase (Regla de robustez) — un
+// guion de 35 segundos en un canal que publica largo no calificaría para monetizar.
+async function escribirGuionEnDosTiempos(cronica, angle, angleContent = null, citas = [], guionEvitar = null, motor = 'gemini', instruccionUsuario = '') {
+  const fn = MOTORES_GUION[motor] || MOTORES_GUION.gemini;
+  exigirCronica(cronica);
+
+  const nucleo = limpiarGuion(
+    await fn(cronica, angle, angleContent, citas, guionEvitar, largos.bloqueDelNucleo(largos.NUCLEO), instruccionUsuario, largos.NUCLEO),
+    largos.NUCLEO);
+  console.log(`  ✍️ Núcleo: ${contarPalabras(nucleo)} palabras`);
+
+  try {
+    const complemento = limpiarGuion(
+      await generarGuion(cronica, angle, angleContent, [], guionEvitar,
+        largos.bloqueDelComplemento(largos.COMPLEMENTO, nucleo), instruccionUsuario, largos.COMPLEMENTO),
+      largos.COMPLEMENTO);
+    const completo = `${nucleo.trim()} ${complemento.trim()}`;
+    console.log(`  ✍️ Complemento: ${contarPalabras(complemento)} palabras — guion completo: ${contarPalabras(completo)}`);
+    return entregar(completo);
+  } catch (e) {
+    console.warn(`  ⚠️ El complemento falló (${e.message}); el guion se escribe de una sola vez`);
+    return escribirGuion(cronica, angle, angleContent, citas, guionEvitar, motor, instruccionUsuario, largos.NORMAL);
+  }
+}
+
 // Único lugar por el que sale TODO guion entregado, de cualquier motor: acá se anota su apertura
 // para que el próximo video no repita ese arranque. Si el registro falla, el guion sale igual —
 // perder la memoria degrada la variedad, no rompe el video.
@@ -1396,7 +1432,7 @@ function getAngleName(angle) {
 }
 
 module.exports = {
-  escribirGuion, MOTORES_GUION, variarMetadatos,
+  escribirGuion, escribirGuionEnDosTiempos, MOTORES_GUION, variarMetadatos,
   promptGuion,   // el prompt maestro con el largo del canal ya puesto
   limpiarGuion,   // guarda: el guion sale sin el razonamiento del modelo pegado
   bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, PROMPTS,

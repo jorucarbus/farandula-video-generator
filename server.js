@@ -154,6 +154,12 @@ async function canalDeVariante(job, variante) {
 
 // Cuánto tiene que durar el guion de esta variante. Con el interruptor apagado devuelve el largo
 // de siempre para todos, que es exactamente el comportamiento anterior.
+// El guion en dos tiempos es SOLO para el formato largo: en uno de 35 segundos no hay nada que
+// partir en dos. Con el interruptor apagado, todo vuelve al guion de un solo pase.
+function enDosTiempos(objetivo) {
+  return Boolean(ajustes.obtener().guionDosTiempos) && objetivo?.id === 'normal';
+}
+
 async function objetivoDeVariante(job, variante) {
   const activo = ajustes.obtener().videosCortos;
   if (!activo) return largos.NORMAL;
@@ -1452,10 +1458,12 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
       }
     }
     const objetivoB = await objetivoDeVariante(job, 'B');
+    const citasParaB = citasB.slice(0, largos.citasMaximas(objetivoB));
     // Las citas se recortan al máximo que aguanta este largo: en un video de 35 segundos, dos citas
     // de entrevista son el 20% del video y a la narración propia no le queda nada.
-    const scriptB = await gemini.escribirGuion(cronicaB, angle, angleContent,
-      citasB.slice(0, largos.citasMaximas(objetivoB)), scriptA, motorElegido, job?.instruccion, objetivoB);
+    const scriptB = enDosTiempos(objetivoB)
+      ? await gemini.escribirGuionEnDosTiempos(cronicaB, angle, angleContent, citasParaB, scriptA, motorElegido, job?.instruccion)
+      : await gemini.escribirGuion(cronicaB, angle, angleContent, citasParaB, scriptA, motorElegido, job?.instruccion, objetivoB);
     const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
     // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
     // texto del post tiene que acompañarla, no repetir el enfoque del primero.
@@ -1570,8 +1578,10 @@ app.post('/api/generate-script', async (req, res) => {
     const comoElige = motorElegido === 'grafo' ? 'estructura del grafo' : `ángulo ${angle}`;
     console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
     const objetivoA = await objetivoDeVariante(job, 'A');
-    const script = await gemini.escribirGuion(cronicaA, angle, angleContent,
-      citasA.slice(0, largos.citasMaximas(objetivoA)), null, motorElegido, job?.instruccion, objetivoA);
+    const citasParaA = citasA.slice(0, largos.citasMaximas(objetivoA));
+    const script = enDosTiempos(objetivoA)
+      ? await gemini.escribirGuionEnDosTiempos(cronicaA, angle, angleContent, citasParaA, null, motorElegido, job?.instruccion)
+      : await gemini.escribirGuion(cronicaA, angle, angleContent, citasParaA, null, motorElegido, job?.instruccion, objetivoA);
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 

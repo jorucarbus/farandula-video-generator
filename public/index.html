@@ -244,6 +244,20 @@
                     cuatro canales vuelven al largo de siempre.
                 </p>
 
+                <!-- El guion largo se escribe en dos tiempos: un núcleo de 35s que se sostiene solo y
+                     un complemento de 30s. Elegido por el usuario a ciegas contra el método viejo. -->
+                <label class="gemelos-switch" for="chk-dos-tiempos">
+                    <input type="checkbox" id="chk-dos-tiempos" checked onchange="cambiarDosTiempos(this.checked)">
+                    <span><strong>Guion largo en dos tiempos</strong> — primero 35 segundos que se sostienen solos, después 30 de complemento.</span>
+                </label>
+                <p class="hint" id="hint-dos-tiempos">
+                    Escribir todo de una vez hace que el guion meta de todo y se disperse. Pidiendo
+                    primero 35 segundos, el guion elige UN hecho y lo cuenta completo — y como la
+                    mayoría no pasa de la mitad del video, ahí va todo lo importante. El complemento
+                    suma otra capa y hace que el video cruce el minuto, que es lo que pide la
+                    monetización. No aplica a los canales que publican corto.
+                </p>
+
                 <button class="btn btn-primary" id="btn-generate-script" onclick="handleGenerateScript()">
                     <span class="icon-slot" data-icon="pencilSimple"></span> Generar guion
                 </button>
@@ -338,6 +352,9 @@
                     </button>
                 </div>
                 <p id="audio-info" class="hint"></p>
+                <!-- Se mide sobre la locución REAL: la estimación por palabras se equivoca hasta un
+                     20%, y de esto depende que el video califique para monetizar. -->
+                <div id="aviso-minuto" class="banner-warning hidden"></div>
                 <audio id="audio-player" controls class="mb-sm"></audio>
                 <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-audio" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
