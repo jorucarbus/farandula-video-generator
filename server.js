@@ -1768,7 +1768,27 @@ app.post('/api/fragment', async (req, res) => {
     const deDonde = aprobadas.length ? ' aprobadas por el usuario' : '';
     console.log(`📂 Fragmentando guion en párrafos (${usadas.length} de ${carpetas.length} carpetas${deDonde}`
       + `${carpetasRelevantes.length ? `: ${usadas.join(', ')}` : ' — sin coincidencias, se usan todas'})...`);
-    const fragments = await gemini.fragmentarGuionParrafos(script, usadas);
+    // El reparto se pide UNA vez y, si los fragmentos no reconstruyen el guion, se pide de nuevo.
+    //
+    // Por qué: el tiempo de cada toma sale de su proporción de caracteres, así que si el modelo se
+    // come o cambia una palabra al partir el guion, TODOS los clips quedan corridos respecto de la
+    // voz — es como salieron los subtítulos descuadrados que el usuario ya sufrió. No es un error
+    // determinista: casi siempre el segundo intento sale bien, así que conviene reintentarlo solo
+    // antes de molestar a nadie. Si el segundo también falla, se entrega el mejor de los dos y el
+    // aviso queda a la vista con el botón para rehacerlo a mano.
+    let fragments = await gemini.fragmentarGuionParrafos(script, usadas);
+    if (fragments.verificacion && !fragments.verificacion.ok) {
+      console.warn(`  ⚠️ Los fragmentos no reconstruyen el guion; se pide el reparto una vez más`);
+      try {
+        const segundo = await gemini.fragmentarGuionParrafos(script, usadas);
+        if (segundo.verificacion?.ok) {
+          console.log('  ✅ El segundo reparto sí reconstruye el guion');
+          fragments = segundo;
+        }
+      } catch (e) {
+        console.warn(`  ⚠️ El reintento del reparto falló (${e.message}); se usa el primero`);
+      }
+    }
 
     // NINGÚN fragmento puede quedar con un famoso que no tenga carpeta en Drive.
     //

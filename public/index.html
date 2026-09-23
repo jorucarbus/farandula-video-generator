@@ -309,6 +309,13 @@
                 </div>
                 <div id="aviso-protagonista" class="banner-danger hidden"></div>
                 <div id="aviso-reconstruccion" class="banner-danger hidden"></div>
+                <!-- El reparto lo hace un modelo y falla de a ratos: acá se puede pedir de nuevo,
+                     antes de gastar la locución. -->
+                <div class="btn-row hidden" id="rehacer-reparto-wrap">
+                    <button class="btn btn-secondary" id="btn-rehacer-reparto" onclick="rehacerReparto()">
+                        <span class="icon-slot" data-icon="arrowsClockwise"></span> Rehacer el reparto
+                    </button>
+                </div>
                 <!-- Párrafos que apuntaban a una carpeta inexistente. Si no se corrigen, ese
                      tramo del video sale sin imagen (fotograma congelado). -->
                 <div id="aviso-reasignados" class="banner-warning hidden"></div>

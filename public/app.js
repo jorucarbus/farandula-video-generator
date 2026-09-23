@@ -2159,6 +2159,27 @@ async function usarTodasLasCarpetas() {
     await repartirTomas(v, null);
 }
 
+// Vuelve a pedir el reparto de tiempos del canal que se está mirando.
+//
+// Existe porque el aviso de "los fragmentos no reconstruyen el guion" era un callejón sin salida:
+// avisaba que los clips iban a quedar corridos y no dejaba hacer nada (pedido del usuario,
+// 2026-09-23). El servidor ya reintenta solo una vez; esto es para cuando ese reintento tampoco
+// alcanzó.
+async function rehacerReparto() {
+    const v = state.varianteActiva;
+    const d = V(v);
+    if (!d.guion) { alert('Primero hay que aprobar el guion.'); return; }
+    // Rehacer parte de cero: lo corregido a mano en este paso se pierde, y es mejor decirlo antes.
+    const hayMaterial = (d.fragments || []).some(f => f.materialAdicional);
+    if (!confirm(`Se vuelve a repartir el guion de ${etiquetaVariante(v)} en párrafos.`
+        + `\n\nLas carpetas que hayas corregido a mano acá${hayMaterial ? ', y el material adicional asignado,' : ''} se rehacen desde cero.`
+        + `\n\n¿Seguimos?`)) return;
+    log(`🔁 Rehaciendo el reparto de ${etiquetaVariante(v)}...`);
+    await repartirTomas(v, d.carpetasAprobadas || null);
+    if (!V(v).avisoReconstruccion) log('✅ Ahora los fragmentos sí reconstruyen el guion: los tiempos quedan bien');
+    else log('⚠️ Sigue sin reconstruir el guion. Probá de nuevo, o revisá si el guion tiene algún carácter raro');
+}
+
 // El reparto en sí — lo que antes hacía `aprobarGuion()` de corrido.
 async function repartirTomas(v, carpetasAprobadas) {
     const d = V(v);
@@ -2221,6 +2242,9 @@ function renderAsignaciones(protagonistaSinCarpeta, protagonistaNombre) {
         avisoReasig.textContent = texto ? `⚠️ ${texto}` : '';
         avisoReasig.classList.toggle('hidden', !texto);
     }
+
+    // El botón de rehacer vive con el aviso: si los tiempos están bien, no hay nada que rehacer.
+    document.getElementById('rehacer-reparto-wrap')?.classList.toggle('hidden', !V().avisoReconstruccion);
 
     const avisoRec = document.getElementById('aviso-reconstruccion');
     if (V().avisoReconstruccion) {
