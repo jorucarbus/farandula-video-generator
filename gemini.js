@@ -181,7 +181,7 @@ function promptGuion(objetivo) {
 
 // Un intento contra UN modelo, con reintentos internos por sobrecarga temporal.
 // Marca el error con _geminiTemporal para que callGemini sepa si vale la pena caer al siguiente modelo.
-async function intentarModelo(modelo, prompt, userParts, configExtra, herramientas = null) {
+async function intentarModelo(modelo, prompt, userParts, configExtra, herramientas = null, sinThinking = false) {
   // Pocos reintentos por modelo: como hay cadena de fallback, conviene saltar rápido
   // al siguiente modelo en vez de insistir mucho en uno saturado.
   const MAX_INTENTOS = 2;
@@ -200,11 +200,13 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
           temperature: 0.7,
           topP: 0.95,
           maxOutputTokens: 8192,
-          // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida
-          thinkingConfig: { thinkingBudget: 0 },
+          // Desactivar el razonamiento interno: consume el límite de tokens y corta la salida. Pero
+          // no todos los modelos lo aceptan — ver el reintento `sinThinking` más abajo.
+          ...(sinThinking ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
           ...configExtra,
         }
       };
+      if (sinThinking) delete cuerpo.generationConfig.thinkingConfig;
       // Herramientas (hoy solo búsqueda de Google). Va aparte y solo si se pide: el resto de las
       // llamadas —guion, fragmentación, marcas— no debe tocar la web ni gastar cupo de búsqueda.
       if (herramientas) cuerpo.tools = herramientas;
@@ -255,6 +257,22 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
           + `(dijo: ${detalleApi})`;
         error._geminiSiguienteModelo = false;   // ningún modelo de la cadena va a andar
         throw error;
+      }
+
+      // Un 400 puede ser ESTE modelo rechazando `thinkingConfig:{thinkingBudget:0}`. Confirmado
+      // real (2026-09-25): `gemini-flash-lite-latest` —el ÚLTIMO de la cadena— lo rechaza SIEMPRE,
+      // con o sin contenido de por medio (probado con un prompt trivial). Sin este reintento, cada
+      // vez que los otros tres modelos están saturados (pasa seguido, ver bitácora), la cadena
+      // entera muere acá: no queda a quién más caer. Se reintenta UNA vez, mismo modelo, sin
+      // thinkingConfig — una respuesta sin ese ahorro de tokens es muchísimo mejor que ninguna.
+      if (status === 400 && !sinThinking) {
+        console.warn(`  ⚠️  ${modelo} rechazó thinkingConfig (400); reintentando sin él...`);
+        try {
+          return await intentarModelo(modelo, prompt, userParts, configExtra, herramientas, true);
+        } catch {
+          // Tampoco funcionó sin thinking: se sigue abajo con el manejo normal de este error 400
+          // (cae al siguiente modelo de la cadena, como ya hacía antes de este cambio).
+        }
       }
 
       const temporal = status === 429 || status === 503 || status === 500 || error._vacia;
