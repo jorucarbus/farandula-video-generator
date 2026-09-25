@@ -222,7 +222,21 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
           return herramientas ? { texto, grounding: candidato.groundingMetadata || null } : texto;
         }
       }
-      throw new Error('No hay respuesta de Gemini');
+      // Respuesta sin texto: puede ser un bloqueo de seguridad, un corte por finishReason, o un
+      // glitch puntual de ESE modelo — no de la cuenta. Se marca `_vacia` para que el catch de
+      // abajo la trate igual que un 429/503/500: reintenta el mismo modelo una vez y, si sigue
+      // vacía, cae al siguiente de la cadena.
+      //
+      // Antes esto lanzaba un Error común, SIN `.response`, así que `status` salía undefined,
+      // `temporal` salía false, y `_geminiSiguienteModelo` terminaba en false — la cadena de 4
+      // modelos se cortaba en el primero sin probar ni un segundo. Encontrado en vivo (2026-09-24):
+      // el guion en dos tiempos duplica las llamadas por render y expuso el bug en la primera
+      // noticia real que lo disparó.
+      const candidato0 = response.data.candidates?.[0];
+      const motivo = candidato0?.finishReason || response.data?.promptFeedback?.blockReason;
+      const vacia = new Error(`No hay respuesta de Gemini${motivo ? ` (${motivo})` : ''}`);
+      vacia._vacia = true;
+      throw vacia;
     } catch (error) {
       // 429 = límite de tasa; 503 = modelo sobrecargado; 500 = error interno. Todos temporales.
       const status = error.response?.status;
@@ -243,10 +257,11 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
         throw error;
       }
 
-      const temporal = status === 429 || status === 503 || status === 500;
+      const temporal = status === 429 || status === 503 || status === 500 || error._vacia;
       if (temporal && intento < MAX_INTENTOS) {
         const espera = (status === 429 ? 20000 : 8000) * intento;
-        console.log(`⏳ ${modelo} respondió ${status}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
+        const razon = status ? `respondió ${status}` : "devolvió una respuesta vacía";
+        console.log(`⏳ ${modelo} ${razon}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
         await new Promise(r => setTimeout(r, espera));
         continue;
       }
