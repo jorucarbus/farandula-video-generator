@@ -132,6 +132,8 @@ INSTRUCCIONES CRÍTICAS:
 8. ATRIBUIR LO QUE NO ESTÁ PROBADO. Todo lo que sea acusación, rumor o versión de una parte va atribuido y matizado: "según ella", "habría", "lo acusan de", "trascendió que". Solo se afirma en seco lo que el MATERIAL BASE da por hecho comprobado.
    Ejemplo: "le fue infiel" (afirmación) → "ella lo acusa de haberle sido infiel" (atribución).
    Esto NO baja el tono ni quita filo: la misma frase pega igual y deja de ser una acusación tuya.
+9. MENORES DE EDAD. Si la noticia involucra a un niño, niña o adolescente: NO se nombra (queda "su hija", "el menor", "la pequeña"), y se cuenta lo que HACEN LOS ADULTOS, nunca lo que se mira o se dice del menor. Prohibido describir su cuerpo, su aspecto o sus gestos, y prohibido el vocabulario de mirada o acecho ("morbosos", "acechaban", "cada parpadeo", "devorar con la mirada"). Una frase que junta a un menor con una mirada o un deseo ajeno no se escribe, ni siquiera para criticar a quien mira: el filtro de contenido de Gemini y el de TikTok no distinguen la intención, y bloquean el video.
+   Ejemplo: "miles de ojos morbosos acechaban a su pequeña" → "la exposición constante de su hija en las transmisiones llegó a su límite".
 
 PROHIBIDO:
 - Frases incompletas o cortadas.
