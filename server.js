@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const gemini = require('./gemini');
+const revisionGuion = require('./revisionGuion');
 const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
 const video = require('./video');
@@ -1461,14 +1462,16 @@ async function escribirGuionGemelo({ job, cronica, angle, angleContent, motorEle
     const citasParaB = citasB.slice(0, largos.citasMaximas(objetivoB));
     // Las citas se recortan al máximo que aguanta este largo: en un video de 35 segundos, dos citas
     // de entrevista son el 20% del video y a la narración propia no le queda nada.
-    const scriptB = enDosTiempos(objetivoB)
+    const guionCrudoB = enDosTiempos(objetivoB)
       ? await gemini.escribirGuionEnDosTiempos(cronicaB, angle, angleContent, citasParaB, scriptA, motorElegido, job?.instruccion)
       : await gemini.escribirGuion(cronicaB, angle, angleContent, citasParaB, scriptA, motorElegido, job?.instruccion, objetivoB);
+    const revisadoB = await revisionGuion.revisar(guionCrudoB, cronicaB);
+    const scriptB = revisadoB.guion;
     const palabrasB = scriptB.split(/\s+/).filter(Boolean).length;
     // Título/descripción del gemelo salen de SU crónica: si toma la postura contraria, el
     // texto del post tiene que acompañarla, no repetir el enfoque del primero.
     const metadatosB = await gemini.variarMetadatos(cronicaB, scriptB, metadatos || {});
-    const resultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB };
+    const resultado = { script: scriptB, palabras: palabrasB, metadatos: metadatosB, avisosRevision: revisadoB.avisos, cambiosRevision: revisadoB.cambios };
     if (cronicaB !== cronica) {
       if (encuadreB) resultado.encuadre = encuadreB;
       else resultado.sesgo = sesgoOpuesto(job?.sesgo);
@@ -1579,9 +1582,13 @@ app.post('/api/generate-script', async (req, res) => {
     console.log(`✍️ Generando guion (${comoElige})${citasA.length ? `, con espacio para ${citasA.length} cita(s)` : ''}${gemela ? ' + su gemelo' : ''}...`);
     const objetivoA = await objetivoDeVariante(job, 'A');
     const citasParaA = citasA.slice(0, largos.citasMaximas(objetivoA));
-    const script = enDosTiempos(objetivoA)
+    const guionCrudoA = enDosTiempos(objetivoA)
       ? await gemini.escribirGuionEnDosTiempos(cronicaA, angle, angleContent, citasParaA, null, motorElegido, job?.instruccion)
       : await gemini.escribirGuion(cronicaA, angle, angleContent, citasParaA, null, motorElegido, job?.instruccion, objetivoA);
+    // Pasada de revisión sobre el guion terminado: menores, léxico de España/Argentina y
+    // afirmaciones sin respaldo en la crónica. Lo que no pueda arreglar vuelve como aviso.
+    const revisadoA = await revisionGuion.revisar(guionCrudoA, cronicaA);
+    const script = revisadoA.guion;
     const palabras = script.split(/\s+/).filter(Boolean).length;
     console.log(`  📝 Guion generado: ${palabras} palabras, ${script.length} caracteres`);
 
@@ -1604,6 +1611,8 @@ app.post('/api/generate-script', async (req, res) => {
       status: 'success',
       script: script,
       palabras: palabras,
+      avisosRevision: revisadoA.avisos,
+      cambiosRevision: revisadoA.cambios,
       gemela: gemelaResultado,   // null si no se pidió o si falló
     });
   } catch (error) {

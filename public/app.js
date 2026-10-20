@@ -345,9 +345,33 @@ function volcarVista() {
     if (dest && dest.value) d.selectedDestFolder = dest.value;
 }
 
+// Qué hizo la revisión automática con el guion de la pestaña abierta: frases reescritas (nombre de
+// un menor, léxico de España/Argentina, afirmaciones sin respaldo) y, sobre todo, lo que NO pudo
+// arreglar — eso el usuario tiene que corregirlo a mano antes de aprobar.
+function pintarAvisoRevision() {
+    const el = document.getElementById('aviso-revision');
+    if (!el) return;
+    const d = V();
+    const cambios = d.cambiosRevision || [];
+    const pendientes = d.avisosRevision || [];
+    const lineas = [];
+    if (cambios.length) {
+        lineas.push(`🔎 La revisión automática reescribió ${cambios.length} frase(s) de este guion:`);
+        for (const c of cambios) lineas.push(`• ${c.motivo.split(/[:(]/)[0].trim()}: "${c.antes}" → "${c.despues}"`);
+    }
+    if (pendientes.length) {
+        lineas.push('⚠️ Quedó sin arreglar, corrígelo a mano antes de aprobar:');
+        for (const p of pendientes) lineas.push(`• ${p}`);
+    }
+    el.textContent = lineas.join('\n');
+    el.style.whiteSpace = 'pre-line';
+    el.classList.toggle('hidden', !lineas.length);
+}
+
 // Y al entrar en una pestaña, los controles se repintan con SUS datos.
 function pintarVista() {
     const d = V();
+    pintarAvisoRevision();
 
     const editor = document.getElementById('guion-editor');
     if (editor) { editor.value = d.guion || ''; actualizarStatsGuion(); }
@@ -1915,12 +1939,15 @@ async function handleGenerateScript() {
 
         log('✅ Guion generado');
         state.guion = result.script;
+        state.avisosRevision = result.avisosRevision || [];
+        state.cambiosRevision = result.cambiosRevision || [];
         renderProductoGuion(result.script);
         updateProgress(50);
 
         if (state.gemelos) {
             if (result.gemela) {
-                state.B = { ...nuevaVarianteB(), guion: result.gemela.script, metadatos: result.gemela.metadatos };
+                state.B = { ...nuevaVarianteB(), guion: result.gemela.script, metadatos: result.gemela.metadatos,
+                    avisosRevision: result.gemela.avisosRevision || [], cambiosRevision: result.gemela.cambiosRevision || [] };
                 // Su guion recién nacido lo deja en el Paso 3, igual que el primero: sin esto su
                 // pestaña se abría con todo bloqueado y no había por dónde empezar.
                 state.B.pasos = { 'guion-section': 'active' };
@@ -1940,6 +1967,7 @@ async function handleGenerateScript() {
         // Mostrar el guion en el editor para revisión (aprobar / modificar / rechazar)
         document.getElementById('guion-editor').value = result.script;
         actualizarStatsGuion();
+        pintarAvisoRevision();
         const numPalabras = result.palabras || result.script.split(/\s+/).filter(Boolean).length;
         log(`📜 Guion: ${numPalabras} palabras`);
         if (numPalabras < 180) {
@@ -2733,6 +2761,8 @@ async function regenerarSoloGemelo() {
         if (!result.gemela) throw new Error('El servidor no devolvió el guion del gemelo');
         d.guion = result.gemela.script;
         d.metadatos = result.gemela.metadatos;
+        d.avisosRevision = result.gemela.avisosRevision || [];
+        d.cambiosRevision = result.gemela.cambiosRevision || [];
         d.aprobado = {};
         pintarLecturaGemela();
         if (state.varianteActiva === 'B') pintarVista();
