@@ -238,6 +238,9 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
       const motivo = candidato0?.finishReason || response.data?.promptFeedback?.blockReason;
       const vacia = new Error(`No hay respuesta de Gemini${motivo ? ` (${motivo})` : ''}`);
       vacia._vacia = true;
+      // Un bloqueo del filtro de contenido es del TEXTO, no del modelo ni del momento: esperar y
+      // reintentar el mismo modelo no lo cambia. Se marca para saltarse la espera (ver más abajo).
+      vacia._bloqueada = /PROHIBITED_CONTENT|SAFETY|BLOCKLIST|SPII|OTHER/.test(motivo || '');
       throw vacia;
     } catch (error) {
       // 429 = límite de tasa; 503 = modelo sobrecargado; 500 = error interno. Todos temporales.
@@ -276,7 +279,7 @@ async function intentarModelo(modelo, prompt, userParts, configExtra, herramient
       }
 
       const temporal = status === 429 || status === 503 || status === 500 || error._vacia;
-      if (temporal && intento < MAX_INTENTOS) {
+      if (temporal && !error._bloqueada && intento < MAX_INTENTOS) {
         const espera = (status === 429 ? 20000 : 8000) * intento;
         const razon = status ? `respondió ${status}` : "devolvió una respuesta vacía";
         console.log(`⏳ ${modelo} ${razon}, esperando ${espera / 1000}s (intento ${intento}/${MAX_INTENTOS - 1})...`);
@@ -1280,8 +1283,90 @@ async function fragmentarGuionParrafos(script, carpetas, modo = 'guion') {
   try {
     return await fragmentar(script, carpetas);
   } catch (error) {
+    // El filtro de contenido de Gemini bloqueó el guion (PROHIBITED_CONTENT, SAFETY…). Es del
+    // TEXTO: volver a pedirlo da lo mismo, y dejar al usuario sin salida por un guion que el propio
+    // modelo escribió es un callejón. Se reparte con un método local, que además reconstruye el
+    // guion exacto por construcción. Queda marcado (`local`) para avisarlo en pantalla.
+    if (modo === 'guion' && /\((PROHIBITED_CONTENT|SAFETY|BLOCKLIST|SPII|OTHER)\)/.test(error.message || '')) {
+      console.warn(`  ⚠️ Gemini bloqueó el guion al fragmentar (${error.message}); se reparte con el método local`);
+      return fragmentarLocal(script, carpetas);
+    }
     throw new Error(`Error fragmentando en párrafos: ${error.message}`);
   }
+}
+
+// Fragmentación SIN modelo: corta por puntuación y conectores, y asigna carpeta por mención.
+//
+// Es el respaldo de `fragmentarPorGuion` cuando Gemini se niega a leer el guion. Es peor que el
+// modelo en el criterio (no entiende pronombres: "su" sigue al fragmento anterior), pero tiene dos
+// garantías que el modelo no da: no toca ni una letra del texto (los tiempos nunca se corren) y
+// responde siempre. El usuario revisa las carpetas en el Paso 4 de todos modos.
+const SIN_VALOR_COMO_NOMBRE = new Set(['los', 'las', 'del', 'con', 'una', 'uno', 'por', 'que', 'sin', 'sus', 'para']);
+
+function normalizarParaBuscar(t) {
+  return (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ñ/g, 'n');
+}
+
+function fragmentarLocal(script, carpetas) {
+  const MAX = 60;
+  const MIN = 18;
+
+  // 1) Oraciones, respetando el texto tal cual.
+  const oraciones = (script || '').trim().split(/(?<=[.!?…])\s+/).filter(Boolean);
+
+  // 2) Cada oración larga se parte tras las comas y antes de los conectores.
+  const cortar = (texto) => {
+    if (texto.length <= MAX) return [texto];
+    let partes = texto.split(/(?<=[,;:])\s+/);
+    if (partes.length === 1) {
+      partes = texto.split(/\s+(?=(?:y|e|que|pero|porque|cuando|mientras|aunque|donde)\s)/i);
+    }
+    if (partes.length === 1) return [texto];
+    return partes.flatMap(p => (p.length > MAX && p !== texto ? cortar(p) : [p]));
+  };
+  let trozos = oraciones.flatMap(cortar);
+
+  // 3) Nada de trozos sueltos: lo muy corto se pega al anterior (o al siguiente si es el primero).
+  const unidos = [];
+  for (const t of trozos) {
+    if (unidos.length && (t.length < MIN || unidos[unidos.length - 1].length < MIN)) {
+      unidos[unidos.length - 1] += ` ${t}`;
+    } else {
+      unidos.push(t);
+    }
+  }
+  trozos = unidos;
+
+  // 4) Carpeta por mención: el nombre (o su apellido/apodo) aparece en el fragmento.
+  const claves = carpetas.map(c => ({
+    carpeta: c,
+    tokens: normalizarParaBuscar(c).split(/[_\s]+/).filter(w => w.length >= 3 && !SIN_VALOR_COMO_NOMBRE.has(w)),
+  }));
+  const mencion = (texto) => {
+    const norm = normalizarParaBuscar(texto);
+    let mejor = null;
+    for (const { carpeta, tokens } of claves) {
+      for (const tk of tokens) {
+        const m = new RegExp(`(^|[^a-z0-9])${tk}([^a-z0-9]|$)`).exec(norm);
+        if (m && (mejor === null || m.index < mejor.pos)) mejor = { carpeta, pos: m.index };
+      }
+    }
+    return mejor?.carpeta || null;
+  };
+
+  // Ante la duda, el protagonista: el primero que se nombra en el guion entero.
+  const protagonista = mencion(script) || carpetas[0];
+  let actual = null;
+  const parrafos = trozos.map(texto => {
+    actual = mencion(texto) || actual || protagonista;
+    return { texto, famoso: actual, caracteres: texto.length };
+  });
+
+  const verif = verificarReconstruccion(script, parrafos);
+  console.log(`  📄 (local) ${parrafos.length} fragmentos, ${parrafos.reduce((s, p) => s + p.caracteres, 0)} caracteres`);
+  Object.defineProperty(parrafos, 'verificacion', { value: verif, enumerable: false });
+  Object.defineProperty(parrafos, 'local', { value: true, enumerable: false });
+  return parrafos;
 }
 
 // Material adicional por fragmento (cita con audio real / foto de apoyo / video de apoyo).

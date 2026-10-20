@@ -1898,9 +1898,14 @@ app.post('/api/fragment', async (req, res) => {
       carpetasRelevantes: carpetasRelevantes.length ? carpetasRelevantes : [],
       // Fragmentos que apuntaban a una carpeta inexistente y se movieron a otra. El usuario tiene
       // que enterarse: si el reemplazo no le sirve, lo cambia ahí mismo en el Paso 4.
-      avisoReasignados: reasignados.length
-        ? `${reasignados.length} de ${fragments.length} párrafos estaban asignados a una carpeta que no existe en Drive y se movieron: ${[...new Set(reasignados)].join(', ')}. Revisalos abajo.`
-        : null,
+      avisoReasignados: [
+        fragments.local
+          ? 'Gemini bloqueó este guion (filtro de contenido), así que el reparto de tomas lo hizo un método local: corta por puntuación y asigna cada párrafo a la carpeta que se nombra en él. Revisa las carpetas abajo.'
+          : null,
+        reasignados.length
+          ? `${reasignados.length} de ${fragments.length} párrafos estaban asignados a una carpeta que no existe en Drive y se movieron: ${[...new Set(reasignados)].join(', ')}. Revisalos abajo.`
+          : null,
+      ].filter(Boolean).join(' ') || null,
       protagonista,
       protagonistaSinCarpeta,
       avisoReconstruccion,
