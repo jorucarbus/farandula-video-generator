@@ -1,4 +1,30 @@
 const axios = require('axios');
+
+// El mensaje REAL de ElevenLabs. axios solo dice "Request failed with status code 401", que no
+// distingue una clave mala de una cuota agotada — y ElevenLabs contesta 401 en las dos. Medido
+// 2026-10-20: "0 credits remaining" llegó como un 401 pelado y parecía un problema de la clave.
+function detalleDeElevenLabs(err) {
+  let data = err?.response?.data;
+  if (data && (Buffer.isBuffer(data) || data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
+    try { data = JSON.parse(Buffer.from(data).toString()); } catch { data = null; }
+  }
+  const d = data?.detail;
+  return { codigo: d?.status || d?.code || null, mensaje: d?.message || null };
+}
+
+// Sin créditos no hay modelo que lo arregle: probar v2 gastaría otra llamada para el mismo error.
+function esCuotaAgotada(err) {
+  return detalleDeElevenLabs(err).codigo === 'quota_exceeded';
+}
+
+function errorLegible(err, prefijo) {
+  const { codigo, mensaje } = detalleDeElevenLabs(err);
+  if (codigo === 'quota_exceeded') {
+    return new Error(`${prefijo}: se acabaron los créditos de ElevenLabs. Recarga en https://elevenlabs.io/app/subscription `
+      + `(dijo: ${(mensaje || '').slice(0, 160)})`);
+  }
+  return new Error(`${prefijo}: ${mensaje || err.message}`);
+}
 const fs = require('fs');
 const path = require('path');
 const video = require('./video');
@@ -94,10 +120,12 @@ async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
   let modeloUsado;
 
   if (modeloPreferido === 'eleven_multilingual_v2') {
-    response = await pedirTTS(quitarMarcas(guionConMarcas), 'eleven_multilingual_v2', {
-      body: { language_code: 'es' },
-      voiceSettings: { style: 0.6, use_speaker_boost: true },
-    });
+    try {
+      response = await pedirTTS(quitarMarcas(guionConMarcas), 'eleven_multilingual_v2', {
+        body: { language_code: 'es' },
+        voiceSettings: { style: 0.6, use_speaker_boost: true },
+      });
+    } catch (e) { throw errorLegible(e, 'Error generando audio'); }
     return guardarAudio(response, guionConMarcas, 'eleven_multilingual_v2');
   }
 
@@ -106,6 +134,7 @@ async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
     response = await pedirTTS(guionConMarcas, 'eleven_v3');
     modeloUsado = 'eleven_v3';
   } catch (errV3) {
+    if (esCuotaAgotada(errV3)) throw errorLegible(errV3, 'Error generando audio');
     const detalle = errV3.response?.data
       ? Buffer.from(errV3.response.data).toString().slice(0, 200)
       : errV3.message;
@@ -120,7 +149,7 @@ async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
       modeloUsado = 'eleven_multilingual_v2';
     } catch (errV2) {
       console.error('Error ElevenLabs:', errV2.response?.data ? Buffer.from(errV2.response.data).toString().slice(0, 300) : errV2.message);
-      throw new Error(`Error generando audio: ${errV2.message}`);
+      throw errorLegible(errV2, 'Error generando audio');
     }
   }
 
@@ -143,10 +172,12 @@ async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_
 
   if (modeloPreferido === 'eleven_multilingual_v2') {
     textoEnviado = quitarMarcas(guionConMarcas);
-    response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
-      body: { language_code: 'es' },
-      voiceSettings: { style: 0.6, use_speaker_boost: true },
-    });
+    try {
+      response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
+        body: { language_code: 'es' },
+        voiceSettings: { style: 0.6, use_speaker_boost: true },
+      });
+    } catch (e) { throw errorLegible(e, 'Error generando audio con tiempos'); }
     return guardarAudioConTiempos(response, textoEnviado, 'eleven_multilingual_v2');
   }
 
@@ -155,6 +186,7 @@ async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_
     response = await pedirTTSConTiempos(textoEnviado, 'eleven_v3');
     modeloUsado = 'eleven_v3';
   } catch (errV3) {
+    if (esCuotaAgotada(errV3)) throw errorLegible(errV3, 'Error generando audio con tiempos');
     const detalle = errV3.response?.data
       ? JSON.stringify(errV3.response.data).slice(0, 200)
       : errV3.message;
@@ -170,7 +202,7 @@ async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_
       modeloUsado = 'eleven_multilingual_v2';
     } catch (errV2) {
       console.error('Error ElevenLabs (with-timestamps):', errV2.response?.data ? JSON.stringify(errV2.response.data).slice(0, 300) : errV2.message);
-      throw new Error(`Error generando audio con tiempos: ${errV2.message}`);
+      throw errorLegible(errV2, 'Error generando audio con tiempos');
     }
   }
 
