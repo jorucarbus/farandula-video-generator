@@ -145,32 +145,24 @@ PROHIBIDO:
   respuesta ENTERA es el guion final y nada más: ni una palabra antes, ni una después.
 - Presentar como hecho probado un delito, una infidelidad o cualquier acusación que el MATERIAL BASE no dé por confirmada.`,
 
-  marcas: `Rol: Senior Audio Engineer & Prompting Strategist para ElevenLabs v4 (las mismas etiquetas valen para v3).
+  marcas: `Rol: Director de voz para ElevenLabs v4. Decides DÓNDE van unas pocas etiquetas de actuación en un guion de farándula. NO escribes ni cambias el texto: eso lo arma el sistema.
 
-Objetivo: Procesar guiones fragmentados y transformarlos en una descarga eléctrica de palabras para una voz femenina latinoamericana NEUTRA (sin marcas de ningún país: ni de México, ni de España, ni de Argentina). Las etiquetas dirigen la entrega, nunca el vocabulario: no cambies ni agregues ninguna palabra del guion.
+Te doy el guion dividido en fragmentos numerados (0, 1, 2…). Devuelve en cuáles fragmentos va una etiqueta, ANTES de su texto.
 
-DICCIONARIO DE ETIQUETAS (Strictly English):
-[excited]: Hook inicial y picos de dopamina.
-[fast]: Estado por defecto. Elimina aire entre frases.
-[sarcastic]: Veneno e ironía en la entrega.
-[whispering]: Conspiraciones rápidas (sin bajar velocidad).
-[laughing]: Burla descarada o incredulidad.
-[shouting]: Énfasis explosivo en palabras clave.
-[surprised]: Shock que mantiene al usuario pegado.
+DICCIONARIO (en inglés, tal cual, es todo lo permitido):
+excited — el gancho de apertura y los picos fuertes de la noticia.
+sarcastic — ironía, el remate con veneno.
+surprised — un giro o una revelación que impacta.
+laughing — burla o incredulidad; una vez como mucho.
 
-REGLAS DE ORO:
-0. Usa SOLO las etiquetas del diccionario, escritas exactamente así: minúsculas, en inglés, entre corchetes, sin guiones, números ni etiquetas inventadas. Con la voz nueva el modelo obedece cualquier etiqueta, y una inventada se puede leer en voz alta.
-1. Cero Pausas: PROHIBIDO usar [pause]. Si hay puntos, ignóralos en la cadencia y usa [fast].
-2. Efecto Slingshot: El final debe ser un disparo de energía. Termina con [fast] o [excited] que se corte abruptamente.
-3. No Alterar Texto: Mantén palabras intactas, solo saturarlas de etiquetas.
-4. Bloque Único: Resultado en un solo bloque denso. Sin introducciones.
-5. El "Nombre_Famoso: " que precede a cada línea de entrada es SOLO para que sepas de quién habla
-   ese fragmento — NUNCA lo repitas en la salida. La salida es el texto narrado con etiquetas,
-   nada más. Si el nombre o los dos puntos aparecen en tu respuesta, la voz los va a leer en
-   voz alta, y eso rompe el video.
-
-FORMATO DE RESPUESTA:
-Un solo bloque con el guion fragmentado saturado de etiquetas. Nunca el nombre del famoso.`
+REGLAS:
+1. POCAS. {{MAXIMO}} etiquetas como tope en este guion (una cada ~30 palabras). Un guion natural lleva muy pocas: el modelo ya deduce la emoción del contexto, y la etiqueta solo sirve para un énfasis concreto.
+2. El fragmento 0 SIEMPRE lleva "excited": es el gancho.
+3. Una etiqueta va donde EMPIEZA una oración o una idea nueva, nunca en medio de una frase seguida, y nunca en dos fragmentos consecutivos.
+4. Si el guion cierra con un remate irónico, ahí va "sarcastic".
+5. Una emoción por tramo: no mezcles emociones contrarias cerca.
+6. Solo las 4 etiquetas del diccionario. Nada de susurros, gritos, pausas ni etiquetas inventadas.
+7. Responde ÚNICAMENTE un array JSON válido: [{"i": 0, "tag": "excited"}, {"i": 5, "tag": "sarcastic"}]`
 };
 
 // El prompt maestro con el largo que le toca a ESTE canal. La regla 1 viaja como hueco
@@ -1504,20 +1496,88 @@ function limpiarEtiquetasFamoso(texto, nombres) {
   return texto.replace(patron, '');
 }
 
-async function agregarMarcas(guionFragmentado) {
-  try {
-    const guionText = guionFragmentado
-      .map(f => `${f.famoso}: ${f.texto}`)
-      .join('\n');
+// Las marcas de actuación van en pocas oraciones, no en cada fragmento. Elegido por el usuario a ciegas
+// (2026-11-10): sonó mejor un gancho `excited` al inicio y un remate `sarcastic` (2 etiquetas en ~65
+// palabras) que 12 etiquetas de las de antes, y el susurro no le convenció.
+const ETIQUETAS_VOZ = ['excited', 'sarcastic', 'surprised', 'laughing'];
+const PALABRAS_POR_ETIQUETA = 30;
 
-    const userMessage = `Procesa este guion fragmentado y agrega las etiquetas de actuación:\n\n${guionText}`;
-    const { texto: response } = await callGemini(PROMPTS.marcas, userMessage, TAREAS.marcas);
+// Tope de etiquetas para un guion de `palabras` palabras: una cada ~30, y al menos 2 (gancho + remate).
+function maximoDeMarcas(palabras) {
+  return Math.max(2, Math.round(palabras / PALABRAS_POR_ETIQUETA));
+}
 
-    const nombres = [...new Set(guionFragmentado.map(f => f.famoso))];
-    return limpiarEtiquetasFamoso(response.trim(), nombres);
-  } catch (error) {
-    throw new Error(`Error agregando marcas: ${error.message}`);
+// Una etiqueta solo va donde empieza una oración: el fragmento 0, o el que sigue a uno que termina en
+// punto, signo de cierre o puntos suspensivos.
+function empiezaOracion(fragmentos, i) {
+  if (i === 0) return true;
+  return /[.!?…]["»”']*\s*$/.test((fragmentos[i - 1]?.texto || '').trim());
+}
+
+// Decide el reparto FINAL de etiquetas a partir de lo que propuso el modelo. Función pura: toda la
+// regla vive acá y no en el prompt, porque un prompt es una petición y esto es una garantía.
+// Devuelve un Map índice -> etiqueta.
+function elegirMarcas(fragmentos, propuestas) {
+  const palabras = fragmentos.reduce((n, f) => n + (f.texto || '').split(/\s+/).filter(Boolean).length, 0);
+  const tope = maximoDeMarcas(palabras);
+  const ultimo = fragmentos.length - 1;
+
+  // 1) Solo lo válido: índice entero dentro del guion y etiqueta del diccionario.
+  const validas = new Map();
+  for (const p of Array.isArray(propuestas) ? propuestas : []) {
+    const i = Number(p?.i);
+    const tag = String(p?.tag || '').toLowerCase().trim();
+    if (!Number.isInteger(i) || i < 0 || i > ultimo || !ETIQUETAS_VOZ.includes(tag)) continue;
+    // Si cayó en mitad de una frase, se corre al inicio de la oración más cercana hacia atrás.
+    let destino = i;
+    while (destino > 0 && !empiezaOracion(fragmentos, destino) && i - destino < 3) destino--;
+    if (!empiezaOracion(fragmentos, destino)) continue;
+    if (!validas.has(destino)) validas.set(destino, tag);
   }
+
+  // 2) El gancho: el fragmento 0 siempre lleva `excited`.
+  validas.set(0, 'excited');
+
+  // 3) Sin etiquetas pegadas: dos seguidas se pisan entre sí.
+  const ordenadas = [...validas.keys()].sort((a, b) => a - b);
+  const separadas = [];
+  for (const i of ordenadas) {
+    if (separadas.length && i - separadas[separadas.length - 1] < 2) continue;
+    separadas.push(i);
+  }
+
+  // 4) El tope: se conserva el gancho, el remate (la última propuesta) y las más tempranas del medio.
+  let finales = separadas;
+  if (finales.length > tope) {
+    const cierre = finales[finales.length - 1];
+    const medio = finales.slice(1, -1).slice(0, Math.max(0, tope - 2));
+    finales = [0, ...medio, cierre];
+  }
+  return new Map(finales.map(i => [i, validas.get(i)]));
+}
+
+// El guion con sus etiquetas: los fragmentos ORIGINALES, con su puntuación y sus espacios, y la etiqueta
+// separada por un espacio antes del texto. El modelo nunca toca las palabras.
+function armarGuionConMarcas(fragmentos, marcas) {
+  return fragmentos
+    .map((f, i) => (marcas.has(i) ? `[${marcas.get(i)}] ` : '') + (f.texto || '').trim())
+    .join(' ');
+}
+
+async function agregarMarcas(guionFragmentado) {
+  let propuestas = [];
+  try {
+    const palabras = guionFragmentado.reduce((n, f) => n + (f.texto || '').split(/\s+/).filter(Boolean).length, 0);
+    const prompt = PROMPTS.marcas.replace('{{MAXIMO}}', String(maximoDeMarcas(palabras)));
+    const userMessage = `Guion fragmentado:\n\n${guionFragmentado.map((f, i) => `${i}. ${f.texto}`).join('\n')}`;
+    propuestas = await llamarJSON(prompt, userMessage, TAREAS.marcas);
+  } catch (error) {
+    // Sin etiquetas el video sale igual (la voz ya deduce la emoción del contexto): solo el gancho.
+    console.warn(`  ⚠️ No se pudieron elegir las marcas de actuación (${error.message}); va solo el gancho`);
+  }
+  const marcas = elegirMarcas(guionFragmentado, propuestas);
+  console.log(`  🏷️ ${marcas.size} marca(s) de actuación: ${[...marcas].map(([i, t]) => `${i}:${t}`).join(' ')}`);
+  return armarGuionConMarcas(guionFragmentado, marcas);
 }
 
 // Generar nombre corto de archivo: "Protagonista - Secundario - Hecho"
@@ -1567,7 +1627,7 @@ module.exports = {
   verificarReconstruccion,
   TAREAS,   // router de modelos: agregar acá la entrada de cada llamada nueva (ver Fase 9)
   CADENAS,
-  agregarMarcas,
+  agregarMarcas, elegirMarcas, armarGuionConMarcas,
   generarNombreArchivo,
   TONOS,
   detectarCitas,

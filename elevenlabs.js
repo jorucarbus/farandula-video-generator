@@ -56,7 +56,9 @@ async function aplicarGanancia(audioPath) {
 function quitarMarcas(texto) {
   // Cualquier cosa entre corchetes: con v4 las marcas son libres y pueden traer guiones, números o
   // tildes ("[fast-paced]"); con la regla vieja de solo letras, una así se leía en voz alta.
-  return texto.replace(/\[[^\]\n]{1,40}\]/g, '').replace(/\s+/g, ' ').trim();
+  // Se reemplaza por un espacio y no por nada: Gemini pega las marcas a las palabras ("embarazo[fast]y"),
+  // y quitarlas a secas dejaba "embarazoy" — el respaldo v2 leía palabras fusionadas.
+  return texto.replace(/\[[^\]\n]{1,40}\]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 // Petición de text-to-speech a ElevenLabs
