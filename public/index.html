@@ -232,30 +232,44 @@
                 </p>
 
                 <!-- Videos cortos en los canales que todavía no monetizan. Encendido por defecto;
-                     se apaga el día que esos canales empiecen a pagar y todo vuelve a 70 segundos. -->
+                     se apaga el día que esos canales empiecen a pagar y todo vuelve a poco más de un minuto. -->
                 <label class="gemelos-switch" for="chk-cortos">
                     <input type="checkbox" id="chk-cortos" checked onchange="cambiarVideosCortos(this.checked)">
-                    <span><strong>Videos cortos donde todavía no se monetiza</strong> — La Naple y Supe Lupe salen de 30 a 40 segundos.</span>
+                    <span><strong>Videos cortos donde todavía no se monetiza</strong> — La Naple y Supe Lupe salen de unos 30 segundos.</span>
                 </label>
                 <p class="hint" id="hint-cortos">
-                    La locución se paga por carácter, así que un guion de 110 palabras cuesta la mitad
-                    que uno de 215. Los canales que ya monetizan no se tocan: siguen en 70 segundos.
+                    La locución se paga por carácter, así que un guion de ~82 palabras cuesta menos de la mitad
+                    que uno de ~190. Los canales que ya monetizan no se tocan: siguen en poco más de un minuto.
                     <strong>Apagá esto cuando La Naple y Supe Lupe empiecen a monetizar</strong> y los
                     cuatro canales vuelven al largo de siempre.
                 </p>
 
-                <!-- El guion largo se escribe en dos tiempos: un núcleo de 35s que se sostiene solo y
-                     un complemento de 30s. Elegido por el usuario a ciegas contra el método viejo. -->
+                <!-- El guion largo se escribe en dos tiempos: un núcleo de 30s que se sostiene solo y
+                     un complemento de 35s. Elegido por el usuario a ciegas contra el método viejo. -->
                 <label class="gemelos-switch" for="chk-dos-tiempos">
                     <input type="checkbox" id="chk-dos-tiempos" checked onchange="cambiarDosTiempos(this.checked)">
-                    <span><strong>Guion largo en dos tiempos</strong> — primero 35 segundos que se sostienen solos, después 30 de complemento.</span>
+                    <span><strong>Guion largo en dos tiempos</strong> — primero 30 segundos que se sostienen solos, después 35 de complemento.</span>
                 </label>
                 <p class="hint" id="hint-dos-tiempos">
                     Escribir todo de una vez hace que el guion meta de todo y se disperse. Pidiendo
-                    primero 35 segundos, el guion elige UN hecho y lo cuenta completo — y como la
+                    primero 30 segundos, el guion elige UN hecho y lo cuenta completo — y como la
                     mayoría no pasa de la mitad del video, ahí va todo lo importante. El complemento
                     suma otra capa y hace que el video cruce el minuto, que es lo que pide la
                     monetización. No aplica a los canales que publican corto.
+                </p>
+
+                <!-- Modelo de voz de la locución. v4 es la nueva (sigue mejor las marcas de emoción y en las
+                     pruebas a ciegas mantuvo mejor el acento); v3 es la anterior, para volver con un clic. -->
+                <label class="gemelos-switch" for="sel-modelo-voz">
+                    <select id="sel-modelo-voz" onchange="cambiarModeloVoz(this.value)">
+                        <option value="eleven_v4" selected>Voz v4 (nueva)</option>
+                        <option value="eleven_v3">Voz v3 (anterior)</option>
+                    </select>
+                    <span><strong>Voz de la locución</strong> — si no te convence la v4, vuelve a la v3 desde acá.</span>
+                </label>
+                <p class="hint" id="hint-modelo-voz">
+                    La v4 habla algo más despacio (~6%): los guiones ya vienen calibrados para eso. Si una
+                    locución larga queda justo debajo del minuto, se alarga hasta un 5% sin gastar créditos.
                 </p>
 
                 <button class="btn btn-primary" id="btn-generate-script" onclick="handleGenerateScript()">
@@ -360,7 +374,7 @@
                 <audio id="audio-player" controls class="mb-sm"></audio>
                 <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-audio" onclick="aprobarAudio()"><span class="icon-slot" data-icon="check"></span> Aprobar locución</button>
-                    <button class="btn btn-primary" id="btn-regenerate-audio-v3" onclick="regenerarAudio('eleven_v3')"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (v3, actúa marcas)</button>
+                    <button class="btn btn-primary" id="btn-regenerate-audio-v3" onclick="regenerarAudio()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar locución (actúa marcas)</button>
                     <button class="btn btn-secondary" id="btn-regenerate-audio-v2" onclick="regenerarAudio('eleven_multilingual_v2')"><span class="icon-slot" data-icon="microphone"></span> Regenerar con v2 (acento forzado español)</button>
                     <button class="btn btn-secondary" id="btn-recargar-audio" onclick="recargarAudioDeDrive()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Recargar audio desde Drive</button>
                 </div>

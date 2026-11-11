@@ -63,7 +63,7 @@ Te doy una NOTICIA y un CATÁLOGO de técnicas narrativas (extraídas de un curs
 material de redacción y guías de retención de video corto). Cada técnica trae entre corchetes el
 archivo del que salió.
 
-TAREA: elegí la mejor forma de ESTRUCTURAR esta noticia concreta en un video de 70 segundos, y
+TAREA: elegí la mejor forma de ESTRUCTURAR esta noticia concreta en un video de poco más de un minuto, y
 armá UNA combinación de 2 a 4 técnicas del catálogo que la sostenga.
 
 REGLAS:

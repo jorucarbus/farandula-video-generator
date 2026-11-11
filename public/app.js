@@ -451,7 +451,7 @@ function actualizarBotonesVariante() {
 
     // Paso 5 — locución
     textoBoton('btn-approve-audio', canal ? `Aprobar locución${de}` : 'Aprobar locución');
-    textoBoton('btn-regenerate-audio-v3', canal ? `Regenerar locución${de} (v3)` : 'Regenerar (v3, actúa marcas)');
+    textoBoton('btn-regenerate-audio-v3', canal ? `Regenerar locución${de}` : 'Regenerar locución (actúa marcas)');
 
     // Paso 6 — video
     textoBoton('btn-generate-video', canal ? `Generar ${canal}` : 'Generar video completo');
@@ -1970,8 +1970,9 @@ async function handleGenerateScript() {
         pintarAvisoRevision();
         const numPalabras = result.palabras || result.script.split(/\s+/).filter(Boolean).length;
         log(`📜 Guion: ${numPalabras} palabras`);
-        if (numPalabras < 180) {
-            log('⚠️ Guion corto (se esperan 205-220 palabras)');
+        const largoEsperado = largoDeVariante('A');
+        if (numPalabras < largoEsperado.min - 15) {
+            log(`⚠️ Guion corto (se esperan ${largoEsperado.min}-${largoEsperado.max} palabras)`);
         }
 
         hideProgress();
@@ -1990,8 +1991,8 @@ async function handleGenerateScript() {
 // Los canales que todavía no monetizan publican videos de 30-40 segundos para no gastar locución
 // de más. El interruptor vive en el servidor (vale para todas las ventanas) y acá solo se refleja.
 const CANALES_CORTOS = ['lanaple', 'supelupe'];
-const LARGO_CORTO = { min: 95, max: 125, esperado: 110 };
-const LARGO_NORMAL = { min: 205, max: 220, esperado: 215 };
+const LARGO_CORTO = { min: 76, max: 88, esperado: 82 };
+const LARGO_NORMAL = { min: 185, max: 200, esperado: 192 };
 
 // Cuánto se espera que dure el guion de la pestaña que se está mirando. Sirve para el contador de
 // palabras: sin esto, un guion corto perfecto se vería con la alerta amarilla de "corto" siempre.
@@ -2020,27 +2021,47 @@ async function cargarAjustes() {
         const r = await apiCall('/ajustes', 'GET');
         state.videosCortos = r.ajustes?.videosCortos !== false;
         state.guionDosTiempos = r.ajustes?.guionDosTiempos !== false;
+        state.modeloVoz = r.ajustes?.modeloVoz || 'eleven_v4';
     } catch {
         // Los valores de fábrica; si el servidor no contesta, la pantalla no miente.
         state.videosCortos = true;
         state.guionDosTiempos = true;
+        state.modeloVoz = 'eleven_v4';
     }
     const chk = document.getElementById('chk-cortos');
     if (chk) chk.checked = state.videosCortos;
     const chkDos = document.getElementById('chk-dos-tiempos');
     if (chkDos) chkDos.checked = state.guionDosTiempos;
+    const selVoz = document.getElementById('sel-modelo-voz');
+    if (selVoz) selVoz.value = state.modeloVoz;
     actualizarStatsGuion();
 }
 
 // Interruptor del guion largo en dos tiempos. Igual que el de videos cortos: vive en el servidor,
 // así que vale para todas las ventanas.
+// Modelo de voz de la locución. Vive en el servidor, así que vale para todas las ventanas y se puede
+// volver a v3 con un clic si la voz nueva no convence — sin redesplegar nada.
+async function cambiarModeloVoz(modelo) {
+    const antes = state.modeloVoz;
+    state.modeloVoz = modelo;
+    try {
+        await apiCall('/ajustes', 'PUT', { modeloVoz: modelo });
+        log(`🎙️ Voz de la locución: ${modelo === 'eleven_v3' ? 'v3 (anterior)' : 'v4 (nueva)'}`);
+    } catch (e) {
+        state.modeloVoz = antes;
+        log(`⚠️ No se pudo guardar el ajuste: ${e.message}`);
+    }
+    const sel = document.getElementById('sel-modelo-voz');
+    if (sel) sel.value = state.modeloVoz;
+}
+
 async function cambiarDosTiempos(activo) {
     const antes = state.guionDosTiempos;
     state.guionDosTiempos = Boolean(activo);
     try {
         await apiCall('/ajustes', 'PUT', { guionDosTiempos: state.guionDosTiempos });
         log(state.guionDosTiempos
-            ? '✍️ Guion largo en dos tiempos: núcleo de 35s + complemento de 30s'
+            ? '✍️ Guion largo en dos tiempos: núcleo de 30s + complemento de 35s'
             : '✍️ Guion largo de un solo pase (método anterior)');
     } catch (e) {
         state.guionDosTiempos = antes;
@@ -2055,8 +2076,8 @@ async function cambiarVideosCortos(activo) {
     try {
         await apiCall('/ajustes', 'PUT', { videosCortos: state.videosCortos });
         log(state.videosCortos
-            ? '⏱️ Videos cortos activados: La Naple y Supe Lupe salen de 30 a 40 segundos'
-            : '⏱️ Videos cortos apagados: los cuatro canales vuelven a ~70 segundos');
+            ? '⏱️ Videos cortos activados: La Naple y Supe Lupe salen de unos 30 segundos'
+            : '⏱️ Videos cortos apagados: los cuatro canales vuelven a poco más de un minuto');
     } catch (e) {
         // Si no se pudo guardar, el interruptor vuelve a como estaba: mostrar una cosa y hacer otra
         // es peor que no poder cambiarlo.
@@ -2562,7 +2583,7 @@ async function confirmarAsignaciones() {
     // `regenerarAudio` atrapa su propio error para poder ofrecer "reintentar", así que hay que
     // mirar lo que devuelve: si la locución falló, marcar el paso dejaba a esta variante
     // avanzando SIN locución — y el problema recién aparecía en el Paso 5, lejos de su origen.
-    if (!await regenerarAudio('eleven_v3', v)) return;
+    if (!await regenerarAudio(null, v)) return;
     marcarPasoVariante('asignaciones', 'todavía faltan revisar sus asignaciones.', v);
 }
 
@@ -2578,12 +2599,14 @@ async function regenerarAudio(modelo, v = state.varianteActiva) {
         invalidarPasos(['audio'], v);
         lockFrom('destination-section', v);
 
-        showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(v)} (${modelo})...`);
-        log(`🎙️ Generando locución (${modelo}) — ${etiquetaVariante(v)}...`);
+        const nombreModelo = modelo || state.modeloVoz || 'eleven_v4';
+        showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(v)} (${nombreModelo})...`);
+        log(`🎙️ Generando locución (${nombreModelo}) — ${etiquetaVariante(v)}...`);
         updateProgress(65);
         const result = await apiCall('/generar-audio', 'POST', {
             [cfg().audioParam]: d.fragments,
-            modelo: modelo,
+            // Sin modelo, el servidor usa el ajuste (v4 por defecto): un botón solo manda el suyo si es concreto.
+            ...(modelo ? { modelo } : {}),
             jobId: state.jobId,
             variante: v,
         });

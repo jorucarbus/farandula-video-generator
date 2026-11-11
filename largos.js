@@ -14,20 +14,20 @@
 // vistas) pero probablemente no sumen al fondo de recompensas. Es a propósito: se ahorra mientras
 // el canal no vale nada, y se apaga el switch cuando empiece a valer.
 
-// El largo de siempre. NO se toca: es a lo que se vuelve al apagar el interruptor.
-// ⚠️ El número sube de 205-220 a 215-235 por una MEDICIÓN, no por gusto (2026-09-22). Los
-// programas que pagan por vistas exigen que el video pase del minuto, y el sistema estimaba los
-// segundos como "palabras ÷ 3". Las 36 locuciones reales del usuario van de 2,64 a 3,37 palabras
-// por segundo: con la voz en su día más rápido, 204 palabras dieron 61,9 segundos y 200 habrían
-// quedado por debajo del minuto. Seis de sus 18 videos largos quedaron entre 60 y 65 segundos, al
-// filo. Con 215 palabras, hasta la voz más rápida cruza el minuto con margen.
+// CALIBRACIÓN con la voz nueva (eleven_v4), 2026-11-10. Medido sobre guiones reales con las marcas de
+// siempre: v4 habla ~2,65 palabras por segundo de mediana (v3: ~2,81), con días de 2,5 a 3,2. La misma
+// voz y el mismo guion varían entre 5% y 7% de una generación a otra, así que ningún número de palabras
+// garantiza una duración exacta: `ajusteDuracion.js` alarga hasta un 5% las locuciones que quedaron
+// justo debajo del minuto. Por eso los rangos apuntan a ~68 s de mediana (ventana buscada: 62-70 s).
+//
+// El largo de un solo pase. A este número se vuelve al apagar el guion en dos tiempos.
 const NORMAL = {
   id: 'normal',
-  min: 215,
-  max: 235,
+  min: 185,
+  max: 200,
   // Debajo de esto, `escribirGuion` pide otro: la longitud no es cosmética, de ella sale la
   // duración del video — y de ella depende que el video califique para monetizar.
-  minAceptable: 205,
+  minAceptable: 178,
   segundos: 'poco más de un minuto',
 };
 
@@ -37,21 +37,21 @@ const NORMAL = {
 //
 // El reparto no es caprichoso: la mayoría de sus espectadores no pasa de la mitad del video, así
 // que TODO el valor va en el núcleo, y el complemento existe para cruzar el minuto y para el que
-// se queda hasta el final.
+// se queda hasta el final. Núcleo ≈ 30-31 s y complemento ≈ 36-37 s, que sumados dan los 185 del total.
 const NUCLEO = {
   id: 'nucleo',
-  min: 110,
-  max: 125,
-  minAceptable: 100,
-  segundos: 'unos 35 segundos',
+  min: 82,
+  max: 90,
+  minAceptable: 76,
+  segundos: 'unos 30 segundos',
 };
 
 const COMPLEMENTO = {
   id: 'complemento',
-  min: 100,
-  max: 115,
-  minAceptable: 90,
-  segundos: 'unos 30 segundos',
+  min: 98,
+  max: 106,
+  minAceptable: 92,
+  segundos: 'unos 35 segundos',
 };
 
 // Por debajo de esto, un video de canal largo no califica para los programas que pagan por vistas.
@@ -59,13 +59,14 @@ const COMPLEMENTO = {
 // 20%. El margen sobre los 60 existe porque el video final dura lo que dura el audio.
 const MINIMO_MONETIZA_SEG = 62;
 
-// 30-40 segundos a las 3 palabras por segundo que ya usa el contador de la pantalla.
+// ~30 segundos a ~2,7 palabras por segundo. (En Facebook un Reel monetiza desde los 10 s, según las
+// guías que citan a Meta: el formato corto cumple de sobra. TikTok es el que pide pasar del minuto.)
 const CORTO = {
   id: 'corto',
-  min: 95,
-  max: 125,
-  minAceptable: 90,
-  segundos: 'entre 30 y 40 segundos',
+  min: 76,
+  max: 88,
+  minAceptable: 70,
+  segundos: 'unos 30 segundos',
 };
 
 // Los canales que todavía no monetizan, por nombre normalizado (mismo criterio que

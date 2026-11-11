@@ -23,6 +23,15 @@ const POR_DEFECTO = {
   // El guion largo se escribe en dos tiempos (núcleo + complemento). El usuario eligió este método
   // a ciegas contra el de un solo pase, el 2026-09-22.
   guionDosTiempos: true,
+  // Modelo de voz de ElevenLabs. eleven_v4 por defecto (2026-11-10): sigue mejor las marcas de emoción
+  // y en las pruebas a ciegas del usuario mantuvo mejor el acento. eleven_v3 queda como respaldo y
+  // como vuelta atrás con un clic, sin redesplegar.
+  modeloVoz: 'eleven_v4',
+};
+
+// Ajustes que solo aceptan ciertos valores: lo que llega del navegador no puede inventar un modelo.
+const VALORES_PERMITIDOS = {
+  modeloVoz: ['eleven_v4', 'eleven_v3'],
 };
 
 let cache = null;
@@ -56,6 +65,7 @@ function guardar(cambios) {
   for (const [k, v] of Object.entries(cambios || {})) {
     if (!(k in POR_DEFECTO)) continue;
     if (typeof v !== typeof POR_DEFECTO[k]) continue;
+    if (VALORES_PERMITIDOS[k] && !VALORES_PERMITIDOS[k].includes(v)) continue;
     nuevo[k] = v;
   }
   cache = nuevo;

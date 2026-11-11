@@ -145,20 +145,21 @@ PROHIBIDO:
   respuesta ENTERA es el guion final y nada más: ni una palabra antes, ni una después.
 - Presentar como hecho probado un delito, una infidelidad o cualquier acusación que el MATERIAL BASE no dé por confirmada.`,
 
-  marcas: `Rol: Senior Audio Engineer & Prompting Strategist para ElevenLabs v3.
+  marcas: `Rol: Senior Audio Engineer & Prompting Strategist para ElevenLabs v4 (las mismas etiquetas valen para v3).
 
-Objetivo: Procesar guiones fragmentados y transformarlos en una descarga eléctrica de palabras para voz femenina mexicana (chilanga/fresa/moderna).
+Objetivo: Procesar guiones fragmentados y transformarlos en una descarga eléctrica de palabras para una voz femenina latinoamericana NEUTRA (sin marcas de ningún país: ni de México, ni de España, ni de Argentina). Las etiquetas dirigen la entrega, nunca el vocabulario: no cambies ni agregues ninguna palabra del guion.
 
 DICCIONARIO DE ETIQUETAS (Strictly English):
 [excited]: Hook inicial y picos de dopamina.
 [fast]: Estado por defecto. Elimina aire entre frases.
-[sarcastic]: Veneno, ironía, modismos mexicanos.
+[sarcastic]: Veneno e ironía en la entrega.
 [whispering]: Conspiraciones rápidas (sin bajar velocidad).
 [laughing]: Burla descarada o incredulidad.
 [shouting]: Énfasis explosivo en palabras clave.
 [surprised]: Shock que mantiene al usuario pegado.
 
 REGLAS DE ORO:
+0. Usa SOLO las etiquetas del diccionario, escritas exactamente así: minúsculas, en inglés, entre corchetes, sin guiones, números ni etiquetas inventadas. Con la voz nueva el modelo obedece cualquier etiqueta, y una inventada se puede leer en voz alta.
 1. Cero Pausas: PROHIBIDO usar [pause]. Si hay puntos, ignóralos en la cadencia y usa [fast].
 2. Efecto Slingshot: El final debe ser un disparo de energía. Termina con [fast] o [excited] que se corte abruptamente.
 3. No Alterar Texto: Mantén palabras intactas, solo saturarlas de etiquetas.
@@ -877,8 +878,8 @@ const MOTORES_GUION = {
   grafo: (...args) => require('./guionGrafo').generarGuionGrafo(...args),   // misma firma: `nota` e instruccion del usuario incluidas
 };
 
-// El prompt pide 205-220 palabras ("nunca menos de 200") porque de ahí sale la duración del video:
-// la locución manda, así que 190 palabras son ~5 segundos menos de video. Medido: el motor de
+// El prompt pide el largo de largos.js (185-200 palabras, mínimo 178) porque de ahí sale la duración del
+// video: la locución manda, así que 10 palabras de menos son ~4 segundos menos de video. Medido: el motor de
 // siempre cumple (206-212), y el del grafo se queda corto seguido (190-203) — al sumarle el bloque
 // de estructura, el modelo recorta. Un solo reintento avisando que se quedó corto; si vuelve corto,
 // se usa igual (Regla de robustez: esta guarda no puede tumbar el paso del guion).

@@ -7,6 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const gemini = require('./gemini');
 const revisionGuion = require('./revisionGuion');
+const ajusteDuracion = require('./ajusteDuracion');
 const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
 const video = require('./video');
@@ -1950,7 +1951,7 @@ app.post('/api/add-markers', async (req, res) => {
 });
 
 // ETAPA 5 v2: Generar locución para APROBACIÓN (marcas + ElevenLabs, se escucha antes de renderizar)
-// body: { fragments, modelo?: 'eleven_v3' | 'eleven_multilingual_v2' }
+// body: { fragments, modelo?: 'eleven_v4' | 'eleven_v3' | 'eleven_multilingual_v2' }  (sin modelo: el ajuste modeloVoz)
 app.post('/api/generar-audio', async (req, res) => {
   try {
     const { fragments, modelo, jobId, variante = 'A' } = req.body;
@@ -1969,16 +1970,24 @@ app.post('/api/generar-audio', async (req, res) => {
     // Fase 5: audio + alineación carácter-por-carácter en la misma llamada (sin costo extra
     // sobre lo que ya se pagaba). Si algo falla, cae al TTS simple — el render no se detiene.
     let audio, duracion, duracionesReales, palabrasAlineadas;
+    // El modelo de voz sale del ajuste (eleven_v4 por defecto) salvo que el botón pida uno concreto.
+    const modeloVoz = modelo || ajustes.obtener().modeloVoz;
+    // Los canales largos tienen que pasar del minuto para monetizar: si la locución quedó justo debajo
+    // se alarga hasta un 5% (gratis, sin volver a generar). Los cortos no: ahí no hay minuto que pasar.
+    const objetivoAudio = jobId ? await objetivoDeVariante(jobStore.obtenerJob(jobId), variante).catch(() => null) : null;
+    const puedeAlargar = objetivoAudio?.id === 'normal';
     try {
-      audio = await tiempos.generarConTiempos(paraHablar, { modelo: modelo || 'eleven_v3' });
+      audio = await tiempos.generarConTiempos(paraHablar, { modelo: modeloVoz });
       duracion = await video.obtenerDuracion(audio.audioPath);
+      if (puedeAlargar) ({ duracion } = await ajusteDuracion.alargarSiHaceFalta(audio, duracion));
       const alineado = tiempos.alinearFragmentos(fragments, audio, duracion, mapaVoz);
       duracionesReales = alineado?.duraciones || null;
       palabrasAlineadas = alineado?.palabras || null;
     } catch (errTiempos) {
       console.warn(`  ⚠️ Tiempos reales fallaron (${errTiempos.message}), cae a TTS simple + % de caracteres`);
-      audio = await elevenlabs.generarAudio(paraHablar, modelo || 'eleven_v3');
+      audio = await elevenlabs.generarAudio(paraHablar, modeloVoz);
       duracion = await video.obtenerDuracion(audio.audioPath);
+      if (puedeAlargar) ({ duracion } = await ajusteDuracion.alargarSiHaceFalta(audio, duracion));
       duracionesReales = null;
       palabrasAlineadas = null;
     }

@@ -54,7 +54,9 @@ async function aplicarGanancia(audioPath) {
 
 // Quitar todas las marcas [tag] del texto (para modelos que las leerían en voz alta)
 function quitarMarcas(texto) {
-  return texto.replace(/\[[a-z_ ]+\]/gi, '').replace(/\s+/g, ' ').trim();
+  // Cualquier cosa entre corchetes: con v4 las marcas son libres y pueden traer guiones, números o
+  // tildes ("[fast-paced]"); con la regla vieja de solo letras, una así se leía en voz alta.
+  return texto.replace(/\[[^\]\n]{1,40}\]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 // Petición de text-to-speech a ElevenLabs
@@ -106,107 +108,73 @@ async function pedirTTSConTiempos(texto, modelId, extra = {}) {
   );
 }
 
+const MODELOS = { v4: 'eleven_v4', v3: 'eleven_v3', v2: 'eleven_multilingual_v2' };
+
+// Cadena de respaldo: cada modelo cae al siguiente si falla (salvo cuota agotada, que no lo arregla
+// ningún modelo). v4 y v3 actúan las marcas; v2 no, así que a v2 se le quitan.
+function cadenaDeModelos(preferido) {
+  const p = preferido || MODELOS.v4;
+  if (p === MODELOS.v2) return [MODELOS.v2];
+  if (p === MODELOS.v3) return [MODELOS.v3, MODELOS.v2];
+  return [MODELOS.v4, MODELOS.v3, MODELOS.v2];
+}
+
+// Lo que se le manda a cada modelo: v4/v3 reciben el texto CON marcas; v2 las recibiría como
+// palabras, así que va sin ellas y con el acento forzado a español.
+function configDeModelo(modelo, guionConMarcas) {
+  if (modelo === MODELOS.v2) {
+    return {
+      texto: quitarMarcas(guionConMarcas),
+      extra: { body: { language_code: 'es' }, voiceSettings: { style: 0.6, use_speaker_boost: true } },
+    };
+  }
+  return { texto: guionConMarcas, extra: {} };
+}
+
+async function pedirConRespaldo(guionConMarcas, preferido, pedir, prefijoError) {
+  const cadena = cadenaDeModelos(preferido);
+  let ultimo;
+  for (let i = 0; i < cadena.length; i++) {
+    const modelo = cadena[i];
+    const { texto, extra } = configDeModelo(modelo, guionConMarcas);
+    try {
+      if (i > 0) console.log(`  ↩️ Usando ${modelo}${modelo === MODELOS.v2 ? ' (marcas removidas)' : ''}...`);
+      const response = await pedir(texto, modelo, extra);
+      return { response, modelo, texto };
+    } catch (err) {
+      if (esCuotaAgotada(err)) throw errorLegible(err, prefijoError);
+      ultimo = err;
+      const detalle = detalleDeElevenLabs(err).mensaje || err.message;
+      console.warn(`  ⚠️ ${modelo} no disponible (${err.response?.status}): ${String(detalle).slice(0, 200)}`);
+    }
+  }
+  console.error('Error ElevenLabs:', detalleDeElevenLabs(ultimo).mensaje || ultimo.message);
+  throw errorLegible(ultimo, prefijoError);
+}
+
 // Generar audio a partir del guion con marcas.
-// modeloPreferido:
-//   'eleven_v3' → actúa las marcas [excited] etc., pero el acento puede variar
-//   'eleven_multilingual_v2' → marcas removidas, acento español forzado (language_code)
-async function generarAudio(guionConMarcas, modeloPreferido = 'eleven_v3') {
+// modeloPreferido: 'eleven_v4' (por defecto) | 'eleven_v3' | 'eleven_multilingual_v2'. Cae en cadena
+// al siguiente si el elegido falla.
+async function generarAudio(guionConMarcas, modeloPreferido = MODELOS.v4) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
   }
-
   console.log(`🎙️ Generando audio con ElevenLabs (${modeloPreferido})...`);
-  let response;
-  let modeloUsado;
-
-  if (modeloPreferido === 'eleven_multilingual_v2') {
-    try {
-      response = await pedirTTS(quitarMarcas(guionConMarcas), 'eleven_multilingual_v2', {
-        body: { language_code: 'es' },
-        voiceSettings: { style: 0.6, use_speaker_boost: true },
-      });
-    } catch (e) { throw errorLegible(e, 'Error generando audio'); }
-    return guardarAudio(response, guionConMarcas, 'eleven_multilingual_v2');
-  }
-
-  try {
-    // v3: el texto va CON las marcas, el modelo las actúa
-    response = await pedirTTS(guionConMarcas, 'eleven_v3');
-    modeloUsado = 'eleven_v3';
-  } catch (errV3) {
-    if (esCuotaAgotada(errV3)) throw errorLegible(errV3, 'Error generando audio');
-    const detalle = errV3.response?.data
-      ? Buffer.from(errV3.response.data).toString().slice(0, 200)
-      : errV3.message;
-    console.warn(`  ⚠️ eleven_v3 no disponible (${errV3.response?.status}): ${detalle}`);
-    console.log('  ↩️ Usando eleven_multilingual_v2 (marcas removidas)...');
-
-    try {
-      response = await pedirTTS(quitarMarcas(guionConMarcas), 'eleven_multilingual_v2', {
-        body: { language_code: 'es' },
-        voiceSettings: { style: 0.6, use_speaker_boost: true },
-      });
-      modeloUsado = 'eleven_multilingual_v2';
-    } catch (errV2) {
-      console.error('Error ElevenLabs:', errV2.response?.data ? Buffer.from(errV2.response.data).toString().slice(0, 300) : errV2.message);
-      throw errorLegible(errV2, 'Error generando audio');
-    }
-  }
-
-  return guardarAudio(response, guionConMarcas, modeloUsado);
+  const { response, modelo } = await pedirConRespaldo(guionConMarcas, modeloPreferido, pedirTTS, 'Error generando audio');
+  return guardarAudio(response, guionConMarcas, modelo);
 }
 
 // Igual que generarAudio pero además devuelve la alineación carácter-por-carácter
 // que ElevenLabs mide sobre el TEXTO QUE REALMENTE MANDÓ A HABLAR (con o sin marcas
 // según el modelo que terminó respondiendo). Fase 5: fuente real de tiempos, en vez
 // de estimar por % de caracteres.
-async function generarAudioConTiempos(guionConMarcas, modeloPreferido = 'eleven_v3') {
+async function generarAudioConTiempos(guionConMarcas, modeloPreferido = MODELOS.v4) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
   }
-
   console.log(`🎙️ Generando audio + tiempos con ElevenLabs (${modeloPreferido})...`);
-  let response;
-  let modeloUsado;
-  let textoEnviado;
-
-  if (modeloPreferido === 'eleven_multilingual_v2') {
-    textoEnviado = quitarMarcas(guionConMarcas);
-    try {
-      response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
-        body: { language_code: 'es' },
-        voiceSettings: { style: 0.6, use_speaker_boost: true },
-      });
-    } catch (e) { throw errorLegible(e, 'Error generando audio con tiempos'); }
-    return guardarAudioConTiempos(response, textoEnviado, 'eleven_multilingual_v2');
-  }
-
-  try {
-    textoEnviado = guionConMarcas;
-    response = await pedirTTSConTiempos(textoEnviado, 'eleven_v3');
-    modeloUsado = 'eleven_v3';
-  } catch (errV3) {
-    if (esCuotaAgotada(errV3)) throw errorLegible(errV3, 'Error generando audio con tiempos');
-    const detalle = errV3.response?.data
-      ? JSON.stringify(errV3.response.data).slice(0, 200)
-      : errV3.message;
-    console.warn(`  ⚠️ eleven_v3 (with-timestamps) no disponible (${errV3.response?.status}): ${detalle}`);
-    console.log('  ↩️ Usando eleven_multilingual_v2 (marcas removidas)...');
-
-    try {
-      textoEnviado = quitarMarcas(guionConMarcas);
-      response = await pedirTTSConTiempos(textoEnviado, 'eleven_multilingual_v2', {
-        body: { language_code: 'es' },
-        voiceSettings: { style: 0.6, use_speaker_boost: true },
-      });
-      modeloUsado = 'eleven_multilingual_v2';
-    } catch (errV2) {
-      console.error('Error ElevenLabs (with-timestamps):', errV2.response?.data ? JSON.stringify(errV2.response.data).slice(0, 300) : errV2.message);
-      throw errorLegible(errV2, 'Error generando audio con tiempos');
-    }
-  }
-
-  return guardarAudioConTiempos(response, textoEnviado, modeloUsado);
+  const { response, modelo, texto } = await pedirConRespaldo(guionConMarcas, modeloPreferido, pedirTTSConTiempos, 'Error generando audio con tiempos');
+  return guardarAudioConTiempos(response, texto, modelo);
 }
 
 // Guarda el MP3 (viene en base64 dentro del JSON) y devuelve la alineación cruda
@@ -287,6 +255,7 @@ async function verificarVoz() {
 }
 
 module.exports = {
+  MODELOS,
   generarAudio,
   generarAudioConTiempos,
   verificarVoz,
