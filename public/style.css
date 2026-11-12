@@ -1480,3 +1480,102 @@ footer {
 
 /* Botón de intercambiar qué enfoque va a cada canal */
 .encuadres-intercambiar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
+
+/* ---------- Vistas: Crear / Publicar ---------- */
+.vistas-nav {
+    display: flex;
+    gap: 6px;
+    padding: 10px 24px 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.vista-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: -1px;
+}
+.vista-tab:hover { color: var(--accent); }
+.vista-tab.activa {
+    background: var(--bg);
+    border-color: var(--border);
+    color: var(--accent);
+}
+.vista-contador {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    padding: 1px 8px;
+    font-weight: 700;
+}
+main[data-vista="publicar"] .layout-cols,
+main[data-vista="publicar"] #result-section { display: none !important; }
+main:not([data-vista="publicar"]) .vista-publicar { display: none; }
+
+.vista-publicar { padding: 20px 24px; }
+.publicar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.publicar-controles { display: flex; gap: 8px; align-items: center; }
+.publicar-controles select { width: auto; }
+.publicar-canal { margin-top: 22px; }
+.publicar-canal > h3 {
+    font-size: 1.02rem;
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--accent-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+.publicar-canal > h3 small { color: var(--text-dim); font-weight: 500; }
+.publicar-video {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-card);
+}
+.publicar-portada {
+    width: 150px;
+    aspect-ratio: 9 / 16;
+    border-radius: var(--radius-sm);
+    background: #121212;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 0;
+}
+.publicar-portada img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.publicar-portada span { padding: 8px; }
+.publicar-datos { min-width: 0; }
+.publicar-noticia { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; }
+.publicar-campo { margin-bottom: 10px; }
+.publicar-campo-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.publicar-campo-head label { font-size: 0.74rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 0; }
+.publicar-campo p { margin: 0; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.publicar-campo p.titulo { font-weight: 700; font-size: 1.02rem; }
+.publicar-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.btn-copy.copiado { background: var(--success-tint); border-color: var(--success-border); color: var(--success); }
+@media (max-width: 640px) {
+    .publicar-video { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
+    .publicar-portada { width: 96px; }
+    .vista-publicar { padding: 14px 12px; }
+}

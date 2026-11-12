@@ -50,6 +50,24 @@ const LEXICO = [
   ['Argentina', /\b(ya\s+fue|al\s+pedo)\b/i, 'modismo argentino'],
 ];
 
+// Vocabulario que las redes restringen o le bajan el alcance: la "censura por defecto" que pidió el
+// usuario (2026-11-11) en lugar de un aviso que no leía. No existe una lista oficial de TikTok ni de
+// Meta, así que acá van solo categorías claras —no folklore de foros—, y lo que se hace con ellas no
+// es borrar la noticia sino decirla en términos sobrios: la frase se reescribe, el hecho se conserva.
+const SENSIBLE = [
+  [/\b(suicid\w*|se\s+quit[oó]\s+la\s+vida|quitarse\s+la\s+vida|autolesi\w*)/i,
+    'suicidio o autolesión: decir "perdió la vida" o "atentó contra su vida", sin el método'],
+  [/\b(viol(?:ó|ar|aron|ada|ado|adas|ados)|violaci(?:ón|ones)|abus\w+\s+sexual\w*)\b(?!\s+(?:de(?:l)?\s+)?(?:la\s+|el\s+|las\s+|los\s+|una\s+|un\s+|su\s+|sus\s+)?(?:ley|leyes|norma|normas|regla|reglas|contrato|acuerdo|orden|cuarentena|privacidad|confianza|derechos|protocolo))/i,
+    'violencia sexual: decir "agresión" o "abuso", sin detalles'],
+  // "éxtasis" queda fuera a propósito: casi siempre es "un éxtasis de felicidad", no la droga.
+  [/\b(coca[ií]na|hero[ií]na|metanfetamina|fentanilo)\b/i,
+    'drogas: decir "sustancias", sin nombrar la droga'],
+  [/\b(maric[oó]n\w*|sudaca\w*|mongólic[oa]s?|retrasad[oa]s?\s+mental(?:es)?)\b/i,
+    'insulto discriminatorio: quitarlo o decir que "lo insultó"'],
+  [/\b(descuartiz\w*|degoll\w*|decapit\w*|desmembr\w*)/i,
+    'violencia gráfica: decirlo sin el detalle'],
+];
+
 const PARTIR = (guion) => (guion || '').trim().split(DIVIDIR_ORACIONES).filter(Boolean);
 
 // Nombres de menores que aparecen en el guion. "hija"/"hijo" solo cuentan si el guion deja claro
@@ -87,6 +105,9 @@ function detectar(guion) {
     if (MENOR_ESTRICTO.test(o) && ACECHO_DEBIL.test(o)) anotar(o, 'junta a un menor con vocabulario de acecho', 'menor');
     for (const [pais, patron, que] of LEXICO) {
       if (patron.test(o)) anotar(o, `léxico de ${pais} (${que}): usar español neutro latinoamericano`, 'lexico');
+    }
+    for (const [patron, que] of SENSIBLE) {
+      if (patron.test(o)) anotar(o, `vocabulario que las redes restringen (${que})`, 'redes');
     }
   }
   return [...porFrase.values()].map(p => ({ frase: p.frase, motivo: p.motivos.join('; '), tipo: p.tipo }));
@@ -147,8 +168,12 @@ REGLAS:
 4. Si el problema es una afirmación sin respaldo: usa SOLO lo que dice la crónica, o atribúyelo
    ("según algunos usuarios", "trascendió que") si la crónica lo permite. Si la crónica no lo
    permite, quita la afirmación y deja una frase que cumpla la misma función en la historia.
-5. No agregues hechos nuevos. No cambies nombres de adultos. Conserva la puntuación expresiva.
-6. Responde ÚNICAMENTE un array JSON: [{"original": "<oración tal cual>", "nueva": "<reescrita>"}]
+5. Si el problema es vocabulario que las redes restringen (suicidio, violencia sexual, drogas,
+   insultos discriminatorios, violencia gráfica): cuenta el MISMO hecho con términos sobrios y sin
+   detalles gráficos ("perdió la vida", "agresión", "sustancias", "lo insultó"). No se oculta la
+   noticia: se dice sin la palabra que las plataformas castigan.
+6. No agregues hechos nuevos. No cambies nombres de adultos. Conserva la puntuación expresiva.
+7. Responde ÚNICAMENTE un array JSON: [{"original": "<oración tal cual>", "nueva": "<reescrita>"}]
    en el mismo orden. "original" es una copia exacta de lo que te di.`;
 
 async function reescribir(frases, cronica) {

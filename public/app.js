@@ -359,20 +359,16 @@ function volcarVista() {
     if (dest && dest.value) d.selectedDestFolder = dest.value;
 }
 
-// Qué hizo la revisión automática con el guion de la pestaña abierta: frases reescritas (nombre de
-// un menor, léxico de España/Argentina, afirmaciones sin respaldo) y, sobre todo, lo que NO pudo
-// arreglar — eso el usuario tiene que corregirlo a mano antes de aprobar.
+// La revisión automática del guion trabaja EN SILENCIO (pedido del usuario, 2026-11-11: el recuadro
+// con el antes y el después no lo leía — "solo reviso el guion"). Lo que corrigió ya está en el texto
+// que se lee en el editor; acá solo aparece algo cuando una frase NO se pudo arreglar, que es lo
+// único que pide una decisión suya antes de aprobar.
 function pintarAvisoRevision() {
     const el = document.getElementById('aviso-revision');
     if (!el) return;
     const d = V();
-    const cambios = d.cambiosRevision || [];
     const pendientes = d.avisosRevision || [];
     const lineas = [];
-    if (cambios.length) {
-        lineas.push(`🔎 La revisión automática reescribió ${cambios.length} frase(s) de este guion:`);
-        for (const c of cambios) lineas.push(`• ${c.motivo.split(/[:(]/)[0].trim()}: "${c.antes}" → "${c.despues}"`);
-    }
     if (pendientes.length) {
         lineas.push('⚠️ Quedó sin arreglar, corrígelo a mano antes de aprobar:');
         for (const p of pendientes) lineas.push(`• ${p}`);
@@ -4489,6 +4485,180 @@ function initSubsPreview() {
     repintar();
 }
 
+// =================================================================================================
+// VISTA "PUBLICAR": todo lo que hace falta al subir los videos a las redes, junto.
+//
+// Una tarjeta por video terminado, agrupadas por canal: la portada (el primer fotograma, que lleva
+// el cartel), el título y la descripción con hashtags —cada uno con su botón de copiar— y el enlace
+// al archivo. Antes había que abrir cada proceso para copiar sus textos.
+// =================================================================================================
+
+function mostrarVista(vista) {
+    const cual = vista === 'publicar' ? 'publicar' : 'crear';
+    document.querySelector('main')?.setAttribute('data-vista', cual);
+    document.querySelectorAll('.vista-tab').forEach(b => b.classList.toggle('activa', b.dataset.vista === cual));
+    // El # en la dirección deja abrir esta vista directo en otra pestaña del navegador y tenerla fija.
+    if ((location.hash === '#publicar') !== (cual === 'publicar')) {
+        history.replaceState(null, '', cual === 'publicar' ? '#publicar' : location.pathname + location.search);
+    }
+    if (cual === 'publicar') cargarPublicar();
+}
+
+// El rango se calcula en la hora LOCAL del navegador: "hoy" es el día del usuario, no el del servidor.
+function rangoPublicar() {
+    const cual = document.getElementById('publicar-rango')?.value || 'hoy';
+    const inicioDeHoy = new Date();
+    inicioDeHoy.setHours(0, 0, 0, 0);
+    const DIA = 24 * 3600 * 1000;
+    if (cual === 'ayer') return { desde: new Date(inicioDeHoy - DIA), hasta: new Date(inicioDeHoy - 1) };
+    if (cual === 'semana') return { desde: new Date(inicioDeHoy - 6 * DIA), hasta: new Date() };
+    return { desde: inicioDeHoy, hasta: new Date() };
+}
+
+// Copia un texto y lo confirma EN el botón que se apretó: con muchas tarjetas en pantalla, un aviso
+// en el registro de abajo no dice cuál se copió.
+async function copiarTexto(texto, boton) {
+    try {
+        await navigator.clipboard.writeText(texto);
+    } catch {
+        const ta = document.createElement('textarea');
+        ta.value = texto;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    }
+    if (!boton) return;
+    const antes = boton.textContent;
+    boton.textContent = '✓ Copiado';
+    boton.classList.add('copiado');
+    setTimeout(() => { boton.textContent = antes; boton.classList.remove('copiado'); }, 1400);
+}
+
+function campoPublicar(etiqueta, texto, claseTexto = '') {
+    const caja = document.createElement('div');
+    caja.className = 'publicar-campo';
+    const head = document.createElement('div');
+    head.className = 'publicar-campo-head';
+    const label = document.createElement('label');
+    label.textContent = etiqueta;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-copy';
+    btn.textContent = 'Copiar';
+    btn.onclick = () => copiarTexto(texto, btn);
+    head.append(label, btn);
+    const p = document.createElement('p');
+    if (claseTexto) p.className = claseTexto;
+    p.textContent = texto || '—';
+    caja.append(head, p);
+    return caja;
+}
+
+function tarjetaPublicar(v) {
+    const tarjeta = document.createElement('div');
+    tarjeta.className = 'publicar-video';
+
+    const portada = document.createElement('div');
+    portada.className = 'publicar-portada';
+    if (v.portadaUrl) {
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.alt = `Portada de ${v.titulo}`;
+        img.src = apiBase() + v.portadaUrl;
+        img.onerror = () => { portada.innerHTML = '<span>No se pudo cargar la portada</span>'; };
+        portada.appendChild(img);
+    } else {
+        // Videos anteriores a la portada automática: no la tienen guardada.
+        portada.innerHTML = '<span>Sin portada guardada (video anterior a esta función)</span>';
+    }
+
+    const datos = document.createElement('div');
+    datos.className = 'publicar-datos';
+    const noticia = document.createElement('p');
+    noticia.className = 'publicar-noticia';
+    const hora = new Date(v.terminado).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    noticia.textContent = `${v.noticia} · ${hora}${v.duracion ? ` · ${v.duracion}s` : ''}`;
+    datos.appendChild(noticia);
+    datos.appendChild(campoPublicar('Título', v.titulo, 'titulo'));
+    datos.appendChild(campoPublicar('Descripción + hashtags', v.descripcion));
+
+    const acciones = document.createElement('div');
+    acciones.className = 'publicar-acciones';
+    const todo = document.createElement('button');
+    todo.type = 'button';
+    todo.className = 'btn-copy';
+    todo.textContent = 'Copiar título + descripción';
+    todo.onclick = () => copiarTexto(`${v.titulo}\n\n${v.descripcion}`, todo);
+    acciones.appendChild(todo);
+    const abrir = document.createElement('a');
+    abrir.className = 'btn-copy';
+    abrir.href = v.driveLink;
+    abrir.target = '_blank';
+    abrir.rel = 'noopener';
+    abrir.textContent = 'Abrir video en Drive';
+    acciones.appendChild(abrir);
+    if (v.portadaUrl) {
+        const bajar = document.createElement('a');
+        bajar.className = 'btn-copy';
+        bajar.href = apiBase() + v.portadaUrl;
+        bajar.download = v.fileName.replace(/\.mp4$/i, '.jpg');
+        bajar.textContent = 'Descargar portada';
+        acciones.appendChild(bajar);
+    }
+    datos.appendChild(acciones);
+
+    tarjeta.append(portada, datos);
+    return tarjeta;
+}
+
+async function cargarPublicar() {
+    const lista = document.getElementById('publicar-lista');
+    const resumen = document.getElementById('publicar-resumen');
+    if (!lista || !API_KEY) return;
+    const { desde, hasta } = rangoPublicar();
+    try {
+        const r = await apiCall(`/publicar?desde=${encodeURIComponent(desde.toISOString())}&hasta=${encodeURIComponent(hasta.toISOString())}`, 'GET');
+        const videos = r.videos || [];
+        lista.innerHTML = '';
+        const contador = document.getElementById('publicar-contador');
+        if (contador && (document.getElementById('publicar-rango')?.value || 'hoy') === 'hoy') {
+            contador.textContent = videos.length;
+            contador.classList.toggle('hidden', !videos.length);
+        }
+        if (!videos.length) {
+            resumen.textContent = 'No hay videos terminados en este rango.';
+            return;
+        }
+        // Agrupados por canal, en un orden fijo: los pares de canales hermanos quedan juntos.
+        const ORDEN = ['chismexpicante', 'supelupe', 'embajadoresdelchisme', 'lanaple'];
+        const porCanal = new Map();
+        for (const v of videos) {
+            if (!porCanal.has(v.canal)) porCanal.set(v.canal, []);
+            porCanal.get(v.canal).push(v);
+        }
+        const canales = [...porCanal.keys()].sort((a, b) => {
+            const ia = ORDEN.indexOf(normalizarCanal(a)), ib = ORDEN.indexOf(normalizarCanal(b));
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+        });
+        resumen.textContent = `${videos.length} video(s) en ${canales.length} canal(es). Copia el título y la descripción de cada uno al publicarlo.`;
+        for (const canal of canales) {
+            const bloque = document.createElement('div');
+            bloque.className = 'publicar-canal';
+            const h = document.createElement('h3');
+            h.textContent = canal || 'Sin canal';
+            const cuenta = document.createElement('small');
+            cuenta.textContent = `${porCanal.get(canal).length} video(s)`;
+            h.appendChild(cuenta);
+            bloque.appendChild(h);
+            for (const v of porCanal.get(canal)) bloque.appendChild(tarjetaPublicar(v));
+            lista.appendChild(bloque);
+        }
+    } catch (e) {
+        resumen.textContent = `No se pudo cargar la lista: ${e.message}`;
+    }
+}
+
 function aplicarIconos() {
     document.querySelectorAll('[data-icon]').forEach(el => {
         el.innerHTML = (typeof ICONS !== 'undefined' && ICONS[el.dataset.icon]) || '';
@@ -4523,6 +4693,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // los ajustes: antes de eso, los desplegables todavía no tienen las opciones que hay que elegir.
     Promise.allSettled([listoSubs, listoPortada, listoTonos, listoAjustes]).then(() => aplicarPreferenciasVideo());
     elegirMotorGuion('grafo');   // los ángulos antiguos quedaron ocultos: el motor es siempre el del grafo
+    if (location.hash === '#publicar') mostrarVista('publicar');
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

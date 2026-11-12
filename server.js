@@ -55,7 +55,7 @@ app.use(express.static('public', {
 // Rutas públicas: key-prompt/health (bootstrap) y preview (el tag <video> no puede enviar headers;
 // se protege con un token aleatorio de un solo uso por render)
 const authenticateApiKey = (req, res, next) => {
-  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/') || req.path.startsWith('/material-file/') || req.path.startsWith('/cita-stream/')) {
+  if (req.path === '/key-prompt' || req.path === '/health' || req.path.startsWith('/preview/') || req.path.startsWith('/audio/') || req.path.startsWith('/portada-file/') || req.path.startsWith('/cartel/') || req.path.startsWith('/fuente/') || req.path.startsWith('/material-file/') || req.path.startsWith('/cita-stream/') || req.path.startsWith('/publicar-portada/')) {
     return next();
   }
   const apiKey = req.headers['x-api-key'];
@@ -2483,6 +2483,31 @@ async function renderizarVideo(params, renderId) {
       destinoPortada = { modo: 'api', carpetaDriveId: destFolder, nombreBase: nombreBasePortada };
     }
 
+    // 7b. PORTADA AUTOMÁTICA: el primer fotograma del video, que ya lleva el cartel quemado.
+    //
+    // Pedido del usuario (2026-11-11): la pestaña "Publicar" muestra cada video con su portada, y
+    // "la portada que sea automática, la que aparece en el inicio del video". Hasta acá el JPG solo
+    // existía si se elegía un fotograma a mano, y nada más que para el primer video del par: el
+    // gemelo nunca tenía. Queda al lado del MP4 con el mismo nombre base, como ya se había decidido
+    // para la carpeta "para publicar". Si falla, el video ya está guardado: solo no hay portada.
+    let portadaId = null;
+    let portadaLocal = null;
+    try {
+      const portadaTmp = path.join(video.TEMP_DIR, `${renderId}_portada.jpg`);
+      await video.ffmpeg(['-y', '-i', resultado.finalPath, '-frames:v', '1', '-q:v', '3', portadaTmp]);
+      const nombrePortada = `${nombreBasePortada}.jpg`;
+      if (destinoPortada.modo === 'local') {
+        portadaLocal = path.join(destinoPortada.carpetaLocal, nombrePortada);
+        fs.copyFileSync(portadaTmp, portadaLocal);
+      } else {
+        const subida = await driveHelper.subirVideo(portadaTmp, nombrePortada, destinoPortada.carpetaDriveId, 'image/jpeg');
+        portadaId = subida.id || null;
+      }
+      console.log(`🖼️ [${renderId}] Portada automática guardada: ${nombrePortada}`);
+    } catch (e) {
+      console.warn(`⚠️ [${renderId}] No se pudo guardar la portada automática: ${e.message}`);
+    }
+
     // 8. Respaldar la locución en Drive con el mismo nombre que el video
     try {
       if (localBase) {
@@ -2554,7 +2579,16 @@ async function renderizarVideo(params, renderId) {
       try {
         // `paso: 'completado'` es del JOB, no de la variante: se marca cuando termina cualquiera
         // de los dos videos (el historial muestra el proceso como terminado desde el primero).
-        const job = guardarEnVariante(jobId, variante, { fileName, folderName, driveLink }, { paso: 'completado' });
+        // Además de dónde quedó el video, se guarda lo que la pestaña "Publicar" necesita mostrar: la
+        // portada, cuándo terminó, y el título y la descripción con los que salió ESTE video (los que
+        // se registraron en la hoja), para copiar y pegar al publicar sin volver a abrir el proceso.
+        const job = guardarEnVariante(jobId, variante, {
+          fileName, folderName, driveLink, portadaId, portadaLocal,
+          terminado: new Date().toISOString(),
+          tituloPublicado: metadatos?.titulo || null,
+          descripcionPublicada: metadatos?.descripcion || null,
+          duracionVideo: resultado.duracion,
+        }, { paso: 'completado' });
         const destino = await destinoInsumo(job, variante);
         const nombreArchivo = `resultado${destino.sufijo}.json`;
         if (destino.carpetaId) {
@@ -2583,6 +2617,88 @@ async function renderizarVideo(params, renderId) {
     throw error; // la cola lo marca como tarea fallida y sigue con la siguiente
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// PESTAÑA "PUBLICAR"
+//
+// Pedido del usuario (2026-11-11): "la información que copio y pego en la descripción de los videos
+// sería bueno que esté consolidada en otra pestaña, así solo voy a esa pestaña y ya tengo todo, y que
+// se pongan las portadas de los videos ahí con su respectiva información y canal".
+//
+// Devuelve una fila por VIDEO terminado (los gemelos son dos filas del mismo proceso), entre dos
+// fechas. El navegador manda el rango en su hora local: "hoy" depende de dónde esté el usuario, y
+// el servidor corre en UTC.
+function videosParaPublicar(desde, hasta) {
+  const filas = [];
+  for (const job of jobStore.listarJobs(300)) {
+    const variantes = [['A', job], ['B', job.gemela]];
+    for (const [variante, d] of variantes) {
+      if (!d?.fileName || !d?.driveLink) continue;
+      // Los videos anteriores a esta función no guardaron `terminado`: se usa la última
+      // actualización del proceso, que es cuando terminó el último de sus renders.
+      const cuando = d.terminado || job.actualizado || job.creado;
+      const t = Date.parse(cuando);
+      if (!Number.isFinite(t) || t < desde || t > hasta) continue;
+      const meta = variante === 'A' ? { titulo: job.titulo, descripcion: job.descripcion } : (d.metadatos || {});
+      filas.push({
+        jobId: job.jobId,
+        variante,
+        canal: d.folderName || '',
+        noticia: job.nombreCorto || job.titulo || '',
+        titulo: d.tituloPublicado || meta.titulo || '',
+        descripcion: d.descripcionPublicada || meta.descripcion || '',
+        fileName: d.fileName,
+        driveLink: d.driveLink,
+        terminado: cuando,
+        duracion: Math.round(d.duracionVideo || d.duracion || 0),
+        portadaUrl: (d.portadaId || d.portadaLocal) ? `/api/publicar-portada/${job.jobId}/${variante}` : null,
+      });
+    }
+  }
+  return filas.sort((x, y) => Date.parse(y.terminado) - Date.parse(x.terminado));
+}
+
+app.get('/api/publicar', (req, res) => {
+  try {
+    const hasta = Date.parse(req.query.hasta) || Date.now();
+    const desde = Date.parse(req.query.desde) || (hasta - 24 * 3600 * 1000);
+    res.json({ status: 'success', videos: videosParaPublicar(desde, hasta) });
+  } catch (error) {
+    console.error('Error listando videos para publicar:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// La portada de un video, para el <img> de la pestaña. Sin API key (un <img> no puede mandarla): la
+// protege el jobId, que es un UUID aleatorio, igual que el token de las previas. Se baja de Drive
+// una vez y queda en disco; si el disco se limpió, se vuelve a bajar.
+app.get('/api/publicar-portada/:jobId/:variante', async (req, res) => {
+  try {
+    const job = jobStore.obtenerJob(req.params.jobId);
+    const d = req.params.variante === 'B' ? job?.gemela : job;
+    if (!d || (!d.portadaId && !d.portadaLocal)) return res.status(404).end();
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    if (d.portadaLocal && fs.existsSync(d.portadaLocal)) return res.type('jpg').sendFile(path.resolve(d.portadaLocal));
+    if (!d.portadaId || !/^[\w-]+$/.test(d.portadaId)) return res.status(404).end();
+    const cache = path.join(video.TEMP_DIR, `portada_pub_${d.portadaId}.jpg`);
+    if (!fs.existsSync(cache) || fs.statSync(cache).size === 0) {
+      const r = await driveHelper.streamArchivo(d.portadaId);
+      const parcial = `${cache}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+      await new Promise((ok, mal) => {
+        const salida = fs.createWriteStream(parcial);
+        r.data.on('error', mal);
+        salida.on('error', mal);
+        salida.on('finish', ok);
+        r.data.pipe(salida);
+      });
+      fs.renameSync(parcial, cache);
+    }
+    res.type('jpg').sendFile(path.resolve(cache));
+  } catch (error) {
+    console.warn(`⚠️ No se pudo servir la portada de ${req.params.jobId}/${req.params.variante}: ${error.message}`);
+    res.status(404).end();
+  }
+});
 
 // El endpoint ya no renderiza: valida lo barato, deja el cartel en disco y encola. Responde al
 // instante con el id del render, y el navegador sondea `/api/render/:renderId`. Así un render

@@ -20,7 +20,18 @@
             <p class="subtitle">Crea videos virales automáticamente</p>
         </header>
 
-        <main>
+        <!-- Dos vistas: "Crear" es el flujo de siempre; "Publicar" junta lo que hace falta al subir
+             los videos a las redes (portada, título, descripción y canal de cada uno). -->
+        <nav class="vistas-nav" id="vistas-nav">
+            <button type="button" class="vista-tab activa" data-vista="crear" onclick="mostrarVista('crear')">
+                <span class="icon-slot" data-icon="gear"></span> Crear
+            </button>
+            <button type="button" class="vista-tab" data-vista="publicar" onclick="mostrarVista('publicar')">
+                <span class="icon-slot" data-icon="rocketLaunch"></span> Publicar <span class="vista-contador hidden" id="publicar-contador"></span>
+            </button>
+        </nav>
+
+        <main data-vista="crear">
             <div class="form-section banner-warning hidden" id="apikey-banner">
                 <h2><span class="icon-slot" data-icon="key"></span> Ingresa tu API Key</h2>
                 <p class="hint">La que está en el <code>.env</code> del servidor (variable <code>API_KEY</code>).</p>
@@ -711,6 +722,22 @@
             </div>
             </div><!-- /.col-productos -->
             </div><!-- /.layout-cols -->
+
+            <section class="vista-publicar" id="vista-publicar">
+                <div class="publicar-head">
+                    <h2 class="col-title mb-0"><span class="icon-slot" data-icon="rocketLaunch"></span> Para publicar</h2>
+                    <div class="publicar-controles">
+                        <select id="publicar-rango" onchange="cargarPublicar()">
+                            <option value="hoy" selected>Hoy</option>
+                            <option value="ayer">Ayer</option>
+                            <option value="semana">Últimos 7 días</option>
+                        </select>
+                        <button class="btn-copy" type="button" onclick="cargarPublicar()" title="Actualizar"><span class="icon-slot" data-icon="arrowsClockwise"></span> Actualizar</button>
+                    </div>
+                </div>
+                <p class="hint" id="publicar-resumen">Todos los videos terminados, agrupados por canal, con lo que hay que copiar al publicarlos.</p>
+                <div id="publicar-lista"></div>
+            </section>
 
             <div class="result-section hidden" id="result-section">
                 <h2><span class="icon-slot" data-icon="checkCircle"></span> Video generado</h2>
