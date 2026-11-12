@@ -78,7 +78,8 @@ function setModo(modo) {
         document.getElementById(id)?.classList.toggle('hidden', esInsumos);
     });
     // Volver al inicio (paso 1) con estado limpio
-    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], encuadres: null, motorGuion: 'gemini', gemelos: false, varianteActiva: 'A', B: null, aprobado: {}, pasos: {}, carpetasDestino: [] };
+    state = { jobId: null, sourceData: null, selectedAngle: null, selectedDestFolder: null, cronista: null, guion: null, fragments: null, carpetas: [], audioToken: null, fuentes: [], sesgo: 'neutral', avisoReconstruccion: null, materialesAdicionales: [], materialesPendientes: [], nombresDetectados: [], encuadres: null, motorGuion: 'grafo', gemelos: true, varianteActiva: 'A', B: null, aprobado: {}, pasos: {}, carpetasDestino: [], videosCortos: state.videosCortos, guionDosTiempos: state.guionDosTiempos, modeloVoz: state.modeloVoz, preferenciasVideo: state.preferenciasVideo };
+    sincronizarGemelos();
     renderFuentesLista();
     renderMaterialesLista();
     reiniciarCartelPortada();
@@ -116,6 +117,7 @@ function guardarApiKey() {
 // pestaña dejó algo a medias (sessionStorage, no localStorage: cada pestaña es independiente).
 async function iniciarSesion() {
     await cargarCanales(); // primero: cargarHistorial usa canalesMap para mostrar el nombre del canal
+    sincronizarGemelos();  // el modo gemelos arranca encendido: las pestañas llevan el nombre de cada canal
     cargarHistorial();
     // Si la URL trae ?jobId= (lo que hace el historial al abrir un proceso en pestaña nueva), se
     // carga ESE. Y nada más: la app no sale a buscar procesos sin terminar para ofrecerlos sola.
@@ -161,10 +163,11 @@ let state = {
     materialesPendientes: [], // [{tipo, file, descripcion}, ...] — archivos elegidos ANTES de tener jobId
     nombresDetectados: [],    // [{leido, sugerido, carpeta, confianza, decir}] — cotejo contra las carpetas de Drive
     encuadres: null,          // {suficiente, encuadres:[{marco,titulo,instruccion}], porque} — de qué va cada video
-    motorGuion: 'gemini',     // 'gemini' (elijo el ángulo) | 'grafo' (la estructura la elige el grafo)
-    // Videos gemelos (ver el bloque de abajo). Apagado por defecto: con `gemelos: false` nada de
-    // esto se ejecuta y el flujo es exactamente el de siempre.
-    gemelos: false,
+    // 'grafo' por defecto (2026-11-11): el usuario ya no usa los ángulos antiguos, que quedaron ocultos.
+    motorGuion: 'grafo',      // 'gemini' (elijo el ángulo) | 'grafo' (la estructura la elige el grafo)
+    // Videos gemelos (ver el bloque de abajo). ENCENDIDO por defecto desde 2026-11-11: 19 de los
+    // últimos 20 procesos del usuario fueron gemelos. El interruptor del Paso 2 sigue para apagarlo.
+    gemelos: true,
     varianteActiva: 'A',
     B: null,              // datos del segundo video; se crea al activar el modo
     aprobado: {},         // qué pasos ya se atendieron para el video A
@@ -250,6 +253,17 @@ function buscarCarpetaGemela(nombreCarpeta, carpetas) {
     const objetivo = GEMELAS[normalizarCanal(nombreCarpeta)];
     if (!objetivo) return null;
     return (carpetas || []).find(f => normalizarCanal(f.name) === objetivo) || null;
+}
+
+// Pone el interruptor y las pestañas de acuerdo con `state.gemelos`, sin disparar nada más. Hace
+// falta porque ahora el modo arranca ENCENDIDO: al abrir la app o al volver al Paso 1 nadie hizo
+// clic en el interruptor, así que `toggleGemelos` no corrió y la pantalla quedaría desfasada.
+function sincronizarGemelos() {
+    const chk = document.getElementById('chk-gemelos');
+    if (chk) chk.checked = state.gemelos;
+    if (!state.gemelos) state.varianteActiva = 'A';
+    document.querySelectorAll('[data-tabs]').forEach(t => t.classList.toggle('hidden', !state.gemelos));
+    actualizarTabs();
 }
 
 function toggleGemelos(activo) {
@@ -443,7 +457,7 @@ function actualizarBotonesVariante() {
 
     // Paso 3 — guion
     textoBoton('btn-approve-guion', canal ? `Aprobar guion${de} y continuar` : 'Aprobar y continuar');
-    textoBoton('btn-regenerate-guion', canal ? 'Regenerar los dos guiones' : 'Regenerar (mismo ángulo)');
+    textoBoton('btn-regenerate-guion', canal ? 'Regenerar los dos guiones' : 'Regenerar guion');
     textoBoton('btn-regenerate-solo-gemelo', `Regenerar solo el guion${de}`);
 
     // Paso 4 — asignaciones
@@ -989,6 +1003,18 @@ function pintarEncuadres() {
     const cronicas = datos.cronicas || [];
 
     lista.innerHTML = '';
+    // Elegir qué enfoque va a cada canal: un botón que los da vuelta dentro del par.
+    if (state.gemelos && propuestos.length >= 2 && cronicas.length >= 2) {
+        const barra = document.createElement('div');
+        barra.className = 'encuadres-intercambiar';
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-secondary';
+        btn.id = 'btn-intercambiar-enfoques';
+        btn.textContent = `⇄ Intercambiar: que "${etiquetaCanal(0)}" tome el enfoque de "${etiquetaCanal(1)}" y al revés`;
+        btn.onclick = intercambiarEnfoques;
+        barra.appendChild(btn);
+        lista.appendChild(barra);
+    }
     propuestos.forEach((e, i) => {
         const fila = document.createElement('div');
         fila.className = 'encuadre-bloque';
@@ -1082,6 +1108,30 @@ async function generarEncuadres() {
                 document.getElementById('encuadres-lista').appendChild(btn);
             }
         }
+    }
+}
+
+// Da vuelta qué enfoque (y su crónica) va a cada canal del par. Primero guarda lo que se haya
+// editado a mano, para que el intercambio no pise una crónica corregida que aún no se guardó.
+async function intercambiarEnfoques() {
+    if (!state.jobId || (state.encuadres?.cronicas || []).length < 2) return;
+    setButtonDisabled('btn-intercambiar-enfoques', true);
+    try {
+        await apiCall('/encuadres', 'PUT', { jobId: state.jobId, cronicas: state.encuadres.cronicas });
+        const r = await apiCall('/encuadres', 'PUT', { jobId: state.jobId, intercambiar: true });
+        state.encuadres = r.encuadres;
+        // El botón de guardar y su estado se vuelven a crear con la lista nueva.
+        document.getElementById('btn-guardar-cronicas')?.remove();
+        document.getElementById('cronicas-estado')?.remove();
+        pintarEncuadres();
+        log(`🔀 Enfoques intercambiados: ${etiquetaVariante('A')} ahora cuenta "${state.encuadres.encuadres[0]?.titulo || ''}"`);
+        // Los guiones ya escritos salieron del reparto anterior: se avisa, no se borran solos.
+        if (state.guion || state.B?.guion) {
+            log('⚠️ Los guiones ya escritos corresponden al reparto anterior: usa "Regenerar los dos guiones" para que cada canal tome su nuevo enfoque.');
+        }
+    } catch (e) {
+        log(`⚠️ No se pudieron intercambiar los enfoques: ${e.message}`);
+        setButtonDisabled('btn-intercambiar-enfoques', false);
     }
 }
 
@@ -2022,6 +2072,7 @@ async function cargarAjustes() {
         state.videosCortos = r.ajustes?.videosCortos !== false;
         state.guionDosTiempos = r.ajustes?.guionDosTiempos !== false;
         state.modeloVoz = r.ajustes?.modeloVoz || 'eleven_v4';
+        state.preferenciasVideo = r.ajustes?.preferenciasVideo || {};
     } catch {
         // Los valores de fábrica; si el servidor no contesta, la pantalla no miente.
         state.videosCortos = true;
@@ -2887,6 +2938,67 @@ function efectosDelPaso6() {
     };
 }
 
+// PREFERENCIAS DEL PASO 6: lo último que el usuario eligió queda como valor por defecto.
+//
+// Pedido suyo (2026-11-11): "quiero que las opciones que elijo para aprobarlas ya queden por defecto,
+// por ejemplo las transiciones que siempre elijo, o la posición de los subtítulos". Se guardan en el
+// servidor (junto a los demás ajustes) al mandar a generar un video, y se aplican al abrir la app:
+// así valen en todas las ventanas y en cualquier dispositivo, no solo en este navegador.
+const CONTROLES_PREFERENCIA = [
+    ['efecto-zoom', 'value'], ['zoom-pct', 'value'], ['efecto-espejo', 'value'],
+    ['efecto-transicion', 'value'], ['transicion-dur', 'value'],
+    ['efecto-subtitulos', 'checked'], ['efecto-musica', 'checked'],
+    ['musica-tono', 'value'], ['musica-volumen', 'value'],
+    ['subs-fuente', 'value'], ['subs-tamano', 'value'],
+    ['portada-fuente', 'value'], ['portada-tamano-auto', 'checked'],
+    ['portada-tamano', 'value'], ['portada-caja', 'value'],
+];
+
+function leerPreferenciasVideo() {
+    const p = {};
+    for (const [id, prop] of CONTROLES_PREFERENCIA) {
+        const el = document.getElementById(id);
+        if (el) p[id] = el[prop];
+    }
+    p.transicionTipos = tiposTransicionElegidos();
+    p.subsMarginV = subsMarginV;
+    return p;
+}
+
+// Pone cada control en el valor guardado y avisa con los mismos eventos que dispara el usuario al
+// tocarlo, para que las vistas previas y las variables internas (tamaño, tipografía) queden al día.
+// Un valor que ya no existe (una tipografía que se quitó del catálogo) se ignora: queda el de fábrica.
+function aplicarPreferenciasVideo(p = state.preferenciasVideo) {
+    if (!p || !Object.keys(p).length) return;
+    if (Number.isFinite(Number(p.subsMarginV))) subsMarginV = Number(p.subsMarginV);
+    if (Array.isArray(p.transicionTipos)) {
+        document.querySelectorAll('#transicion-tipos-checks input[type="checkbox"]').forEach(c => {
+            c.checked = p.transicionTipos.includes(c.value);
+        });
+    }
+    for (const [id, prop] of CONTROLES_PREFERENCIA) {
+        const el = document.getElementById(id);
+        if (!el || !(id in p)) continue;
+        if (prop === 'checked') {
+            el.checked = Boolean(p[id]);
+        } else {
+            if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === String(p[id]))) continue;
+            el.value = p[id];
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+}
+
+// Se llama al mandar a generar: ESE es el momento en que los ajustes son "los que el usuario usa".
+// No se espera ni se avisa si falla: que no se recuerde una preferencia no puede frenar un video.
+function guardarPreferenciasVideo() {
+    const p = leerPreferenciasVideo();
+    if (JSON.stringify(p) === JSON.stringify(state.preferenciasVideo || {})) return;
+    state.preferenciasVideo = p;
+    apiCall('/ajustes', 'PUT', { preferenciasVideo: p }).catch(() => {});
+}
+
 // Encola UNA variante y devuelve su renderId. El cartel se dibuja en el canvas compartido justo
 // antes de exportarlo: hay un solo canvas, así que cada variante lo pinta con SU titular, exporta
 // su PNG y recién ahí se pasa a la siguiente.
@@ -2927,6 +3039,7 @@ async function encolarVariante(v) {
         efectos: { ...efectosDelPaso6(), cartelPNG },
     });
     d.renderId = respuesta.renderId;
+    guardarPreferenciasVideo();
     log(`📋 ${etiquetaVariante(v)} encolado (${respuesta.estado === 'en_cola' ? `puesto ${respuesta.posicion}` : 'arrancando'})`);
     return respuesta.renderId;
 }
@@ -4010,6 +4123,11 @@ async function recuperarJobPendiente() {
         actualizarBotonesVariante();
         pintarLecturaGemela();
         log('👯 Este proceso tiene video gemelo: usá las pestañas para pasar de uno al otro');
+    } else if (job.paso && job.paso !== 'lectura') {
+        // Un proceso que ya escribió su guion SIN gemelo es de un solo video: como el modo arranca
+        // encendido, hay que apagarlo acá o las pestañas mostrarían un segundo video que no existe.
+        state.gemelos = false;
+        sincronizarGemelos();
     }
     const primerLink = state.fuentes.find(f => f.type === 'link');
     state.sourceData = {
@@ -4394,13 +4512,17 @@ document.addEventListener('DOMContentLoaded', () => {
         iniciarSesion();
     }
     observarSnap(document.querySelector('.col-procesos .scroll-snap-col'), '.form-section', 'x');
-    cargarFuentesSubtitulos().then(initSubsPreview);
-    cargarFuentesEnSelect('portada-fuente').then(initPortadaDiseno);
+    const listoSubs = cargarFuentesSubtitulos().then(initSubsPreview);
+    const listoPortada = cargarFuentesEnSelect('portada-fuente').then(initPortadaDiseno);
     initPortadaTamano();
     initPortadaCaja();
-    cargarTonosMusica();
+    const listoTonos = cargarTonosMusica();
     if (API_KEY) iniciarPanelCola();
-    if (API_KEY) cargarAjustes();   // el interruptor de videos cortos vive en el servidor
+    const listoAjustes = API_KEY ? cargarAjustes() : Promise.resolve();   // los interruptores viven en el servidor
+    // Las preferencias del Paso 6 se aplican cuando ya cargaron los catálogos (tipografías, tonos) y
+    // los ajustes: antes de eso, los desplegables todavía no tienen las opciones que hay que elegir.
+    Promise.allSettled([listoSubs, listoPortada, listoTonos, listoAjustes]).then(() => aplicarPreferenciasVideo());
+    elegirMotorGuion('grafo');   // los ángulos antiguos quedaron ocultos: el motor es siempre el del grafo
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

@@ -1463,3 +1463,20 @@ footer {
     width: 100%;
     padding: 0.45rem 0.5rem;
 }
+
+/* Paso 4: la lista de párrafos se desplaza por dentro (unas cuatro filas a la vista) para que el
+   botón de confirmar quede siempre cerca, igual que el historial. Pedido del usuario, 2026-11-11. */
+#lista-asignaciones {
+    max-height: 470px;
+    overflow-y: auto;
+    padding-right: 6px;
+    margin-bottom: 4px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding-top: 8px;
+    scrollbar-gutter: stable;
+}
+#lista-asignaciones:empty { border: 0; padding: 0; }
+
+/* Botón de intercambiar qué enfoque va a cada canal */
+.encuadres-intercambiar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }

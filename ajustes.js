@@ -27,6 +27,11 @@ const POR_DEFECTO = {
   // y en las pruebas a ciegas del usuario mantuvo mejor el acento. eleven_v3 queda como respaldo y
   // como vuelta atrás con un clic, sin redesplegar.
   modeloVoz: 'eleven_v4',
+  // Lo último que el usuario eligió en el Paso 6 (transiciones, zoom, espejo, subtítulos, música,
+  // cartel). Pedido suyo (2026-11-11): "que las opciones que elijo ya queden por defecto". Se guarda
+  // al mandar a generar un video y se aplica al abrir la app, en cualquier ventana o dispositivo.
+  // Vacío = los valores de fábrica del HTML.
+  preferenciasVideo: {},
 };
 
 // Ajustes que solo aceptan ciertos valores: lo que llega del navegador no puede inventar un modelo.
@@ -66,6 +71,11 @@ function guardar(cambios) {
     if (!(k in POR_DEFECTO)) continue;
     if (typeof v !== typeof POR_DEFECTO[k]) continue;
     if (VALORES_PERMITIDOS[k] && !VALORES_PERMITIDOS[k].includes(v)) continue;
+    // Un ajuste de tipo objeto tiene que ser un objeto plano y chico: nada de arrays, null ni
+    // un volcado gigante que infle el archivo que se respalda en Drive.
+    if (typeof POR_DEFECTO[k] === 'object') {
+      if (!v || Array.isArray(v) || JSON.stringify(v).length > 4000) continue;
+    }
     nuevo[k] = v;
   }
   cache = nuevo;

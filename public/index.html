@@ -102,7 +102,9 @@
                      fuentes hay que verlo aunque el bloque esté cerrado. -->
                 <div id="aviso-instruccion" class="banner-warning hidden"></div>
 
-                <div class="form-group">
+                <!-- Oculto por uso (2026-11-11): el usuario trabaja siempre en neutral. El control sigue
+                     en el DOM con su valor de fábrica para no tocar el resto del flujo. -->
+                <div class="form-group hidden">
                     <label for="sesgo-select">Sesgo de la narración (hacia el protagonista):</label>
                     <select id="sesgo-select">
                         <option value="neutral" selected>⚖️ Neutral (hechos equilibrados)</option>
@@ -167,23 +169,25 @@
 
             <div class="form-section" id="script-section" data-status="locked">
                 <span class="step-badge"></span>
-                <h2>Paso 2: Elige el ángulo</h2>
+                <h2>Paso 2: Genera el guion</h2>
 
                 <!-- Motor de guion. `grafo` decide él mismo la estructura narrativa a partir del
                      catálogo de técnicas (curso de guion + retención de video corto), así que en
                      ese modo el ángulo no se elige: los ángulos se ocultan. -->
-                <div class="motor-guion">
+                <!-- Oculto por uso (2026-11-11): el usuario solo usa el motor por estructura (grafos). Los
+                     ángulos antiguos y el selector siguen en el DOM, apagados, por si hay que volver. -->
+                <div class="motor-guion hidden">
                     <label for="motor-guion">Cómo se escribe el guion</label>
                     <select id="motor-guion" onchange="elegirMotorGuion(this.value)">
-                        <option value="gemini" selected>Por ángulo — lo elijo yo (como siempre)</option>
-                        <option value="grafo">Por estructura — la elige el grafo de técnica narrativa</option>
+                        <option value="gemini">Por ángulo — lo elijo yo (como siempre)</option>
+                        <option value="grafo" selected>Por estructura — la elige el grafo de técnica narrativa</option>
                     </select>
                     <p class="hint" id="hint-motor">
                         El de siempre: elegís uno de los 7 ángulos y el guion se escribe con esa lente.
                     </p>
                 </div>
 
-                <div class="angles-grid" id="angles-grid">
+                <div class="angles-grid hidden" id="angles-grid">
                     <div class="angle-card" onclick="selectAngle(1)">
                         <strong><span class="angle-num">1</span> Lenguaje Corporal</strong>
                         <p>Lo que nadie notó en el video</p>
@@ -220,15 +224,13 @@
                 </div>
 
                 <label class="gemelos-switch" for="chk-gemelos">
-                    <input type="checkbox" id="chk-gemelos" onchange="toggleGemelos(this.checked)">
+                    <input type="checkbox" id="chk-gemelos" checked onchange="toggleGemelos(this.checked)">
                     <span><strong>Dos videos gemelos</strong> — una noticia, dos videos distintos, uno por canal hermano.</span>
                 </label>
                 <p class="hint" id="hint-gemelos">
                     Mismos hechos, pero con guion, título, cita, cartel, tomas y música distintos en
-                    cada uno. Cuesta el doble de locución. <strong>Si arriba elegís "a favor" o "en
-                    contra" y en el Paso 2 usás el motor por estructura, el segundo video toma la
-                    postura contraria</strong>, para que cada canal presente un ángulo distinto del
-                    mismo hecho (con "neutral" no hay postura que invertir).
+                    cada uno, y cada canal entra a la noticia por un enfoque distinto (se eligen en el
+                    Paso 1). Cuesta el doble de locución. Apágalo para hacer un solo video.
                 </p>
 
                 <!-- Videos cortos en los canales que todavía no monetizan. Encendido por defecto;
@@ -299,9 +301,9 @@
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-success" id="btn-approve-guion" onclick="aprobarGuion()"><span class="icon-slot" data-icon="check"></span> Aprobar y continuar</button>
-                    <button class="btn btn-primary" id="btn-regenerate-guion" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar (mismo ángulo)</button>
+                    <button class="btn btn-primary" id="btn-regenerate-guion" onclick="regenerarGuion()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar guion</button>
                     <button class="btn btn-primary hidden" id="btn-regenerate-solo-gemelo" onclick="regenerarSoloGemelo()"><span class="icon-slot" data-icon="arrowsClockwise"></span> Regenerar solo este guion</button>
-                    <button class="btn btn-secondary" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
+                    <button class="btn btn-secondary hidden" onclick="cambiarAngulo()"><span class="icon-slot" data-icon="target"></span> Cambiar ángulo</button>
                 </div>
                 <p class="hint">
                     Puedes editar el texto directamente antes de aprobar. Solo el guion aprobado pasa a locución y edición.

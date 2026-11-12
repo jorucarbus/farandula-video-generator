@@ -678,10 +678,25 @@ app.post('/api/encuadres/generar', async (req, res) => {
 // tienen que sobrevivir a una recarga o a retomar el proceso desde la otra máquina.
 app.put('/api/encuadres', (req, res) => {
   try {
-    const { jobId, cronicas } = req.body;
+    const { jobId, cronicas, intercambiar } = req.body;
     if (!jobId) return res.status(400).json({ error: 'Falta jobId' });
     const job = jobStore.obtenerJob(jobId);
     if (!job) return res.status(404).json({ error: 'Job no encontrado' });
+
+    // Intercambiar qué enfoque va a cada canal del par (pedido del usuario, 2026-11-11). El primer
+    // enfoque es SIEMPRE el del primer canal y el segundo el de su gemelo, así que intercambiar es
+    // dar vuelta las dos listas juntas — enfoques y crónicas — para que nunca queden cruzadas.
+    if (intercambiar) {
+      const enc = job.encuadres?.encuadres || [];
+      const cro = job.encuadres?.cronicas || [];
+      if (enc.length < 2 || cro.length < 2) {
+        return res.status(400).json({ error: 'Hacen falta los dos enfoques con sus crónicas para intercambiarlos' });
+      }
+      const nuevos = { ...job.encuadres, encuadres: [enc[1], enc[0], ...enc.slice(2)], cronicas: [cro[1], cro[0], ...cro.slice(2)] };
+      jobStore.actualizarJob(jobId, { encuadres: nuevos });
+      console.log(`🔀 Enfoques intercambiados en ${jobId}: ahora el primero es "${nuevos.encuadres[0]?.titulo}"`);
+      return res.json({ status: 'success', encuadres: nuevos });
+    }
     if (!Array.isArray(cronicas) || !cronicas.length) {
       return res.status(400).json({ error: 'Faltan las crónicas' });
     }
