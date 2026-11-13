@@ -4512,6 +4512,7 @@ function rangoPublicar() {
     const DIA = 24 * 3600 * 1000;
     if (cual === 'ayer') return { desde: new Date(inicioDeHoy - DIA), hasta: new Date(inicioDeHoy - 1) };
     if (cual === 'semana') return { desde: new Date(inicioDeHoy - 6 * DIA), hasta: new Date() };
+    if (cual === 'pendientes') return { desde: new Date(inicioDeHoy - 29 * DIA), hasta: new Date() };
     return { desde: inicioDeHoy, hasta: new Date() };
 }
 
@@ -4606,10 +4607,68 @@ function tarjetaPublicar(v) {
         bajar.textContent = 'Descargar portada';
         acciones.appendChild(bajar);
     }
+    // Descartar de la lista una vez publicado. Queda guardado en el servidor, así que desaparece en
+    // todas las ventanas; con "Mostrar publicados" se puede ver y devolver a pendientes.
+    const marcar = document.createElement('button');
+    marcar.type = 'button';
+    marcar.className = v.publicado ? 'btn-copy' : 'btn-copy btn-publicado';
+    marcar.textContent = v.publicado ? '↩ Devolver a pendientes' : '✓ Ya lo publiqué';
+    marcar.onclick = () => marcarPublicado(v, tarjeta, marcar);
+    acciones.appendChild(marcar);
     datos.appendChild(acciones);
 
+    if (v.publicado) tarjeta.classList.add('publicado');
+    tarjeta.dataset.jobId = v.jobId;
+    tarjeta.dataset.variante = v.variante;
     tarjeta.append(portada, datos);
     return tarjeta;
+}
+
+// Marca (o desmarca) un video como publicado. Si la lista no muestra los publicados, la tarjeta se
+// va con una pequeña animación y los contadores se actualizan sin volver a pedir todo al servidor.
+async function marcarPublicado(v, tarjeta, boton) {
+    const publicado = !v.publicado;
+    boton.disabled = true;
+    try {
+        await apiCall('/publicar/marcar', 'PUT', { jobId: v.jobId, variante: v.variante, publicado });
+    } catch (e) {
+        boton.disabled = false;
+        log(`⚠️ No se pudo marcar el video: ${e.message}`);
+        return;
+    }
+    v.publicado = publicado;
+    if (document.getElementById('publicar-ver-publicados')?.checked) {
+        cargarPublicar();     // con los publicados visibles, la tarjeta solo cambia de aspecto
+        return;
+    }
+    tarjeta.classList.add('saliendo');
+    setTimeout(() => {
+        const bloque = tarjeta.closest('.publicar-canal');
+        tarjeta.remove();
+        if (bloque) {
+            const quedan = bloque.querySelectorAll('.publicar-video').length;
+            if (!quedan) bloque.remove();
+            else bloque.querySelector('h3 small').textContent = `${quedan} video(s)`;
+        }
+        actualizarResumenPublicar();
+    }, 260);
+}
+
+// Cuenta lo que queda a la vista y lo refleja en el resumen y en el número de la pestaña.
+function actualizarResumenPublicar() {
+    const resumen = document.getElementById('publicar-resumen');
+    const total = document.querySelectorAll('#publicar-lista .publicar-video:not(.publicado)').length;
+    const canales = document.querySelectorAll('#publicar-lista .publicar-canal').length;
+    const contador = document.getElementById('publicar-contador');
+    if (contador && (document.getElementById('publicar-rango')?.value || 'hoy') === 'hoy') {
+        contador.textContent = total;
+        contador.classList.toggle('hidden', !total);
+    }
+    if (resumen) {
+        resumen.textContent = total
+            ? `${total} por publicar en ${canales} canal(es). Copia el título y la descripción de cada uno y márcalo cuando lo subas.`
+            : 'Todo publicado. No queda nada pendiente en este rango.';
+    }
 }
 
 async function cargarPublicar() {
@@ -4619,15 +4678,22 @@ async function cargarPublicar() {
     const { desde, hasta } = rangoPublicar();
     try {
         const r = await apiCall(`/publicar?desde=${encodeURIComponent(desde.toISOString())}&hasta=${encodeURIComponent(hasta.toISOString())}`, 'GET');
-        const videos = r.videos || [];
+        const verPublicados = document.getElementById('publicar-ver-publicados')?.checked;
+        const todos = r.videos || [];
+        // "Pendientes" nunca muestra publicados: para eso está la casilla.
+        const videos = verPublicados ? todos : todos.filter(v => !v.publicado);
         lista.innerHTML = '';
+        // La insignia de la pestaña cuenta solo lo de HOY que falta publicar, sin importar el rango elegido.
         const contador = document.getElementById('publicar-contador');
         if (contador && (document.getElementById('publicar-rango')?.value || 'hoy') === 'hoy') {
-            contador.textContent = videos.length;
-            contador.classList.toggle('hidden', !videos.length);
+            const pendientes = todos.filter(v => !v.publicado).length;
+            contador.textContent = pendientes;
+            contador.classList.toggle('hidden', !pendientes);
         }
         if (!videos.length) {
-            resumen.textContent = 'No hay videos terminados en este rango.';
+            resumen.textContent = todos.length
+                ? 'Todo publicado. No queda nada pendiente en este rango (activa "Mostrar publicados" para verlos).'
+                : 'No hay videos terminados en este rango.';
             return;
         }
         // Agrupados por canal, en un orden fijo: los pares de canales hermanos quedan juntos.
@@ -4641,7 +4707,6 @@ async function cargarPublicar() {
             const ia = ORDEN.indexOf(normalizarCanal(a)), ib = ORDEN.indexOf(normalizarCanal(b));
             return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
         });
-        resumen.textContent = `${videos.length} video(s) en ${canales.length} canal(es). Copia el título y la descripción de cada uno al publicarlo.`;
         for (const canal of canales) {
             const bloque = document.createElement('div');
             bloque.className = 'publicar-canal';
@@ -4654,6 +4719,7 @@ async function cargarPublicar() {
             for (const v of porCanal.get(canal)) bloque.appendChild(tarjetaPublicar(v));
             lista.appendChild(bloque);
         }
+        actualizarResumenPublicar();
     } catch (e) {
         resumen.textContent = `No se pudo cargar la lista: ${e.message}`;
     }
@@ -4693,6 +4759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // los ajustes: antes de eso, los desplegables todavía no tienen las opciones que hay que elegir.
     Promise.allSettled([listoSubs, listoPortada, listoTonos, listoAjustes]).then(() => aplicarPreferenciasVideo());
     elegirMotorGuion('grafo');   // los ángulos antiguos quedaron ocultos: el motor es siempre el del grafo
+    if (API_KEY) cargarPublicar();   // deja al día la insignia de la pestaña Publicar (cuántos faltan hoy)
     if (location.hash === '#publicar') mostrarVista('publicar');
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);

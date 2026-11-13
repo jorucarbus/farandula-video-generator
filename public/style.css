@@ -1579,3 +1579,10 @@ main:not([data-vista="publicar"]) .vista-publicar { display: none; }
     .publicar-portada { width: 96px; }
     .vista-publicar { padding: 14px 12px; }
 }
+
+.publicar-ver-publicados { display: inline-flex; align-items: center; gap: 5px; font-size: 0.82rem; color: var(--text-muted); margin: 0; cursor: pointer; white-space: nowrap; }
+.publicar-video.publicado { opacity: 0.55; }
+.publicar-video.publicado .publicar-portada { filter: grayscale(0.7); }
+.publicar-video.saliendo { opacity: 0; transform: scale(0.98); transition: opacity 0.25s, transform 0.25s; }
+.btn-publicado { background: var(--success-tint); border-color: var(--success-border); color: var(--success); }
+.btn-publicado:hover { background: var(--success); color: #fff; border-color: var(--success); }

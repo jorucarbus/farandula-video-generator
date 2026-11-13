@@ -2652,11 +2652,40 @@ function videosParaPublicar(desde, hasta) {
         terminado: cuando,
         duracion: Math.round(d.duracionVideo || d.duracion || 0),
         portadaUrl: (d.portadaId || d.portadaLocal) ? `/api/publicar-portada/${job.jobId}/${variante}` : null,
+        publicado: Boolean(d.publicado),
       });
     }
   }
   return filas.sort((x, y) => Date.parse(y.terminado) - Date.parse(x.terminado));
 }
+
+// Marcar un video como publicado (o devolverlo a pendientes). Queda guardado en el proceso, así que
+// vale para todas las ventanas y dispositivos — no solo para este navegador.
+app.put('/api/publicar/marcar', (req, res) => {
+  try {
+    const { jobId, variante, publicado } = req.body;
+    if (!jobId || !['A', 'B'].includes(variante) || typeof publicado !== 'boolean') {
+      return res.status(400).json({ error: 'Faltan jobId, variante (A|B) o publicado (true|false)' });
+    }
+    const job = jobStore.obtenerJob(jobId);
+    const d = variante === 'B' ? job?.gemela : job;
+    if (!d?.fileName) return res.status(404).json({ error: 'No hay un video terminado para esa variante' });
+    // Los videos anteriores a la pestaña Publicar no guardaron cuándo terminaron: se usaba la última
+    // actualización del proceso. Guardar el marcado la mueve a "ahora", así que antes de tocar nada se
+    // fija la fecha que ya tenía — si no, un video de hace tres días reaparecería como de hoy.
+    // Y se fija para LAS DOS variantes, no solo la que se marca: guardar mueve `actualizado` del proceso
+    // entero, y el hermano sin fecha propia saltaría a "hoy" (lo encontró la prueba con un job real).
+    const fechaFija = job.actualizado || job.creado;
+    if (job.fileName && !job.terminado) guardarEnVariante(jobId, 'A', { terminado: fechaFija });
+    if (job.gemela?.fileName && !job.gemela.terminado) guardarEnVariante(jobId, 'B', { terminado: fechaFija });
+    guardarEnVariante(jobId, variante, { publicado, publicadoEn: publicado ? new Date().toISOString() : null });
+    console.log(`${publicado ? '✅' : '↩️'} ${variante === 'B' ? 'Gemelo' : 'Video'} de ${jobId.slice(0, 8)} ${publicado ? 'marcado como publicado' : 'devuelto a pendientes'}`);
+    res.json({ status: 'success', publicado });
+  } catch (error) {
+    console.error('Error marcando publicado:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/publicar', (req, res) => {
   try {
