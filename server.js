@@ -1985,24 +1985,28 @@ app.post('/api/generar-audio', async (req, res) => {
     // Fase 5: audio + alineación carácter-por-carácter en la misma llamada (sin costo extra
     // sobre lo que ya se pagaba). Si algo falla, cae al TTS simple — el render no se detiene.
     let audio, duracion, duracionesReales, palabrasAlineadas;
+    let duracionVoz = null, cola = 0;   // cuánto habló la voz y cuánta cola de música se agregó
     // El modelo de voz sale del ajuste (eleven_v4 por defecto) salvo que el botón pida uno concreto.
     const modeloVoz = modelo || ajustes.obtener().modeloVoz;
     // Los canales largos tienen que pasar del minuto para monetizar: si la locución quedó justo debajo
-    // se alarga hasta un 5% (gratis, sin volver a generar). Los cortos no: ahí no hay minuto que pasar.
+    // se completa con una cola de música (gratis, sin volver a generar). Los cortos no: ahí no hay minuto que pasar.
     const objetivoAudio = jobId ? await objetivoDeVariante(jobStore.obtenerJob(jobId), variante).catch(() => null) : null;
     const puedeAlargar = objetivoAudio?.id === 'normal';
     try {
       audio = await tiempos.generarConTiempos(paraHablar, { modelo: modeloVoz });
       duracion = await video.obtenerDuracion(audio.audioPath);
-      if (puedeAlargar) ({ duracion } = await ajusteDuracion.alargarSiHaceFalta(audio, duracion));
-      const alineado = tiempos.alinearFragmentos(fragments, audio, duracion, mapaVoz);
+      duracionVoz = duracion;
+      let finDeVoz = null;
+      if (puedeAlargar) ({ duracion, finDeVoz, cola } = await ajusteDuracion.completarConCola(audio, duracion));
+      const alineado = tiempos.alinearFragmentos(fragments, audio, duracion, mapaVoz, finDeVoz);
       duracionesReales = alineado?.duraciones || null;
       palabrasAlineadas = alineado?.palabras || null;
     } catch (errTiempos) {
       console.warn(`  ⚠️ Tiempos reales fallaron (${errTiempos.message}), cae a TTS simple + % de caracteres`);
       audio = await elevenlabs.generarAudio(paraHablar, modeloVoz);
       duracion = await video.obtenerDuracion(audio.audioPath);
-      if (puedeAlargar) ({ duracion } = await ajusteDuracion.alargarSiHaceFalta(audio, duracion));
+      duracionVoz = duracion;
+      if (puedeAlargar) ({ duracion, cola } = await ajusteDuracion.completarConCola(audio, duracion));
       duracionesReales = null;
       palabrasAlineadas = null;
     }
@@ -2022,7 +2026,12 @@ app.post('/api/generar-audio', async (req, res) => {
 
     if (jobId) {
       try {
-        const job = guardarEnVariante(jobId, variante, { audioToken: token, duracion, modelo: audio.modelo }, { paso: 'audio' });
+        // `duracionVoz` y `colaSegundos` quedan guardados: son la medida real de qué tan rápido habló
+        // la voz en ESTE guion, y de ahí va a salir el ajuste automático de cuántas palabras pedir.
+        const job = guardarEnVariante(jobId, variante, {
+          audioToken: token, duracion, modelo: audio.modelo,
+          duracionVoz: duracionVoz || duracion, colaSegundos: Number(cola.toFixed(1)),
+        }, { paso: 'audio' });
         const destino = await destinoInsumo(job, variante);
         const nombreArchivo = `audio${destino.sufijo}.mp3`;
         if (destino.carpetaId) {
@@ -2039,6 +2048,9 @@ app.post('/api/generar-audio', async (req, res) => {
       audioUrl: `/api/audio/${token}`,
       duracion: Math.round(duracion),
       modelo: audio.modelo,
+      // Segundos de música sola al final (0 si la voz ya pasaba del minuto).
+      colaSegundos: Number(cola.toFixed(1)),
+      duracionVoz: Math.round(duracionVoz || duracion),
     });
   } catch (e) {
     console.error('Error generando audio:', e.message);

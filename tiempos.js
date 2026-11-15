@@ -91,7 +91,11 @@ function limpiarMarcas(caracteres, inicios) {
 // otra escritura ("Nawat" -> "Nagüat"), así que comparar contra la forma escrita fallaría y
 // tumbaría la alineación entera al reparto estimado. Se compara contra lo que de verdad se dijo;
 // lo que se muestra en los subtítulos sigue siendo la forma escrita.
-function alinearFragmentos(fragments, alineacion, duracionAudioReal, mapaVoz = null) {
+// `finDeVoz` (opcional): cuando la locución lleva una cola de música al final (ver ajusteDuracion.js),
+// el audio dura más que la voz. Las TOMAS del último fragmento cubren hasta el final del audio, pero
+// su última PALABRA termina donde termina la voz — si no, el último subtítulo quedaría en pantalla
+// durante toda la cola.
+function alinearFragmentos(fragments, alineacion, duracionAudioReal, mapaVoz = null, finDeVoz = null) {
   const { caracteres, inicios } = alineacion || {};
   if (!Array.isArray(caracteres) || caracteres.length === 0 || !Array.isArray(inicios)) {
     console.warn('  ⚠️ Tiempos reales: ElevenLabs no devolvió alineación, cae a % de caracteres');
@@ -135,7 +139,7 @@ function alinearFragmentos(fragments, alineacion, duracionAudioReal, mapaVoz = n
   const conFin = plano.map((w, idx) => ({
     texto: w.texto,
     inicio: w.inicio,
-    fin: idx + 1 < plano.length ? plano[idx + 1].inicio : duracionAudioReal,
+    fin: idx + 1 < plano.length ? plano[idx + 1].inicio : Math.max(w.inicio + 0.2, Math.min(duracionAudioReal, finDeVoz || duracionAudioReal)),
     fragIdx: w.fragIdx,
   }));
 

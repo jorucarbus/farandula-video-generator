@@ -1,55 +1,54 @@
-// Alargar un poco la locución cuando se quedó a punto de no llegar al minuto.
+// Completar con una cola de música la locución que se quedó corta para el minuto.
 //
-// Por qué (pedido del usuario, 2026-11-10): para los programas que pagan por vistas el video tiene
-// que pasar de 60 segundos, y ElevenLabs no habla siempre igual de rápido — la misma voz y el mismo
-// guion varían entre 5% y 7% de una generación a otra, más que la ventana de 62-70 s que se busca.
-// Contar palabras no puede garantizar esa ventana.
+// Para los programas que pagan por vistas el video tiene que pasar de 60 segundos, y ElevenLabs no
+// habla siempre igual de rápido: la misma voz y el mismo guion varían entre 5% y 7% de una generación
+// a otra. Contar palabras no puede garantizar la duración.
 //
-// Se corrige DESPUÉS de generar, sin gastar créditos: si la locución duró entre ~59 y 62 s, se
-// estira con ffmpeg (`atempo`, que cambia la velocidad sin tocar el tono) hasta pasar el minuto. El
-// tope es 5%: más se nota al oído.
+// Primera versión (2026-11-10): estirar la voz hasta un 5% con `atempo`. Reemplazada el 2026-11-15
+// por idea del usuario: "en lugar de modificar la voz, solo se pone la música hasta que pase el
+// minuto y dos segundos, y ahí se corta". Es mejor: la voz queda intacta, no hay que reescalar los
+// tiempos de subtítulos y tomas, y no tiene tope — "no importa si es más de 4 segundos lo que toque
+// llenar: la mayoría nunca se queda hasta el final, solo quiero cumplir el requisito del minuto".
 //
-// SOLO alarga. Una locución que ya pasó de 70 s no se acelera: los créditos ya se gastaron y para el
-// minuto de monetización más largo no es un problema (decisión del usuario).
+// Cómo: se agrega SILENCIO al final del mp3 hasta 62,4 s. El video dura lo que dura ese audio, así
+// que la música de fondo (que cubre el video entero y cierra con su fundido) sigue sonando sola en la
+// cola, y las tomas del último párrafo se extienden para cubrirla. Sin créditos, sin regenerar.
+//
+// Solo completa lo corto. Una locución que ya pasó del minuto no se toca.
 const fs = require('fs');
 const video = require('./video');
 const largos = require('./largos');
 
-const OBJETIVO_SEG = largos.MINIMO_MONETIZA_SEG + 0.4;   // el .4 cubre el relleno que agrega el codificador mp3
-const TOPE_ALARGUE = 1.05;                                // hasta un 5% más de duración
+const OBJETIVO_SEG = largos.MINIMO_MONETIZA_SEG + 0.4;   // el .4 cubre el redondeo del codificador mp3
 
-// Cuánto hay que alargar una locución de `duracion` segundos, o null si no hace falta o no se puede
-// (ya llega al minuto, o faltaría más del 5%: eso lo avisa la pantalla y decide el usuario).
-function factorParaAlargar(duracion) {
-  if (!(duracion > 0) || duracion >= largos.MINIMO_MONETIZA_SEG) return null;
-  const factor = OBJETIVO_SEG / duracion;
-  return factor <= TOPE_ALARGUE ? factor : null;
+// Segundos de cola que le faltan a una locución de `duracion` segundos (0 si ya llega al minuto).
+function colaQueFalta(duracion) {
+  if (!(duracion > 0) || duracion >= largos.MINIMO_MONETIZA_SEG) return 0;
+  return OBJETIVO_SEG - duracion;
 }
 
-// Alarga el mp3 de `audio.audioPath` y reescala los tiempos de la alineación con el mismo factor
-// (si no, los subtítulos y los cortes de clip quedarían corridos respecto de la voz). Devuelve la
-// duración final. Nunca lanza: si algo falla, el audio queda como estaba.
-async function alargarSiHaceFalta(audio, duracion) {
-  const factor = factorParaAlargar(duracion);
-  if (!factor) return { duracion, factor: null };
+// Agrega la cola de silencio al mp3 de `audio.audioPath`. Devuelve la duración final, dónde termina
+// la VOZ (para que el último subtítulo no se quede colgado durante la cola) y cuántos segundos se
+// agregaron. Nunca lanza: si algo falla, el audio queda como estaba y el aviso de pantalla decide.
+async function completarConCola(audio, duracion) {
+  const cola = colaQueFalta(duracion);
+  if (!cola) return { duracion, finDeVoz: null, cola: 0 };
   const original = audio.audioPath;
-  const alargado = original.replace(/\.mp3$/, '_t.mp3');
+  const completado = original.replace(/\.mp3$/, '_c.mp3');
   try {
-    await video.ffmpeg(['-i', original, '-filter:a', `atempo=${(1 / factor).toFixed(5)}`, '-c:a', 'libmp3lame', '-q:a', '2', alargado]);
-    const nueva = await video.obtenerDuracion(alargado);
-    // Verificación: si el resultado no quedó donde debía (ffmpeg raro), se descarta y se deja el original.
-    if (!(nueva >= duracion) || nueva > duracion * TOPE_ALARGUE + 0.3) throw new Error(`duración inesperada (${nueva.toFixed(1)}s)`);
+    await video.ffmpeg(['-i', original, '-af', `apad=whole_dur=${OBJETIVO_SEG.toFixed(2)}`, '-c:a', 'libmp3lame', '-q:a', '2', completado]);
+    const nueva = await video.obtenerDuracion(completado);
+    // Verificación: si no quedó donde debía (ffmpeg raro), se descarta y se deja el original.
+    if (!(nueva >= largos.MINIMO_MONETIZA_SEG) || nueva > OBJETIVO_SEG + 1) throw new Error(`duración inesperada (${nueva.toFixed(1)}s)`);
     fs.unlinkSync(original);
-    fs.renameSync(alargado, original);
-    if (Array.isArray(audio.inicios)) audio.inicios = audio.inicios.map(t => t * factor);
-    if (Array.isArray(audio.fines)) audio.fines = audio.fines.map(t => t * factor);
-    console.log(`  ⏩ Locución alargada ${((factor - 1) * 100).toFixed(1)}% para llegar al minuto: ${duracion.toFixed(1)}s → ${nueva.toFixed(1)}s`);
-    return { duracion: nueva, factor };
+    fs.renameSync(completado, original);
+    console.log(`  🎵 Locución corta (${duracion.toFixed(1)}s): se completa con ${cola.toFixed(1)}s de música al final → ${nueva.toFixed(1)}s`);
+    return { duracion: nueva, finDeVoz: duracion, cola: nueva - duracion };
   } catch (e) {
-    try { fs.unlinkSync(alargado); } catch {}
-    console.warn(`  ⚠️ No se pudo alargar la locución (${e.message}); se queda como salió`);
-    return { duracion, factor: null };
+    try { fs.unlinkSync(completado); } catch {}
+    console.warn(`  ⚠️ No se pudo completar la locución con la cola de música (${e.message}); se queda como salió`);
+    return { duracion, finDeVoz: null, cola: 0 };
   }
 }
 
-module.exports = { factorParaAlargar, alargarSiHaceFalta, TOPE_ALARGUE };
+module.exports = { colaQueFalta, completarConCola, OBJETIVO_SEG };

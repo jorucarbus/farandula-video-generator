@@ -2663,8 +2663,9 @@ async function regenerarAudio(modelo, v = state.varianteActiva) {
         // La pantalla solo se toca si el usuario está mirando ESTE canal. Si se fue al hermano, sus
         // datos ya quedaron guardados y aparecen cuando vuelva.
         if (v === state.varianteActiva) {
-            document.getElementById('audio-info').textContent =
-                `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
+            document.getElementById('audio-info').textContent = result.colaSegundos > 0
+                ? `Duración: ${result.duracion}s (voz ${result.duracionVoz}s + ${result.colaSegundos}s de música al final para pasar el minuto) | Modelo: ${result.modelo}`
+                : `Duración: ${result.duracion}s | Modelo: ${result.modelo}`;
             avisarSiNoLlegaAlMinuto(v, result.duracion);
             const player = document.getElementById('audio-player');
             // La URL del audio es relativa al backend activo (importante en modo insumos)
