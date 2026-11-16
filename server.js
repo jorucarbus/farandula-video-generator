@@ -945,7 +945,8 @@ app.get('/api/key-prompt', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Servidor activo' });
+  // `entorno` le dice a la pantalla dónde se están procesando los videos (la PC del usuario o Railway).
+  res.json({ status: 'ok', message: 'Servidor activo', entorno: driveCache.PC_PRINCIPAL ? 'pc' : (driveCache.EN_RAILWAY ? 'railway' : 'local') });
 });
 
 // Lista las subcarpetas de famosos (hijas de la carpeta principal)

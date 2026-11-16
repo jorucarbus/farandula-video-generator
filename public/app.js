@@ -4762,6 +4762,14 @@ document.addEventListener('DOMContentLoaded', () => {
     elegirMotorGuion('grafo');   // los ángulos antiguos quedaron ocultos: el motor es siempre el del grafo
     if (API_KEY) cargarPublicar();   // deja al día la insignia de la pestaña Publicar (cuántos faltan hoy)
     if (location.hash === '#publicar') mostrarVista('publicar');
+    // Dónde se están procesando los videos: en la PC del usuario o en Railway. Se dice en el encabezado
+    // para no confundir las dos copias cuando están abiertas a la vez.
+    fetch(apiBase() + '/api/health').then(r => r.json()).then(d => {
+        const sub = document.querySelector('header .subtitle');
+        if (!sub) return;
+        if (d.entorno === 'pc') sub.textContent = '💻 En este computador: los videos se procesan aquí';
+        else if (d.entorno === 'railway') sub.textContent = '☁️ En la nube (Railway)';
+    }).catch(() => {});
     const contPasos = contenedorPasos();
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();

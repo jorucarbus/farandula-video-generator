@@ -9,3 +9,6 @@ historial.json
 data/
 graphify-out/
 .env.backup*
+
+logs/
+prueba-voz/

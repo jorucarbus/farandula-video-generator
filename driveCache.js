@@ -16,7 +16,7 @@ function cliente() {
 async function buscarArchivo(nombre) {
   const res = await cliente().files.list({
     q: `'${CACHE_FOLDER_ID}' in parents and name='${nombre}' and trashed=false`,
-    fields: 'files(id, name, size)',
+    fields: 'files(id, name, size, modifiedTime)',
     pageSize: 1,
     includeItemsFromAllDrives: true,
     supportsAllDrives: true,
@@ -96,13 +96,67 @@ const EN_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT_NAME || process.env.R
 // de verdad (no como respaldo), se quita la variable.
 const MODO_RESPALDO = /^(1|true|si|sí)$/i.test(process.env.MODO_RESPALDO || '');
 
+// PC PRINCIPAL (`PC_PRINCIPAL=1`, lo pone el lanzador "Farandula PC"): el computador del usuario es
+// quien procesa los videos y quien ESCRIBE el estado compartido, en vez de Railway (2026-11-16).
+//
+// Fuera de Railway el respaldo del estado está apagado por defecto —un servidor local levantado para
+// una prueba ya pisó los datos reales una vez—, así que esto es un permiso explícito, no automático:
+// correr `node server.js` a mano sigue sin escribir nada. El lanzador sincroniza antes de arrancar
+// (sincronizar-estado.js) para no subir una copia vieja.
+//
+// Con la PC como principal, Railway tiene que estar en MODO_RESPALDO: dos escritores sobre los mismos
+// archivos se pisan (gana el último que guarda). `cola.json` no se sube desde la PC: la cola es de
+// cada máquina y su disco no es efímero.
+const PC_PRINCIPAL = /^(1|true|si|sí)$/i.test(process.env.PC_PRINCIPAL || '');
+const SOLO_RAILWAY = new Set(['cola.json']);
+
+// Fecha de modificación que quedó en Drive tras NUESTRA última subida de cada archivo. Si la que hay
+// ahora es otra, la escribió alguien más.
+const ultimaSubida = new Map();
+
+// Dos escritores sobre el mismo archivo se pisan: gana el último que guarda. Con la PC como principal
+// eso no debería pasar (Railway va en MODO_RESPALDO), pero si pasa —un video hecho desde el teléfono
+// contra Railway, por ejemplo— no se puede perder en silencio.
+//
+// - jobs.json: se FUSIONA antes de subir. Cada proceso es independiente, así que se toma de Drive todo
+//   proceso que acá no exista o que allá esté más nuevo. Nada se pierde de ningún lado.
+// - Los demás (historial de tomas, famosos, ajustes, métricas): se avisa y gana la PC. Fusionarlos bien
+//   pide entender cada formato, y lo que se arriesga es chico (alguna toma repetida, una métrica).
+async function fusionarSiOtroEscribio(localPath, nombreDrive, archivo) {
+  if (ultimaSubida.get(nombreDrive) === archivo.modifiedTime) return;
+  const primeraVez = !ultimaSubida.has(nombreDrive);
+  try {
+    if (nombreDrive === 'jobs.json') {
+      const remoto = JSON.parse(await leerRemoto(archivo.id));
+      const local = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+      let traidos = 0;
+      for (const [id, job] of Object.entries(remoto || {})) {
+        const mio = local[id];
+        if (!mio || Date.parse(job.actualizado || 0) > Date.parse(mio.actualizado || 0)) { local[id] = job; traidos++; }
+      }
+      if (traidos) {
+        const parcial = `${localPath}.fusion`;
+        fs.writeFileSync(parcial, JSON.stringify(local, null, 2));
+        fs.renameSync(parcial, localPath);
+        console.warn(`🔀 jobs.json: otro entorno escribió en Drive; se trajeron ${traidos} proceso(s) antes de subir. `
+          + 'Si Railway sigue creando videos, ponlo en MODO_RESPALDO=1.');
+      }
+    } else if (!primeraVez) {
+      console.warn(`⚠️ ${nombreDrive}: otro entorno lo escribió en Drive desde la última subida de la PC; se sube la `
+        + 'versión de la PC. Pon Railway en MODO_RESPALDO=1 para que no vuelva a pasar.');
+    }
+  } catch (e) {
+    console.warn(`⚠️ No se pudo revisar si otro entorno escribió ${nombreDrive}: ${e.message}`);
+  }
+}
+
 // Respalda (crea o actualiza) un archivo local en la carpeta caché de Drive.
 // Fire-and-forget: nunca debe tumbar el flujo principal si Drive falla.
 // mimeType: 'application/json' por defecto (jobs.json/historial.json, los 2 usos originales);
 // los archivos binarios (material adicional: audio/video/imagen) pasan el suyo real.
 async function respaldar(localPath, nombreDrive, mimeType = 'application/json') {
   try {
-    if (!EN_RAILWAY && ESTADO_COMPARTIDO.has(nombreDrive)) return;
+    if (!EN_RAILWAY && ESTADO_COMPARTIDO.has(nombreDrive) && !(PC_PRINCIPAL && !SOLO_RAILWAY.has(nombreDrive))) return;
     if (MODO_RESPALDO && ESTADO_COMPARTIDO.has(nombreDrive)) return;   // ver MODO_RESPALDO
     if (!fs.existsSync(localPath)) return;
     const archivo = await buscarArchivo(nombreDrive);
@@ -121,9 +175,15 @@ async function respaldar(localPath, nombreDrive, mimeType = 'application/json') 
     }
     // El archivo se abre recién ahora, cuando ya se sabe que se va a subir: abrirlo antes dejaba
     // un descriptor abierto que nadie leía cada vez que la guarda de arriba frenaba la subida.
+    // PC principal: ¿alguien más escribió este archivo desde nuestra última subida? (Railway, si no
+    // está en MODO_RESPALDO, o la otra computadora.) Ver `fusionarSiOtroEscribio`.
+    if (PC_PRINCIPAL && archivo && ESTADO_COMPARTIDO.has(nombreDrive)) {
+      await fusionarSiOtroEscribio(localPath, nombreDrive, archivo);
+    }
     const media = { mimeType, body: fs.createReadStream(localPath) };
     if (archivo) {
-      await cliente().files.update({ fileId: archivo.id, media, supportsAllDrives: true });
+      const r = await cliente().files.update({ fileId: archivo.id, media, fields: 'modifiedTime', supportsAllDrives: true });
+      ultimaSubida.set(nombreDrive, r.data?.modifiedTime || null);
     } else {
       await cliente().files.create({
         requestBody: { name: nombreDrive, parents: [CACHE_FOLDER_ID] },
@@ -148,4 +208,22 @@ async function borrar(nombreDrive) {
   }
 }
 
-module.exports = { restaurar, respaldar, borrar, CACHE_FOLDER_ID, MODO_RESPALDO};
+// Datos del archivo de estado en Drive (id, tamaño y cuándo se modificó), o null si no existe.
+async function infoRemota(nombre) {
+  const res = await cliente().files.list({
+    q: `'${CACHE_FOLDER_ID}' in parents and name='${nombre}' and trashed=false`,
+    fields: 'files(id, name, size, modifiedTime)',
+    pageSize: 1,
+    includeItemsFromAllDrives: true,
+    supportsAllDrives: true,
+  });
+  return res.data.files[0] || null;
+}
+
+// El contenido de un archivo de estado, como texto. Son JSON de pocos cientos de KB.
+async function leerRemoto(fileId) {
+  const res = await cliente().files.get({ fileId, alt: 'media', supportsAllDrives: true }, { responseType: 'text' });
+  return typeof res.data === 'string' ? res.data : JSON.stringify(res.data, null, 2);
+}
+
+module.exports = { restaurar, respaldar, borrar, infoRemota, leerRemoto, CACHE_FOLDER_ID, MODO_RESPALDO, PC_PRINCIPAL, EN_RAILWAY };
