@@ -13,6 +13,8 @@ const driveHelper = require('./drive');
 const video = require('./video');
 const { auditarPlanLegado } = require('./edl/edlValidator');
 const { aplicarPlanPorRecetas } = require('./edl/modoRecetas');
+const { overlaysDeCompilado } = require('./edl/compilado');
+const compiladoServicio = require('./edl/compiladoServicio');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
@@ -2359,6 +2361,11 @@ async function renderizarVideo(params, renderId) {
     colaRender.reportar(renderId, 32, 'Preparando subtítulos');
     let subsPath = null;
     let fuentesDir = null;
+    // Formato de salida: el que pida el Paso 6; un compilado (job.compilado) es 16:9 por defecto.
+    const jobRender = jobId ? jobStore.obtenerJob(jobId) : null;
+    const aspectRender = (efectos && efectos.aspect === '16:9') ? '16:9'
+      : (efectos && efectos.aspect === '9:16') ? '9:16'
+        : (jobRender && jobRender.compilado ? '16:9' : '9:16');
     if (efectos?.subtitulos !== false) {
       try {
         const tiemposFragmentos = seleccion.tiemposPorFragmento(fragmentsRender, durAudio, duracionesParaPlan);
@@ -2367,8 +2374,11 @@ async function renderizarVideo(params, renderId) {
           jobId: renderId,
           tempDir: video.TEMP_DIR,
           fuente: fuenteElegida,
-          tamano: Number.isFinite(efectos?.subtitulosTamano) ? efectos.subtitulosTamano : undefined,
-          marginV: Number.isFinite(efectos?.subtitulosMarginV) ? efectos.subtitulosMarginV : undefined,
+          aspect: aspectRender,
+          // Tamaño y margen del Paso 6 están calibrados para 9:16 (210 pt, margen 606): en 16:9 se
+          // ignoran y valen los provisionales de subtitulos.js hasta calibrarlos con un video real.
+          tamano: aspectRender === '9:16' && Number.isFinite(efectos?.subtitulosTamano) ? efectos.subtitulosTamano : undefined,
+          marginV: aspectRender === '9:16' && Number.isFinite(efectos?.subtitulosMarginV) ? efectos.subtitulosMarginV : undefined,
         });
         fuentesDir = await subtitulos.obtenerCarpetaFuentes(fuenteElegida);
       } catch (e) {
@@ -2454,7 +2464,23 @@ async function renderizarVideo(params, renderId) {
     // (zoom por clip, gancho con título, sellos) sobre el mismo plan. Sin la bandera no pasa nada
     // distinto; con ella, cualquier fallo deja el plan clásico tal cual (el video sale igual).
     let planParaMontar = plan;
-    let efectosParaMontar = { ...(efectos || {}) };
+    let efectosParaMontar = { ...(efectos || {}), aspect: aspectRender };
+    // Compilado: rótulo (número + título) al empezar cada historia. Los tiempos salen de los mismos
+    // cálculos del render (tiempos por fragmento acumulados); si algo falla, sale sin rótulos.
+    if (jobRender && jobRender.compilado) {
+      try {
+        const rotulos = await overlaysDeCompilado({
+          fragments: fragmentsRender,
+          tiempos: seleccion.tiemposPorFragmento(fragmentsRender, durAudio, duracionesParaPlan),
+          aspect: aspectRender, dirTemp: video.TEMP_DIR, prefijo: renderId,
+        });
+        efectosParaMontar.overlays = [...(efectosParaMontar.overlays || []), ...rotulos.overlays];
+        if (rotulos.avisos.length) console.warn(`  ⚠️ [${renderId}] Compilado: ${rotulos.avisos.join(' | ')}`);
+        console.log(`  🏷️ [${renderId}] Compilado: ${rotulos.overlays.length} rótulo(s) de historia`);
+      } catch (e) {
+        console.warn(`  ⚠️ [${renderId}] Rótulos del compilado fallaron (el video sale sin ellos): ${e.message}`);
+      }
+    }
     // (También se activa con la variable de entorno PLAN_POR_RECETAS=1, útil en el clon de pruebas.)
     if ((efectos && efectos.planPorRecetas === true) || process.env.PLAN_POR_RECETAS === '1') {
       try {
@@ -2469,7 +2495,8 @@ async function renderizarVideo(params, renderId) {
     }
     const resultado = await video.montarVideoPlan(planParaMontar, archivos, audioPath, renderId, {
       ...efectosParaMontar, subsPath, fuentesDir, musicaPath, musicaOffset, musicaGananciaDb,
-      cartelPath,
+      // El cartel de portada lo dibuja el navegador a 1080x1920: en 16:9 quedaría mal ubicado, se omite.
+      cartelPath: aspectRender === '16:9' ? null : cartelPath,
     }, (pct, etapa) => colaRender.reportar(renderId, pct, etapa));
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);
     // Duraciones reales aprendidas en este render: evitan que un clip sin metadata en Drive
@@ -2775,6 +2802,29 @@ app.get('/api/publicar-portada/:jobId/:variante', async (req, res) => {
 // instante con el id del render, y el navegador sondea `/api/render/:renderId`. Así un render
 // largo no puede cruzar el límite de tiempo del gateway de Railway, y —más importante— dos
 // renders nunca corren a la vez pisándose en historial.json (ver colaRender.js).
+// ---- COMPILADO HORIZONTAL (experimental): varias historias terminadas -> UN proceso nuevo ----
+//
+// El compilado no tiene render propio: se crea un proceso (job) nuevo con el guion de todas las historias
+// más los puentes, y sigue el flujo de siempre (asignación de famosos, locución, render), ahora en 16:9
+// con rótulos por historia. Los clips salen de la biblioteca de Drive con la rotación normal, así que el
+// horizontal usa tomas DISTINTAS a las de los shorts. Los puentes los propone un modelo y el usuario los
+// revisa y edita antes de crear el proceso.
+app.post('/api/compilado/proponer', async (req, res) => {
+  try {
+    res.json(await compiladoServicio.proponerPuentes({ jobIds: req.body?.jobIds }, { obtenerJob: jobStore.obtenerJob }));
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
+app.post('/api/compilado/crear', (req, res) => {
+  try {
+    res.json(compiladoServicio.crearCompilado({ jobIds: req.body?.jobIds, puentes: req.body?.puentes }, { obtenerJob: jobStore.obtenerJob, crearJob: jobStore.crearJob }));
+  } catch (e) {
+    res.status(e.status || 400).json({ error: e.message });
+  }
+});
+
 app.post('/api/generate-video', async (req, res) => {
   try {
     const { fragments, destFolder, efectos, jobId, variante, etiqueta, canal } = req.body;

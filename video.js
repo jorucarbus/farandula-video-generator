@@ -546,9 +546,12 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     // fit 'contain_blur' (lo pide la receta ranking_item): la toma entera al centro sobre su propio
     // fondo desenfocado, para metraje que no es del formato de salida. Sin fit, el recorte de siempre.
     // fit 'auto': cover si el metraje es parecido al formato de salida, contain_blur si no lo es.
-    const fitEfectivo = (clip.fit === 'auto' && !clip.esImagen)
+    // Sin fit explícito (ni en el clip ni en efectos.fit), 16:9 usa 'auto': un metraje vertical no se
+    // recorta a una franja. 9:16 sigue exactamente como siempre (recorte).
+    const fitPedido = clip.fit ?? efectos.fit ?? (formato.aspect === '16:9' ? 'auto' : undefined);
+    const fitEfectivo = (fitPedido === 'auto' && !clip.esImagen)
       ? decidirFit('auto', await dimensionesCacheadas(archivos[clip.videoId]), formato)
-      : (clip.fit === 'auto' ? 'cover' : clip.fit);
+      : (fitPedido === 'auto' ? 'cover' : fitPedido);
     const base = fitEfectivo === 'contain_blur' ? filtroContainBlur(formato) : formato.escalaYRecorte;
     const filtros = [base];
     // Zoom por clip (lo fija la receta del shot en la EDL: clip.zoom = {direccion, pct}); sin él, el

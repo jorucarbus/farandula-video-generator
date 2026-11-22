@@ -13,6 +13,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const FFMPEG_BIN = require('ffmpeg-static');
 
+const SEPARADOR_PARRAFOS = '\n\n';
 const PALABRAS_POR_SEGUNDO = 2.5; // 150 ppm, el mismo ritmo del resto del proyecto
 
 function clonar(x) { return JSON.parse(JSON.stringify(x)); }
@@ -135,6 +136,7 @@ const PROMPT_PUENTES = (n, palabrasMax, errores) => `Eres el guionista de un com
 Escribe los textos de enlace en español neutro, con tono de conversación, y SOLO con lo que ya dicen las historias.
 Reglas: máx. ${palabrasMax} palabras cada uno; NO introduzcas nombres propios, cifras, fechas ni datos que no estén en las historias;
 NO repitas frases de las historias (aporta contexto, contraste o un enlace entre una y otra); lo que sea opinión, dilo como opinión.
+NO describas lugares, escenas, emociones ni motivos que las historias no mencionen (nada de "pista de baile", "pasión", "romántico" si no están dichos); NO uses adjetivos de valoración (triunfal, escandaloso, increíble). Enlaza con una frase neutra y breve.
 ids: ${idsDePuentes(n).join(', ')} (intro = apertura, pN = enlace entre la historia N y la N+1, cierre = despedida).
 Responde SOLO JSON: {"puentes":[{"id":"...","texto":"..."}]}${errores.length ? `\nTu respuesta anterior tuvo estos problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
 
@@ -189,4 +191,102 @@ function unirAudios(rutas, destino) {
   });
 }
 
-module.exports = { armarCompilado, generarPuentes, puentesDeterministas, hechosNuevos, solapamiento, duracionDePuente, unirAudios, idsDePuentes };
+// ---------------------------------------------------------------- fusión en un job
+
+// Une varios jobs terminados en UN job de compilado: el guion completo y los fragmentos en orden
+// (intro, historia 1, puente 1, historia 2, ..., cierre). Cada puente toma el famoso de la historia que
+// viene (o de la anterior, en el cierre) para que sus clips salgan de la biblioteca de esa persona.
+// Las marcas `historia` / `inicioHistoria` / `puente` en los fragmentos las usa el render para el rótulo
+// de cada historia; lo demás del flujo (locución, asignación, clips, subtítulos) es el de siempre.
+//
+// jobs: [{ jobId, titulo, script, fragments:[{texto, famoso}] }]; puentes: [{id, texto}] (ids de idsDePuentes)
+function fusionarHistorias(jobs, puentes) {
+  if (!Array.isArray(jobs) || jobs.length < 2) throw new Error('un compilado necesita al menos 2 historias');
+  if (jobs.length > 4) throw new Error('un compilado admite hasta 4 historias');
+  const porId = new Map((puentes || []).map(p => [p.id, String(p.texto || '').trim()]));
+  const ids = idsDePuentes(jobs.length);
+  const faltan = ids.filter(id => !porId.get(id));
+  if (faltan.length) throw new Error(`faltan textos de puente: ${faltan.join(', ')}`);
+  jobs.forEach((j, i) => {
+    if (!j.script || !Array.isArray(j.fragments) || !j.fragments.length) throw new Error(`la historia ${i + 1} (${j.titulo || j.jobId}) no tiene guion y fragmentos`);
+    if (j.fragments.some(f => !f.famoso)) throw new Error(`la historia ${i + 1} (${j.titulo || j.jobId}) tiene fragmentos sin famoso asignado`);
+  });
+
+  const famosoDe = (j, ultimo = false) => (ultimo ? j.fragments[j.fragments.length - 1] : j.fragments[0]).famoso;
+  const frag = (texto, famoso, extra = {}) => ({ texto, famoso, caracteres: texto.length, ...extra });
+  const fragments = [];
+  const textos = [];
+
+  fragments.push(frag(porId.get('intro'), famosoDe(jobs[0]), { puente: 'intro' }));
+  textos.push(porId.get('intro'));
+  jobs.forEach((j, i) => {
+    j.fragments.forEach((f, k) => {
+      const extra = { historia: i + 1 };
+      if (k === 0) { extra.inicioHistoria = true; extra.tituloHistoria = j.titulo; }
+      fragments.push({ ...f, caracteres: f.caracteres || f.texto.length, ...extra });
+    });
+    textos.push(j.script.trim());
+    if (i < jobs.length - 1) {
+      const id = `p${i + 1}`;
+      fragments.push(frag(porId.get(id), famosoDe(jobs[i + 1]), { puente: id }));
+      textos.push(porId.get(id));
+    }
+  });
+  const ultimo = jobs[jobs.length - 1];
+  fragments.push(frag(porId.get('cierre'), famosoDe(ultimo, true), { puente: 'cierre' }));
+  textos.push(porId.get('cierre'));
+
+  const total = fragments.reduce((t, f) => t + f.caracteres, 0);
+  fragments.forEach(f => { f.porcentaje = Number(((f.caracteres / total) * 100).toFixed(2)); });
+
+  return {
+    script: textos.join(SEPARADOR_PARRAFOS),
+    fragments,
+    titulo: `Compilado: ${jobs.map(j => j.titulo).filter(Boolean).join(' | ')}`.slice(0, 140),
+    compilado: { historias: jobs.map((j, i) => ({ numero: i + 1, jobId: j.jobId, titulo: j.titulo })), puentes: ids.map(id => ({ id, texto: porId.get(id) })), aspect: '16:9' },
+  };
+}
+
+// ---------------------------------------------------------------- rótulos de cada historia
+
+// Un rótulo (número grande + título) al empezar cada historia del compilado. `tiempos` son los segundos de
+// cada fragmento (los mismos que usa el render); los rótulos duran hasta 3.2 s o hasta el final de la
+// historia, lo que llegue primero. Si un PNG no se puede dibujar, se omite y se avisa.
+async function overlaysDeCompilado({ fragments, tiempos, aspect = '16:9', dirTemp, prefijo = 'compilado', renderizar }) {
+  const { renderPng } = require('../overlay/renderPng');
+  const { planFormato } = require('./planFormato');
+  const formato = planFormato(aspect);
+  const dibujar = renderizar || renderPng;
+  const avisos = [];
+  const overlays = [];
+  fs.mkdirSync(dirTemp, { recursive: true });
+
+  const inicios = [];
+  let t = 0;
+  fragments.forEach((f, i) => { inicios.push(t); t += tiempos[i] || 0; });
+  const total = t;
+  const marcas = fragments.map((f, i) => ({ f, i })).filter(x => x.f.inicioHistoria);
+  for (const [n, { f, i }] of marcas.entries()) {
+    const t0 = inicios[i] + 0.1;
+    const finHistoria = n + 1 < marcas.length ? inicios[marcas[n + 1].i] : total;
+    const t1 = Math.min(inicios[i] + 3.2, finHistoria - 0.1);
+    if (!(t1 > t0)) { avisos.push(`historia ${f.historia}: demasiado corta para un rótulo`); continue; }
+    const piezas = [
+      { texto: `#${f.historia}`, estilo: 'numero', t0, t1 },
+      { texto: String(f.tituloHistoria || '').slice(0, 50), estilo: 'lowerthird', t0: Math.min(t0 + 0.2, t1 - 0.1), t1 },
+    ];
+    for (const p of piezas) {
+      if (!p.texto.trim()) continue;
+      const destino = path.join(dirTemp, `${prefijo}_rotulo_${f.historia}_${p.estilo}.png`);
+      try {
+        await dibujar({ texto: p.texto, estilo: p.estilo, w: formato.w, h: formato.h, destino });
+        overlays.push({ path: destino, t0: p.t0, t1: p.t1, x: 0, y: 0 });
+      } catch (e) {
+        avisos.push(`historia ${f.historia}: rótulo '${p.estilo}' omitido (${e.message})`);
+      }
+    }
+  }
+  return { overlays, avisos };
+}
+
+module.exports = { overlaysDeCompilado, fusionarHistorias, armarCompilado, generarPuentes, puentesDeterministas, hechosNuevos, solapamiento, duracionDePuente, unirAudios, idsDePuentes };

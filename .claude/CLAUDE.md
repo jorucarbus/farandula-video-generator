@@ -75,10 +75,22 @@ Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se e
   como "triunfales" pasa. Los puentes del modelo salen genéricos: revisarlos. 78 pruebas verdes.
   **No existe aún**: la pantalla para armar un compilado desde los shorts del día (hoy es solo la capa de código),
   ni la locución real de los puentes con ElevenLabs.
-- **Pendiente** (días 27+): pantalla/endpoint del compilado (elegir 3 shorts del día, generar puentes, locutarlos,
-  armar y encolar), clips para los puentes (hoy el llamador los provee), loudnorm/música por EDL, paquete de salida
-  por plataforma, `split_compare`, calibrar subtítulos 16:9 con un video real, medir con libx264 (Railway),
-  prueba de 5 estilos animados con el usuario.
+- **Día 27 (hecho)**: compilado horizontal integrado a la app (opt-in, en el clon). El compilado NO tiene render
+  propio: crea un proceso nuevo (`edl/compiladoServicio.js`, `POST /api/compilado/proponer` y `/crear`) con el
+  guion de 2 a 4 historias terminadas + puentes, en el Paso 4, y sigue el flujo de siempre (asignación, locución
+  completa nueva con ElevenLabs —centavos—, render) con tomas DISTINTAS de la biblioteca. Panel "Compilado
+  horizontal" en el historial: eliges historias, el modelo propone los enlaces, TÚ los editas, y se crea.
+  `job.compilado` hace que el render salga 16:9 y ponga un rótulo (número + título) al empezar cada historia
+  (`overlaysDeCompilado`). Selector "Formato del video" en el Paso 6 (auto/9:16/16:9). En 16:9: `fit: auto`
+  por defecto, subtítulos con valores provisionales (el tamaño/margen del Paso 6 son de 9:16 y se ignoran) y SIN
+  cartel de portada (lo dibuja el navegador a 1080x1920). Prompt de puentes endurecido (sin escenas, emociones
+  ni adjetivos que las historias no digan). Verificado en un navegador real contra el clon (puerto 3001, clave
+  de prueba, datos aislados): lista, selección, puentes con Gemini real y creación del proceso. 87 pruebas.
+  **NO verificado**: el render completo del compilado con Drive y ElevenLabs reales (el clon tiene los destinos
+  de escritura apagados), ni los subtítulos 16:9 con un video real.
+- **Pendiente** (días 28+): render real de un compilado de punta a punta (con el usuario), loudnorm/música por EDL,
+  paquete de salida por plataforma, calibrar subtítulos 16:9, medir con libx264 (Railway), `split_compare`,
+  prueba de 5 estilos animados con el usuario, integrar con `test-persistencia` cuando el usuario lo decida.
 - La app ya usa `eleven_v4_turbo` para la locución (commit `0e772cf`); la prueba ciega del usuario
   (2026-11-21) confirmó v4 y v4 Turbo empatados, v3/Flash/Multilingual v2 por debajo.
 

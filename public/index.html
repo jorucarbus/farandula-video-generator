@@ -481,6 +481,16 @@
                 </div>
 
                 <div class="form-group">
+                    <label for="efecto-aspect">Formato del video:</label>
+                    <select id="efecto-aspect">
+                        <option value="auto" selected>Automático (vertical; horizontal si es un compilado)</option>
+                        <option value="9:16">Vertical 9:16 (shorts)</option>
+                        <option value="16:9">Horizontal 16:9</option>
+                    </select>
+                    <p class="hint">En horizontal los subtítulos usan valores provisionales y la portada con cartel no se aplica.</p>
+                </div>
+
+                <div class="form-group">
                     <label><input type="checkbox" id="efecto-plan-recetas"> Plan por recetas (experimental): gancho con título, zoom por toma y sellos de rumor</label>
                     <p class="hint">Apagado por defecto y no se recuerda entre videos. Si algo falla, el video sale con el plan de siempre. Revisa el título que propone antes de publicar.</p>
                 </div>
@@ -702,6 +712,19 @@
                 <details id="metricas-box" ontoggle="if (this.open) cargarMetricas()">
                     <summary><strong>Tiempos de render</strong> <span class="hint">(dónde se va el tiempo)</span></summary>
                     <div id="metricas-contenido" class="hint">Cargando…</div>
+                </details>
+            </div>
+
+            <!-- Compilado horizontal (experimental): junta varias historias terminadas en UN proceso 16:9. -->
+            <div class="form-section" id="compilado-section">
+                <details id="compilado-box" ontoggle="if (this.open) cargarHistoriasCompilado()">
+                    <summary><strong>Compilado horizontal</strong> <span class="hint">(experimental: 2 a 4 historias en un video 16:9)</span></summary>
+                    <p class="hint">Elige historias que ya generaron su video. El compilado se locuta de nuevo completo (cuesta centavos) y usa tomas distintas de la biblioteca. Los textos de enlace los propone un modelo: léelos y corrígelos antes de crear.</p>
+                    <div id="compilado-historias" class="hint">Cargando…</div>
+                    <button type="button" id="btn-compilado-proponer" class="btn-secondary" onclick="proponerPuentesCompilado()" disabled>Proponer textos de enlace</button>
+                    <div id="compilado-puentes" class="hidden"></div>
+                    <button type="button" id="btn-compilado-crear" class="btn-primary hidden" onclick="crearCompiladoDesdeUI()">Crear compilado y seguir en el Paso 4</button>
+                    <p id="compilado-estado" class="hint"></p>
                 </details>
             </div>
 

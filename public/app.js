@@ -2942,6 +2942,8 @@ function efectosDelPaso6() {
         transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
         // Experimental y SIN preferencia guardada: arranca apagado en cada video (ver CONTROLES_PREFERENCIA).
         planPorRecetas: document.getElementById('efecto-plan-recetas')?.checked === true,
+        // 'auto' = no se manda: el servidor decide (vertical, u horizontal si el proceso es un compilado).
+        ...(['9:16', '16:9'].includes(document.getElementById('efecto-aspect')?.value) ? { aspect: document.getElementById('efecto-aspect').value } : {}),
     };
 }
 
@@ -4803,3 +4805,108 @@ document.addEventListener('DOMContentLoaded', () => {
     if (contPasos) contPasos.addEventListener('scroll', actualizarPasosIndicador);
     actualizarPasosIndicador();
 });
+
+// ---- COMPILADO HORIZONTAL (experimental) ----
+// Junta 2 a 4 historias terminadas en UN proceso nuevo (16:9). Los textos de enlace los propone un
+// modelo y se editan acá antes de crear; el proceso resultante sigue en el Paso 4 como cualquier otro.
+function estadoCompilado(texto, esError = false) {
+    const p = document.getElementById('compilado-estado');
+    if (!p) return;
+    p.textContent = texto || '';
+    p.classList.toggle('error-text', Boolean(esError));
+}
+
+function idsCompiladoElegidos() {
+    return [...document.querySelectorAll('#compilado-historias input[type="checkbox"]:checked')].map(c => c.value);
+}
+
+function actualizarBotonProponer() {
+    const n = idsCompiladoElegidos().length;
+    const btn = document.getElementById('btn-compilado-proponer');
+    if (btn) btn.disabled = n < 2 || n > 4;
+    // Cambiar la selección invalida los textos ya propuestos (eran de otras historias).
+    document.getElementById('compilado-puentes')?.classList.add('hidden');
+    document.getElementById('btn-compilado-crear')?.classList.add('hidden');
+}
+
+async function cargarHistoriasCompilado() {
+    const cont = document.getElementById('compilado-historias');
+    cont.textContent = 'Cargando…';
+    try {
+        const { jobs = [] } = await apiCall('/jobs');
+        const validos = jobs.filter(j => j.paso === 'completado' && j.script && Array.isArray(j.fragments) && j.fragments.length && !j.compilado);
+        cont.textContent = '';
+        if (validos.length < 2) {
+            cont.textContent = 'Hacen falta al menos 2 historias terminadas (con guion y fragmentos) en el historial.';
+            return;
+        }
+        for (const j of validos) {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            const chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.value = j.jobId;
+            chk.onchange = actualizarBotonProponer;
+            label.append(chk, ' ', j.titulo || '(sin título)');
+            cont.appendChild(label);
+        }
+        actualizarBotonProponer();
+    } catch (e) {
+        cont.textContent = `Error cargando historias: ${e.message}`;
+    }
+}
+
+const ROTULO_PUENTE = { intro: 'Apertura', cierre: 'Despedida' };
+
+async function proponerPuentesCompilado() {
+    const ids = idsCompiladoElegidos();
+    const btn = document.getElementById('btn-compilado-proponer');
+    btn.disabled = true;
+    estadoCompilado('Escribiendo los textos de enlace…');
+    try {
+        const r = await apiCall('/compilado/proponer', 'POST', { jobIds: ids });
+        const cont = document.getElementById('compilado-puentes');
+        cont.textContent = '';
+        for (const p of r.puentes) {
+            const label = document.createElement('label');
+            label.style.display = 'block';
+            label.textContent = ROTULO_PUENTE[p.id] || `Enlace entre historias ${p.id.slice(1)} y ${Number(p.id.slice(1)) + 1}`;
+            const ta = document.createElement('textarea');
+            ta.rows = 3;
+            ta.dataset.puenteId = p.id;
+            ta.value = p.texto;
+            ta.style.width = '100%';
+            label.appendChild(ta);
+            cont.appendChild(label);
+        }
+        cont.classList.remove('hidden');
+        document.getElementById('btn-compilado-crear').classList.remove('hidden');
+        estadoCompilado(r.origen === 'llm'
+            ? 'Textos propuestos. Léelos con cuidado: el modelo no debe inventar datos, pero puede exagerar.'
+            : `Se usaron textos básicos de respaldo (${(r.avisos || []).slice(-1)[0] || 'el modelo no respondió'}). Edítalos si quieres.`);
+    } catch (e) {
+        estadoCompilado(e.message, true);
+    } finally {
+        btn.disabled = idsCompiladoElegidos().length < 2;
+    }
+}
+
+async function crearCompiladoDesdeUI() {
+    const ids = idsCompiladoElegidos();
+    const puentes = [...document.querySelectorAll('#compilado-puentes textarea')].map(t => ({ id: t.dataset.puenteId, texto: t.value.trim() }));
+    const btn = document.getElementById('btn-compilado-crear');
+    btn.disabled = true;
+    estadoCompilado('Creando el compilado…');
+    try {
+        const r = await apiCall('/compilado/crear', 'POST', { jobIds: ids, puentes });
+        jobPendiente = await apiCall(`/jobs/${r.jobId}`);
+        await recuperarJobPendiente();
+        estadoCompilado(`Compilado creado (${r.fragmentos} fragmentos). Sigue en el Paso 4.${r.avisos?.length ? ' ⚠️ ' + r.avisos.join(' · ') : ''}`);
+        log(`🧩 Compilado creado: ${r.titulo}${r.avisos?.length ? ' — ' + r.avisos.join(' | ') : ''}`);
+        cargarHistorial();
+    } catch (e) {
+        estadoCompilado(e.message, true);
+    } finally {
+        btn.disabled = false;
+    }
+}
