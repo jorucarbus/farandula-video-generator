@@ -141,6 +141,31 @@ async function codecDe(filePath) {
   } catch { return ''; }
 }
 
+// Ancho y alto VISIBLES de un video (ya rotado: un video de celular grabado en vertical suele
+// declarar 1920x1080 con una rotación de 90°). null si no se puede sondear.
+async function dimensionesDe(filePath) {
+  try {
+    const j = JSON.parse(await ffprobe([
+      '-v', 'error', '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height:stream_tags=rotate:stream_side_data=rotation',
+      '-of', 'json', filePath,
+    ]));
+    const s = (j.streams || [])[0];
+    if (!s || !s.width || !s.height) return null;
+    const rot = Math.abs(Number(((s.side_data_list || [])[0] || {}).rotation ?? (s.tags || {}).rotate ?? 0)) % 180;
+    return rot === 90 ? { w: s.height, h: s.width } : { w: s.width, h: s.height };
+  } catch { return null; }
+}
+
+// 'auto' -> 'cover' | 'contain_blur' según cuánto se parece el metraje al formato de salida.
+// Cualquier otro valor pasa tal cual. Sin dimensiones (no se pudo sondear) -> 'cover', lo de siempre.
+function decidirFit(fit, dims, formato) {
+  if (fit !== 'auto') return fit;
+  if (!dims) return 'cover';
+  const relacion = (dims.w / dims.h) / (formato.w / formato.h);
+  return Math.abs(relacion - 1) > 0.25 ? 'contain_blur' : 'cover';
+}
+
 // Devuelve la ruta del clip a usar: la original si está sana, o una COPIA con los metadatos de
 // color arreglados si están rotos.
 //
@@ -469,6 +494,11 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     }
     return fuentesPorArchivo[ruta];
   }
+  const dimensionesPorArchivo = {};
+  async function dimensionesCacheadas(ruta) {
+    if (!(ruta in dimensionesPorArchivo)) dimensionesPorArchivo[ruta] = await dimensionesDe(ruta);
+    return dimensionesPorArchivo[ruta];
+  }
   async function duracionRealCacheada(ruta) {
     if (!(ruta in duracionesReales)) {
       duracionesReales[ruta] = await obtenerDuracion(ruta).catch(() => null);
@@ -515,7 +545,11 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
     // fit 'contain_blur' (lo pide la receta ranking_item): la toma entera al centro sobre su propio
     // fondo desenfocado, para metraje que no es del formato de salida. Sin fit, el recorte de siempre.
-    const base = clip.fit === 'contain_blur' ? filtroContainBlur(formato) : formato.escalaYRecorte;
+    // fit 'auto': cover si el metraje es parecido al formato de salida, contain_blur si no lo es.
+    const fitEfectivo = (clip.fit === 'auto' && !clip.esImagen)
+      ? decidirFit('auto', await dimensionesCacheadas(archivos[clip.videoId]), formato)
+      : (clip.fit === 'auto' ? 'cover' : clip.fit);
+    const base = fitEfectivo === 'contain_blur' ? filtroContainBlur(formato) : formato.escalaYRecorte;
     const filtros = [base];
     // Zoom por clip (lo fija la receta del shot en la EDL: clip.zoom = {direccion, pct}); sin él, el
     // preset global de siempre. Así el flujo clásico queda exactamente igual.
@@ -784,6 +818,8 @@ module.exports = {
   detectarEncoder,
   argsEncoder,
   decidirEfecto,
+  decidirFit,
+  dimensionesDe,
   // Exportada sin cambiar su lógica: el validador de la EDL tiene que calcular el padding de cada
   // clip con la MISMA función que el render, o discreparía (ver montarVideoPlan).
   esLimiteDeTanda,

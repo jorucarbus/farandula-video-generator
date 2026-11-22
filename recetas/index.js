@@ -31,11 +31,14 @@ const RECETAS = {
     implementada: true,
     params: {
       type: 'object', additionalProperties: false,
-      properties: { dir: { enum: ['in', 'out'] }, pct: { type: 'number', minimum: 0, maximum: 30 } },
+      properties: {
+        dir: { enum: ['in', 'out'] }, pct: { type: 'number', minimum: 0, maximum: 30 },
+        fit: { enum: ['cover', 'contain_blur', 'auto'] },
+      },
     },
-    defaults: { dir: 'in', pct: 15 },
+    defaults: { dir: 'in', pct: 15, fit: 'cover' },
     aplicar({ params }) {
-      return { zoom: { direccion: params.dir, pct: params.pct }, overlays: [], avisos: [] };
+      return { zoom: { direccion: params.dir, pct: params.pct }, fit: params.fit, overlays: [], avisos: [] };
     },
   },
 
@@ -125,7 +128,7 @@ const RECETAS = {
       properties: {
         numero: { type: 'integer', minimum: 1, maximum: 99 },
         titulo: { type: 'string', minLength: 1, maxLength: 50 },
-        fit: { enum: ['cover', 'contain_blur'] },
+        fit: { enum: ['cover', 'contain_blur', 'auto'] },
       },
     },
     defaults: { fit: 'cover' },

@@ -64,9 +64,21 @@ Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se e
   que el LLM solo escribe textos creativos (título del gancho, título de ranking); la atribución sale de
   `fuente` y el sello es texto fijo. Los títulos del modelo pueden exagerar ("acuerdo oculto"): revisar.
   65 pruebas verdes.
-- **Pendiente** (días 26+): interruptor en la UI (`public/app.js`), compilación horizontal real (guion
-  puente, no solo unir shorts), logo/loudnorm/música por EDL, `split_compare`, calibrar subtítulos 16:9 con
-  un video real, medir con libx264, prueba de 5 estilos animados con el usuario.
+- **Día 26 (hecho)**: interruptor en la UI (Paso 6: "Plan por recetas (experimental)", apagado por defecto y
+  SIN preferencia guardada; manda `efectos.planPorRecetas`). `fit: 'auto'` en `video.js` (cover si el metraje
+  se parece al formato de salida, contain_blur si no; sondea con ffprobe y respeta la rotación de los videos de
+  celular), `fit` también en `clip_kenburns`. **Compilado horizontal** (`edl/compilado.js`): `armarCompilado`
+  (historias + puentes -> EDL 16:9 válida; cada historia abre como ítem de ranking; avisa si un video aparece en
+  dos historias), `generarPuentes` (LLM inyectable; rechaza nombres propios o cifras que no estén en las
+  historias, textos largos o que copian frases; 2 reintentos y respaldo con solo los títulos), `unirAudios`.
+  Gemini real: 4 puentes en ~5 s. **Límite honesto**: el chequeo solo ve nombres propios y números; un adjetivo
+  como "triunfales" pasa. Los puentes del modelo salen genéricos: revisarlos. 78 pruebas verdes.
+  **No existe aún**: la pantalla para armar un compilado desde los shorts del día (hoy es solo la capa de código),
+  ni la locución real de los puentes con ElevenLabs.
+- **Pendiente** (días 27+): pantalla/endpoint del compilado (elegir 3 shorts del día, generar puentes, locutarlos,
+  armar y encolar), clips para los puentes (hoy el llamador los provee), loudnorm/música por EDL, paquete de salida
+  por plataforma, `split_compare`, calibrar subtítulos 16:9 con un video real, medir con libx264 (Railway),
+  prueba de 5 estilos animados con el usuario.
 - La app ya usa `eleven_v4_turbo` para la locución (commit `0e772cf`); la prueba ciega del usuario
   (2026-11-21) confirmó v4 y v4 Turbo empatados, v3/Flash/Multilingual v2 por debajo.
 

@@ -2940,6 +2940,8 @@ function efectosDelPaso6() {
         transicion: document.getElementById('efecto-transicion')?.value || 'ninguno',
         transicionTipo: tiposTransicionElegidos(),
         transicionDur: Number(document.getElementById('transicion-dur')?.value) || 0.35,
+        // Experimental y SIN preferencia guardada: arranca apagado en cada video (ver CONTROLES_PREFERENCIA).
+        planPorRecetas: document.getElementById('efecto-plan-recetas')?.checked === true,
     };
 }
 
