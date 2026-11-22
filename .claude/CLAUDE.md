@@ -3407,3 +3407,8 @@ consecuencias:
 - Resultado: 1920x1080, 62.4 s, 4 rótulos de historia, NVENC.
 - BUG hallado y corregido: `dimensionesDe` usaba `stream_side_data` en `-show_entries`; el ffprobe empaquetado (4.0.2) lo rechaza y devolvía null, así que 'auto' caía SIEMPRE a cover (verticales recortados). Ahora usa `-show_streams`. Prueba de regresión agregada (88 pruebas).
 - Pendiente: subtítulos 16:9 (se leen pero son pequeños), loudnorm/música por EDL, paquete por plataforma.
+
+## Día 28 (cont.) — volumen y paquete Metricool
+- `video.js`: loudnorm de una pasada (-14 LUFS, TP -1.5) en la mezcla final, solo en 16:9 o con `efectos.normalizarVolumen`. 9:16 sin la opción queda igual (golden intacto). Real: -26 → -15.8 LUFS, pico -1.4 dBFS.
+- `edl/paqueteMetricool.js`: CSV de programación masiva (BOM, 50 filas/archivo, Draft TRUE). Lee los encabezados de la plantilla oficial de Metricool (bajarla UNA vez: Calendario > Importar CSV) y mapea por nombre; sin plantilla usa columnas por defecto y avisa. Encabezados exactos NO verificados. Exige `videoUrl` http(s) estable (Drive es frágil).
+- Pendiente: conectar el exportador a la interfaz/historial, subtítulos 16:9, `split_compare`.

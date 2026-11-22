@@ -130,3 +130,27 @@ test('dimensionesDe lee el tamaño con el ffprobe empaquetado (4.0.2) y respeta 
     assert.deepEqual(await video.dimensionesDe(rot), { w: 640, h: 360 });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// LUFS integrado del audio de un archivo (ebur128).
+function lufs(f) {
+  const r = require('child_process').spawnSync(ffmpegBin, ['-hide_banner', '-nostats', '-i', f, '-af', 'ebur128', '-f', 'null', '-'], { encoding: 'utf8' });
+  const m = [...r.stderr.matchAll(/I:\s+(-?[\d.]+) LUFS/g)].pop();
+  return m ? Number(m[1]) : NaN;
+}
+
+test('volumen: 16:9 se normaliza cerca de -14 LUFS; apagado o 9:16 queda sin tocar', async () => {
+  const m = preparar(6);
+  try {
+    // locución quieta (≈ -30 LUFS), como la de ElevenLabs
+    ff(['-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', '-af', 'volume=-14dB', '-c:a', 'libmp3lame', m.audio]);
+    const plan = [{ videoId: 'a', famoso: 'X', offset: 0, duracion: 3.0 }, { videoId: 'a', famoso: 'X', offset: 3.0, duracion: 3.0 }];
+    const sin = await video.montarVideoPlan(plan, { a: m.clip }, m.audio, 't-vol0', { aspect: '16:9', normalizarVolumen: false });
+    const base = lufs(sin.finalPath);
+    const con = await video.montarVideoPlan(plan, { a: m.clip }, m.audio, 't-vol1', { aspect: '16:9' });
+    const norm = lufs(con.finalPath);
+    assert.ok(base < -22, `la locución de prueba debía ser quieta (${base})`);
+    assert.ok(norm > -17 && norm < -11, `16:9 debía quedar cerca de -14 LUFS (${norm})`);
+    const vert = await video.montarVideoPlan(plan, { a: m.clip }, m.audio, 't-vol2', {});
+    assert.ok(Math.abs(lufs(vert.finalPath) - base) < 0.6, '9:16 por defecto no se normaliza');
+  } finally { limpiar(m.dir, 't-vol0'); limpiar(m.dir, 't-vol1'); limpiar(m.dir, 't-vol2'); }
+});

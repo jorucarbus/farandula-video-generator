@@ -698,14 +698,19 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
       });
       cadenaV = partes.join(';');
     }
-    const filtro = conMusica
-      ? `${cadenaV};[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[afinal]`
-      : cadenaV;
+    // Volumen final (loudnorm de una pasada a -14 LUFS, pico -1.5 dBTP): solo en 16:9 o si se pide.
+    // 9:16 sin la opción queda byte a byte como siempre. La voz de ElevenLabs sale a ~-26 LUFS.
+    const normalizar = efectos.normalizarVolumen ?? (formato.aspect === '16:9');
+    const LOUDNORM = 'loudnorm=I=-14:TP=-1.5:LRA=11';
+    const cadenaA = conMusica
+      ? `[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0${normalizar ? ',' + LOUDNORM : ''}[afinal]`
+      : (normalizar ? `[1:a]${LOUDNORM}[afinal]` : null);
+    const filtro = cadenaA ? `${cadenaV};${cadenaA}` : cadenaV;
 
     return [
       ...entradas,
       '-filter_complex', filtro,
-      '-map', '[vout]', '-map', conMusica ? '[afinal]' : '1:a',
+      '-map', '[vout]', '-map', cadenaA ? '[afinal]' : '1:a',
       '-t', durAudio.toFixed(3),
       ...enc, '-c:a', 'aac', '-b:a', '192k',
       finalPath,
