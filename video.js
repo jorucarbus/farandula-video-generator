@@ -507,8 +507,13 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
     const base = formato.escalaYRecorte;
     const filtros = [base];
-    const zoomInfo = decidirEfecto(zoomPreset, i);
-    if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion, formato.tamano));
+    // Zoom por clip (lo fija la receta del shot en la EDL: clip.zoom = {direccion, pct}); sin él, el
+    // preset global de siempre. Así el flujo clásico queda exactamente igual.
+    const zoomInfo = clip.zoom
+      ? { activo: Number(clip.zoom.pct) > 0, direccion: clip.zoom.direccion === 'out' ? 'out' : 'in' }
+      : decidirEfecto(zoomPreset, i);
+    const zoomPctClip = clip.zoom && Number.isFinite(clip.zoom.pct) ? clip.zoom.pct : zoomPct;
+    if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPctClip, clip.duracion, formato.tamano));
     // Espejo NUNCA en una imagen: una foto de apoyo puede ser una captura de texto/pantallazo,
     // y espejarla la vuelve ilegible. El zoom (Ken Burns) sí es seguro, no altera el texto.
     if (!clip.esImagen && decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');

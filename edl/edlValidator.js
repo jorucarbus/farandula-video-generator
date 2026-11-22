@@ -7,9 +7,12 @@
 //   Los errores bloquean; los avisos se muestran y van al log, nunca detienen un video.
 //
 // Reglas implementadas hoy (nota 12 §2): V1 schema, V2 regla de 3 s, V3 mínimo 0,7 s, V4 suma =
-// audio, V5 resolución/fps, V6 atribución, V7 certeza. Pendientes: V8 ritmo, V9 contigüidad,
-// V10 ids/refs (necesita el catálogo de recetas), V11 bucles. `params` contra el schema de cada
-// receta se valida en segunda pasada cuando exista el catálogo.
+// audio, V5 resolución/fps, V6 atribución, V7 certeza, V10 receta del catálogo + `params` contra el
+// schema de la receta + reglas en código (primer shot, aspect). Pendientes: V8 ritmo, V9
+// contigüidad, V11 bucles y las referencias entre shots de V10 (split_compare).
+//
+// auditarPlanLegado(plan, efectos, duracionAudio): la red de seguridad para el flujo clásico
+// (plan[] de seleccion.js). Solo MIRA: nunca cambia el plan ni detiene un render.
 const fs = require('fs');
 const path = require('path');
 const Ajv2020 = require('ajv/dist/2020');
@@ -18,6 +21,7 @@ const addFormats = require('ajv-formats');
 // Se reusan las MISMAS funciones del render: si el validador calculara el padding por su cuenta,
 // discreparía de montarVideoPlan (video.js:191-199 y :473-475).
 const { decidirEfecto, esLimiteDeTanda } = require('../video');
+const recetas = require('../recetas');
 
 // La regla de 3 s es un límite LEGAL por toma de VIDEO de terceros (no estético). Lo generado en la
 // PC (gráficos, recortes animados, rótulos) y las fotos/capturas no entran: decisión del usuario.
@@ -94,6 +98,16 @@ function validarEdl(edl) {
     err('V4', null, `la suma de shots (${suma.toFixed(3)} s) no iguala al audio (${edl.audio.duracion_s} s) ±${TOLERANCIA_AUDIO}`);
   }
 
+  // V10: la receta existe en el catálogo cerrado, sus params validan y se cumplen las reglas en código.
+  for (const shot of shots) {
+    if (!recetas.existe(shot.recipe)) {
+      err('V10', shot.id, `receta '${shot.recipe}' fuera del catálogo (${recetas.ids().join(', ')})`);
+      continue;
+    }
+    for (const m of recetas.validarParams(shot.recipe, shot.params)) err('V10', shot.id, `params de ${shot.recipe}: ${m}`);
+  }
+  for (const e of recetas.reglasDeReceta({ ...edl, shots })) err('V10', e.shot, e.mensaje);
+
   shots.forEach((shot, k) => {
     const id = shot.id;
 
@@ -137,4 +151,35 @@ function validarEdl(edl) {
   return { errores, avisos };
 }
 
-module.exports = { validarEdl, esVideoDeTercero, paddingDelShot, CLIP_MAX, CLIP_MIN };
+// Audita el plan[] del flujo clásico con las MISMAS cuentas que el validador de la EDL (V2, V3, V4).
+// Solo registra: devuelve {errores, avisos} y quien llama decide qué hacer (hoy, solo loguear).
+// `efectos` es el objeto que ya recibe montarVideoPlan (transicion, transicionDur, ...).
+function auditarPlanLegado(plan, efectos = {}, duracionAudio = null) {
+  const errores = [];
+  const avisos = [];
+  const clips = (plan || []).filter(Boolean);
+  const preset = efectos.transicion || 'ninguno';
+  const dur = Math.min(0.6, Math.max(0.1, Number.isFinite(efectos.transicionDur) ? efectos.transicionDur : DUR_TRANSICION_DEFAULT));
+  const shots = clips.map((c, i) => ({ id: `clip${i}`, duracion: c.duracion, clip: c, fuente: { tipo: c.fuenteTipo || 'tercero' } }));
+  const edl = { transicion_preset: preset, transicion_default: { tipo: preset === 'ninguno' ? 'corte' : 'fade', dur } };
+
+  shots.forEach((shot, k) => {
+    if (esVideoDeTercero(shot)) {
+      const padding = paddingDelShot(edl, shots, k);
+      const necesita = shot.clip.duracion + padding;
+      if (necesita > CLIP_MAX + TOLERANCIA_LIMITE) {
+        errores.push({ regla: 'V2', shot: shot.id, mensaje: `toma de ${shot.clip.duracion} s + ${padding} s de transición = ${necesita.toFixed(3)} s (máx. ${CLIP_MAX})` });
+      }
+    }
+    if (shot.clip && !shot.clip.esImagen && shot.clip.duracion < CLIP_MIN - 1e-9) {
+      avisos.push({ regla: 'V3', shot: shot.id, mensaje: `toma de ${shot.clip.duracion} s por debajo de ${CLIP_MIN} s` });
+    }
+  });
+  if (Number.isFinite(duracionAudio)) {
+    const suma = shots.reduce((t, s) => t + s.duracion, 0);
+    if (Math.abs(suma - duracionAudio) > 0.5) avisos.push({ regla: 'V4', shot: null, mensaje: `el plan suma ${suma.toFixed(2)} s y el audio dura ${duracionAudio.toFixed(2)} s` });
+  }
+  return { errores, avisos, clips: clips.length };
+}
+
+module.exports = { validarEdl, auditarPlanLegado, esVideoDeTercero, paddingDelShot, CLIP_MAX, CLIP_MIN };

@@ -36,9 +36,23 @@ Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se e
   de escritura apagados (`#DESACTIVADA_...`: hoja de publicaciones, carpetas de renders e insumos,
   `RENDERS_LOCAL_PATH`), `PORT=3001`, `MODO_RESPALDO=1` y datos propios en `data-motor/`. Para integrar
   algo en la app viva hay que pedírselo al usuario y hacerlo vía rama/PR, nunca editando esa carpeta.
-- **Pendiente** (días 24+): recetas `clip_kenburns`/`hook_cold_open`/`source_lowerthird`/`rumor_stamp`,
-  `planificadorLLM`, enganche del validador en `renderizarVideo` (`server.js`, solo en modo registro),
-  pasar `aspect` y `fuenteTipo` desde `server.js`, compilación 16:9 de ≥30 clips (medir RAM).
+- **Día 24 (hecho)**: catálogo cerrado `recetas/index.js` (módulo puro: `clip_kenburns`, `hook_cold_open`,
+  `source_lowerthird`, `rumor_stamp`; `ranking_item` y `split_compare` reservadas, sin render propio, caen
+  a clip_kenburns con aviso), V10 en el validador (receta del catálogo + `params` contra su schema +
+  reglas en código: primer shot de un short solo gancho/kenburns, hook solo al inicio), `overlay/renderPng.js`
+  (PNG transparente con ffmpeg `drawtext`, texto por `textfile`; ⚠️ drawtext aplica el alfa de `boxcolor`
+  DOS veces sobre lienzo transparente: se pide la raíz), `edl/planEdlARender.js` (EDL -> plan[] con
+  `clip.zoom` por receta + overlays PNG; un overlay que falla se omite con aviso),
+  `edl/planificadorLLM.js` (etapa 1 recipe por shot de un enum cerrado, etapa 2 params, reglas en código,
+  2 reintentos con los errores, respaldo determinista; `llamar` inyectable, sin red en pruebas),
+  `video.js` con `clip.zoom` por clip (sin él, el preset global de siempre), `TAREAS.planEdl` en gemini.js
+  y `auditarPlanLegado` enganchada en `server.js` justo tras `insertarMaterialesEnPlan` **solo registrando**
+  (`🔎 Auditoría del plan`), nunca cambia el plan ni detiene el render. 60 pruebas verdes.
+  La tipografía de los overlays es provisional (Arial Bold del sistema u `OVERLAY_FUENTE`/Anton si ya
+  está en `temp-videos/fuentes`); el diseño final espera la elección de estilos del usuario.
+- **Pendiente** (días 25+): conectar `aspect`/`fuenteTipo`/recetas desde `server.js` (flag opt-in "plan por
+  recetas"), `ranking_item` con render propio, compilación 16:9 de ≥30 clips (medir RAM y tiempo),
+  llamada real a Gemini con `planificarEdl` (cuenta cuota: medir tokens), prueba de 5 estilos animados.
 - La app ya usa `eleven_v4_turbo` para la locución (commit `0e772cf`); la prueba ciega del usuario
   (2026-11-21) confirmó v4 y v4 Turbo empatados, v3/Flash/Multilingual v2 por debajo.
 

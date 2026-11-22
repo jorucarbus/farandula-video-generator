@@ -11,6 +11,7 @@ const ajusteDuracion = require('./ajusteDuracion');
 const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
 const video = require('./video');
+const { auditarPlanLegado } = require('./edl/edlValidator');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
@@ -2302,6 +2303,16 @@ async function renderizarVideo(params, renderId) {
     const planBase = seleccion.planificarClips(fragmentsRender, durAudio, inventario, duracionesParaPlan, clipMaxEfectivo);
     const plan = seleccion.insertarMaterialesEnPlan(planBase, materialesPorFragmento);
     const clipsValidos = plan.filter(Boolean);
+    // Auditoría del plan con las mismas cuentas del validador de la EDL (V2/V3/V4). SOLO REGISTRA:
+    // nunca cambia el plan ni detiene el render (la guarda dura vive en video.montarVideoPlan).
+    try {
+      const aud = auditarPlanLegado(plan, efectos || {}, durAudio);
+      console.log(aud.errores.length || aud.avisos.length
+        ? `  🔎 Auditoría del plan: ${aud.errores.length} error(es), ${aud.avisos.length} aviso(s): ${[...aud.errores, ...aud.avisos].map(x => `${x.regla}${x.shot ? ' ' + x.shot : ''} ${x.mensaje}`).slice(0, 4).join(' | ')}`
+        : `  🔎 Auditoría del plan: ${aud.clips} clips sin violaciones (V2/V3/V4)`);
+    } catch (e) {
+      console.warn(`  ⚠️ La auditoría del plan falló (no afecta al render): ${e.message}`);
+    }
     console.log(`  🎯 Plan: ${clipsValidos.length} clips (${[...new Set(clipsValidos.map(c => c.videoId))].length} videos distintos)${transicionActiva ? `, CLIP_MAX efectivo ${clipMaxEfectivo.toFixed(2)}s (transiciones activas)` : ''}${materialesPorFragmento.size ? `, ${materialesPorFragmento.size} con material adicional` : ''}`);
 
     // 4. Descargar los videos únicos del plan — los materiales adicionales ya están en disco
