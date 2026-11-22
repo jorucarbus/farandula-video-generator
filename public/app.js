@@ -4514,14 +4514,20 @@ function mostrarVista(vista) {
 }
 
 // El rango se calcula en la hora LOCAL del navegador: "hoy" es el día del usuario, no el del servidor.
+// Desde cuándo cuenta "Por publicar": el día en que se pidió (hora de Ecuador). Lo anterior nunca se marcó.
+const PENDIENTES_DESDE = '2026-11-21T00:00:00-05:00';
+
 function rangoPublicar() {
-    const cual = document.getElementById('publicar-rango')?.value || 'hoy';
+    const cual = document.getElementById('publicar-rango')?.value || 'pendientes';
     const inicioDeHoy = new Date();
     inicioDeHoy.setHours(0, 0, 0, 0);
     const DIA = 24 * 3600 * 1000;
     if (cual === 'ayer') return { desde: new Date(inicioDeHoy - DIA), hasta: new Date(inicioDeHoy - 1) };
     if (cual === 'semana') return { desde: new Date(inicioDeHoy - 6 * DIA), hasta: new Date() };
-    if (cual === 'pendientes') return { desde: new Date(inicioDeHoy - 29 * DIA), hasta: new Date() };
+    // "Por publicar" no tiene límite de días: un video sigue en la lista hasta que se marca como
+    // publicado (pedido del usuario, 2026-11-21: "que sigan hasta que presione publicar"). Arranca en
+    // ese día para no traer de golpe todos los videos anteriores, que nunca se marcaron.
+    if (cual === 'pendientes') return { desde: new Date(PENDIENTES_DESDE), hasta: new Date() };
     return { desde: inicioDeHoy, hasta: new Date() };
 }
 
@@ -4669,7 +4675,7 @@ function actualizarResumenPublicar() {
     const total = document.querySelectorAll('#publicar-lista .publicar-video:not(.publicado)').length;
     const canales = document.querySelectorAll('#publicar-lista .publicar-canal').length;
     const contador = document.getElementById('publicar-contador');
-    if (contador && (document.getElementById('publicar-rango')?.value || 'hoy') === 'hoy') {
+    if (contador && (document.getElementById('publicar-rango')?.value || 'pendientes') === 'pendientes') {
         contador.textContent = total;
         contador.classList.toggle('hidden', !total);
     }
@@ -4692,9 +4698,9 @@ async function cargarPublicar() {
         // "Pendientes" nunca muestra publicados: para eso está la casilla.
         const videos = verPublicados ? todos : todos.filter(v => !v.publicado);
         lista.innerHTML = '';
-        // La insignia de la pestaña cuenta solo lo de HOY que falta publicar, sin importar el rango elegido.
+        // La insignia de la pestaña cuenta todo lo que falta publicar (con el rango "Por publicar").
         const contador = document.getElementById('publicar-contador');
-        if (contador && (document.getElementById('publicar-rango')?.value || 'hoy') === 'hoy') {
+        if (contador && (document.getElementById('publicar-rango')?.value || 'pendientes') === 'pendientes') {
             const pendientes = todos.filter(v => !v.publicado).length;
             contador.textContent = pendientes;
             contador.classList.toggle('hidden', !pendientes);
