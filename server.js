@@ -101,6 +101,14 @@ function guardarCartelPNG(dataUrl, renderId) {
 // `fragments`, `audioToken`, …) y el B cuelga de `job.gemela`. Esa asimetría es a propósito: el
 // historial, el banner de "continuar donde quedó" y los jobs viejos siguen funcionando sin tocar
 // una línea, y solo lo nuevo es nuevo.
+// El nombre de carpeta que hay HOY en Drive para un famoso. Si `nombre` ya no existe (se renombró la
+// carpeta), se busca la que suena igual; null si no hay ninguna clara.
+function carpetaVigente(nombre, mapaCarpetas) {
+  if (mapaCarpetas[nombre]) return nombre;
+  const r = famosos.cotejar(famosos.nombreDeCarpeta(nombre), Object.keys(mapaCarpetas));
+  return r.carpeta && r.confianza === 'alta' && mapaCarpetas[r.carpeta] ? r.carpeta : null;
+}
+
 function guardarEnVariante(jobId, variante, cambios, comunes = {}) {
   if (variante !== 'B') return jobStore.actualizarJob(jobId, { ...cambios, ...comunes });
   const actual = jobStore.obtenerJob(jobId)?.gemela || {};
@@ -2280,10 +2288,13 @@ async function renderizarVideo(params, renderId) {
 
     const inventario = {};
     for (const nombre of nombresNecesarios) {
-      const folderId = mapaCarpetas[nombre];
+      // Una carpeta renombrada en Drive se sigue encontrando por cómo suena ("katy_Carrdona" →
+      // "katy_Cardona"): un proceso armado antes del cambio no se queda sin tomas de esa persona.
+      const vigente = carpetaVigente(nombre, mapaCarpetas);
+      const folderId = vigente ? mapaCarpetas[vigente] : null;
       if (folderId) {
         inventario[nombre] = await driveHelper.listarVideos(folderId);
-        console.log(`  📂 ${nombre}: ${inventario[nombre].length} videos`);
+        console.log(`  📂 ${nombre}${vigente !== nombre ? ` (ahora "${vigente}")` : ''}: ${inventario[nombre].length} videos`);
       } else {
         console.warn(`  ⚠️ Carpeta no encontrada: ${nombre}`);
         inventario[nombre] = [];
@@ -2839,10 +2850,13 @@ app.post('/api/exportar', async (req, res) => {
     const nombresNecesarios = [...new Set(fragments.map(f => f.famoso))];
     const inventario = {};
     for (const nombre of nombresNecesarios) {
-      const folderId = mapaCarpetas[nombre];
+      // Una carpeta renombrada en Drive se sigue encontrando por cómo suena ("katy_Carrdona" →
+      // "katy_Cardona"): un proceso armado antes del cambio no se queda sin tomas de esa persona.
+      const vigente = carpetaVigente(nombre, mapaCarpetas);
+      const folderId = vigente ? mapaCarpetas[vigente] : null;
       if (folderId) {
         inventario[nombre] = await driveHelper.listarVideos(folderId);
-        console.log(`  📂 ${nombre}: ${inventario[nombre].length} videos`);
+        console.log(`  📂 ${nombre}${vigente !== nombre ? ` (ahora "${vigente}")` : ''}: ${inventario[nombre].length} videos`);
       } else {
         console.warn(`  ⚠️ Carpeta no encontrada: ${nombre}`);
         inventario[nombre] = [];

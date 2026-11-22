@@ -177,6 +177,84 @@ function nombreDeCarpeta(carpeta) {
   return String(carpeta || '').replace(/_/g, ' ').trim();
 }
 
+// Pone la tabla al día con las carpetas que EXISTEN hoy en Drive.
+//
+// Por qué (2026-11-21): el usuario renombra carpetas en Drive ("katy_Carrdona" pasó a "katy_Cardona"),
+// pero la tabla recordaba el nombre viejo, y como lo aprendido gana en `cotejar`, el famoso se seguía
+// asignando a una carpeta que ya no existe — el video se quedaba sin tomas de esa persona.
+//
+// Para cada famoso cuya carpeta ya no está:
+//   - si hay UNA carpeta que suena igual (misma clave fonética, o a un solo sonido de distancia),
+//     se apunta a esa, y si la ortografía guardada era la de la carpeta vieja, se corrige también;
+//   - si no hay ninguna, se borra la carpeta guardada: mejor que el cotejo normal busque de nuevo a
+//     que siga mandando a una carpeta muerta.
+// Con una lista sospechosamente corta (Drive respondió a medias) no se toca nada.
+let _ultimaListaSincronizada = null;
+function sincronizarConCarpetas(carpetas) {
+  if (!Array.isArray(carpetas) || carpetas.length < 50) return 0;
+  if (carpetas === _ultimaListaSincronizada) return 0;
+  _ultimaListaSincronizada = carpetas;
+  const existentes = new Set(carpetas);
+  const porClave = new Map();
+  for (const c of carpetas) {
+    const k = claveFonetica(c);
+    if (!k) continue;
+    if (!porClave.has(k)) porClave.set(k, []);
+    porClave.get(k).push(c);
+  }
+  const tabla = cargar();
+  let cambios = 0;
+  for (const [clave, v] of Object.entries({ ...tabla })) {
+    if (!v?.carpeta || existentes.has(v.carpeta)) continue;
+    const vieja = v.carpeta;
+    const claveVieja = claveFonetica(vieja);
+    let nueva = null;
+    const mismas = porClave.get(claveVieja) || porClave.get(claveFonetica(v.escribir)) || [];
+    if (mismas.length === 1) {
+      nueva = mismas[0];
+    } else if (!mismas.length) {
+      const cerca = [...porClave.entries()].filter(([k]) => distancia(claveVieja, k) <= 1).flatMap(([, cs]) => cs);
+      if (cerca.length === 1) nueva = cerca[0];
+      // Carpeta acortada o alargada: "Tamara_Rivera(La_Tamarita-Tammy)" pasó a "Tammy_Rivera". Vale si
+      // TODAS las palabras de una (al menos dos) están en la otra, y hay un solo candidato así.
+      if (!nueva) {
+        const palabrasViejas = new Set(claveVieja.split(' ').filter(Boolean));
+        const contenidas = [...porClave.entries()].filter(([k]) => {
+          const suyas = k.split(' ').filter(Boolean);
+          if (suyas.length < 2) return false;
+          return suyas.every(w => palabrasViejas.has(w)) || ([...palabrasViejas].length >= 2 && [...palabrasViejas].every(w => suyas.includes(w)));
+        }).flatMap(([, cs]) => cs);
+        if (contenidas.length === 1) nueva = contenidas[0];
+      }
+    }
+    if (nueva) {
+      v.carpeta = nueva;
+      // La ortografía guardada salió del nombre de la carpeta vieja: se corrige con la nueva, y la
+      // vieja queda como alias (así se reconoce si vuelve a aparecer en una lectura).
+      if (nombreDeCarpeta(vieja).toLowerCase() === String(v.escribir || '').toLowerCase()) {
+        if (!Array.isArray(v.alias)) v.alias = [];
+        if (!v.alias.includes(v.escribir)) v.alias.push(v.escribir);
+        v.escribir = nombreDeCarpeta(nueva);
+        const claveNueva = claveFonetica(v.escribir);
+        if (claveNueva && claveNueva !== clave) {
+          delete tabla[clave];
+          const previo = tabla[claveNueva];
+          tabla[claveNueva] = previo
+            ? { ...previo, carpeta: previo.carpeta || nueva, alias: [...new Set([...(previo.alias || []), ...v.alias])] }
+            : v;
+        }
+      }
+      console.log(`🗂️ Carpeta renombrada en Drive: "${vieja}" ahora es "${nueva}" (tabla de famosos actualizada)`);
+    } else {
+      v.carpeta = null;
+      console.log(`🗂️ La carpeta "${vieja}" ya no existe en Drive y no hay una equivalente: se olvida y se vuelve a buscar`);
+    }
+    cambios++;
+  }
+  if (cambios) guardar();
+  return cambios;
+}
+
 // Compara un nombre leído contra el catálogo de carpetas de Drive.
 //   confianza 'alta'  → misma clave fonética (o todas sus palabras calzan): se corrige solo
 //   confianza 'media' → a un solo sonido de distancia: se sugiere, decide el usuario
@@ -187,9 +265,15 @@ function cotejar(nombre, carpetas = []) {
   const vacio = { leido, sugerido: leido, carpeta: null, confianza: null, decir: null };
   if (!clave) return vacio;
 
+  // Antes de usar lo aprendido, la tabla se pone al día con las carpetas que existen hoy.
+  sincronizarConCarpetas(carpetas);
+
   // Lo aprendido gana: si el usuario ya corrigió este nombre alguna vez, no se vuelve a preguntar.
+  // Salvo que no tenga una carpeta que exista hoy: ahí se coteja de nuevo contra Drive (conservando
+  // cómo se pronuncia). Antes, un famoso aprendido SIN carpeta nunca se volvía a buscar.
   const conocido = buscar(leido);
-  if (conocido) {
+  const carpetaViva = Boolean(conocido?.carpeta && carpetas.includes(conocido.carpeta));
+  if (conocido && (carpetaViva || !carpetas.length)) {
     return { leido, sugerido: conocido.escribir, carpeta: conocido.carpeta || null, confianza: 'alta', decir: conocido.decir || null };
   }
 
@@ -197,7 +281,7 @@ function cotejar(nombre, carpetas = []) {
 
   const exacta = candidatos.find(c => c.clave === clave);
   if (exacta) {
-    return { leido, sugerido: nombreDeCarpeta(exacta.carpeta), carpeta: exacta.carpeta, confianza: 'alta', decir: null };
+    return { leido, sugerido: nombreDeCarpeta(exacta.carpeta), carpeta: exacta.carpeta, confianza: 'alta', decir: conocido?.decir || null };
   }
 
   // Nombre parcial: "Fátima" contra la carpeta "Fatima_Bosch". Solo cuenta si TODAS las palabras
@@ -209,7 +293,7 @@ function cotejar(nombre, carpetas = []) {
     return palabras.every(p => suyas.includes(p));
   });
   if (porPalabras.length === 1) {
-    return { leido, sugerido: nombreDeCarpeta(porPalabras[0].carpeta), carpeta: porPalabras[0].carpeta, confianza: 'alta', decir: null };
+    return { leido, sugerido: nombreDeCarpeta(porPalabras[0].carpeta), carpeta: porPalabras[0].carpeta, confianza: 'alta', decir: conocido?.decir || null };
   }
 
   let mejor = null;
@@ -218,7 +302,7 @@ function cotejar(nombre, carpetas = []) {
     if (d <= 1 && (!mejor || d < mejor.d)) mejor = { ...c, d };
   }
   if (mejor) {
-    return { leido, sugerido: nombreDeCarpeta(mejor.carpeta), carpeta: mejor.carpeta, confianza: 'media', decir: null };
+    return { leido, sugerido: nombreDeCarpeta(mejor.carpeta), carpeta: mejor.carpeta, confianza: 'media', decir: conocido?.decir || null };
   }
 
   return vacio;
@@ -350,7 +434,7 @@ function aplicarPronunciacion(texto, mapa) {
 }
 
 module.exports = {
-  claveFonetica, distancia, cotejar, nombreDeCarpeta,
+  claveFonetica, distancia, cotejar, nombreDeCarpeta, sincronizarConCarpetas,
   cargar, guardar, buscar, registrar, reemplazarEn,
   mapaPronunciacion, aplicarPronunciacion, hablar, clavePalabra,
   TABLA_PATH, NOMBRE_DRIVE, FINALES_VALIDAS,
