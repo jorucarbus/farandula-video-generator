@@ -28,11 +28,14 @@ Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se e
   `efectos.overlays: [{path,t0,t1,x?,y?}]` con `enable='between(t,a,b)'` (si fallan, el video sale sin
   ellos), y subtítulos con `opciones.aspect` (16:9 con valores PROVISIONALES: tamaño 96, margen 80).
   34 pruebas verdes. Sin tocar: `exportar.js:30` (insumos, siempre 9:16) ni el cableado de `server.js`.
-- **⚠️ La carpeta `D:\claude pro apps\farandula-video-generator` es la APP VIVA del usuario** (el servidor
-  de la PC corre desde ahí y escribe `historial.json`/`jobs.json` mientras se trabaja). Por eso el trabajo
-  del motor EDL se hace en un **worktree**: `C:\Users\jorucarbus\worktrees\farandula-edl` (rama
-  `feat/edl-motor`, con su propio `node_modules`). La carpeta original se deja en `test-persistencia`.
-  Los hashes de `historial.json`/`jobs.json` ya NO son una invariante mientras la app esté en uso.
+- **⚠️ ESTE ES UN PROYECTO APARTE de la app de videos.** La carpeta `D:\claude pro apps\farandula-video-generator`
+  es la APP VIVA del usuario (el servidor de la PC corre ahí, otra sesión de Claude trabaja ahí y el usuario
+  produce videos): **no editar, no cambiar de rama, no instalar nada en esa carpeta.** El motor EDL vive en
+  este clon propio, `C:\Users\jorucarbus\proyectos\farandula-motor-edl` (rama `feat/edl-motor`, su propio
+  `.git` y `node_modules`). Su `.env` es una copia con las MISMAS claves de API/Drive, pero con los destinos
+  de escritura apagados (`#DESACTIVADA_...`: hoja de publicaciones, carpetas de renders e insumos,
+  `RENDERS_LOCAL_PATH`), `PORT=3001`, `MODO_RESPALDO=1` y datos propios en `data-motor/`. Para integrar
+  algo en la app viva hay que pedírselo al usuario y hacerlo vía rama/PR, nunca editando esa carpeta.
 - **Pendiente** (días 24+): recetas `clip_kenburns`/`hook_cold_open`/`source_lowerthird`/`rumor_stamp`,
   `planificadorLLM`, enganche del validador en `renderizarVideo` (`server.js`, solo en modo registro),
   pasar `aspect` y `fuenteTipo` desde `server.js`, compilación 16:9 de ≥30 clips (medir RAM).
