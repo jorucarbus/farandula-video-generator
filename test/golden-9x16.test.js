@@ -12,6 +12,7 @@ const { llamadas, normalizar } = require('./helpers/captura-ffmpeg');
 const ffmpegBin = require('ffmpeg-static');
 const ffprobeBin = require('ffprobe-static').path;
 const video = require('../video');
+fs.mkdirSync(video.TEMP_DIR, { recursive: true }); // temp-videos no está en git: en un checkout limpio no existe
 
 const GOLDEN = path.join(__dirname, 'golden', 'args-9x16.json');
 
