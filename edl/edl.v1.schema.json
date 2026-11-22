@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "edl.v1.schema.json",
+  "title": "EDL v1 (lista de edición) del motor de video de farándula",
+  "description": "El LLM solo emite este JSON: elige 'recipe' y rellena 'params'. Nunca escribe ffmpeg, HTML ni bpy. Cada shot lleva 'clip' con los campos del plan[] legado (superconjunto, no reemplazo).",
+  "type": "object",
+  "required": ["edl_version", "id", "aspect", "fps", "audio", "shots"],
+  "additionalProperties": false,
+  "properties": {
+    "edl_version": { "const": "1" },
+    "id": { "type": "string", "minLength": 1 },
+    "jobId": { "type": ["string", "null"] },
+    "aspect": { "enum": ["9:16", "16:9"] },
+    "fps": { "enum": [24, 30] },
+    "resolucion": {
+      "type": "object",
+      "required": ["w", "h"],
+      "additionalProperties": false,
+      "properties": { "w": { "type": "integer" }, "h": { "type": "integer" } }
+    },
+    "audio": {
+      "type": "object",
+      "required": ["duracion_s"],
+      "additionalProperties": false,
+      "properties": {
+        "token": { "type": "string" },
+        "duracion_s": { "type": "number", "exclusiveMinimum": 0 },
+        "voz_id": { "type": "string" }
+      }
+    },
+    "musica": {
+      "type": ["object", "null"],
+      "properties": { "pista": { "type": "string" }, "ganancia_db": { "type": "number" } }
+    },
+    "subtitulos": {
+      "type": "object",
+      "properties": { "estilo": { "type": "string" }, "posicion": { "enum": ["abajo", "centro", "arriba"] } }
+    },
+    "transicion_default": { "$ref": "#/$defs/transicion" },
+    "transicion_preset": {
+      "description": "Mismo vocabulario que efectos.transicion de montarVideoPlan. Si está, decide qué cortes llevan transición con decidirEfecto() (la misma función del render) y usa transicion_default.dur.",
+      "enum": ["todos", "alternado", "intercalado", "ninguno"]
+    },
+    "ai_realistic": { "type": "boolean", "description": "El video contiene imagen o voz sintética con apariencia realista (declaración de contenido alterado)." },
+    "shots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/shot" } }
+  },
+  "$defs": {
+    "transicion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "enum": ["corte", "fade", "whip", "xfade_aleatorio"] },
+        "dur": { "type": "number", "minimum": 0.1, "maximum": 0.6 }
+      }
+    },
+    "fuente": {
+      "type": "object",
+      "required": ["tipo"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "enum": ["tercero", "propio", "generado", "cc0", "licenciado"] },
+        "licencia": { "type": "string" },
+        "autor": { "type": "string" },
+        "url": { "type": "string" },
+        "fecha_acceso": { "type": "string", "format": "date" }
+      }
+    },
+    "certeza": {
+      "type": "object",
+      "required": ["nivel"],
+      "additionalProperties": false,
+      "properties": {
+        "nivel": { "enum": ["confirmado", "reportado", "rumor"] },
+        "atribucion": { "type": ["string", "null"] },
+        "fuente_url": { "type": ["string", "null"] }
+      }
+    },
+    "elemento": {
+      "type": "object",
+      "required": ["tipo", "t0", "t1"],
+      "additionalProperties": false,
+      "properties": {
+        "tipo": { "enum": ["lower_third", "sello", "cita", "numero", "titulo", "flecha", "logo"] },
+        "t0": { "type": "number", "minimum": 0 },
+        "t1": { "type": "number" },
+        "texto": { "type": "string" },
+        "estilo": { "type": "string" },
+        "pos": { "enum": ["sup", "centro", "inf", "izq", "der"] },
+        "motor": { "enum": ["ffmpeg", "remotion", "hyperframes"] }
+      }
+    },
+    "shot": {
+      "type": "object",
+      "required": ["id", "duracion", "recipe"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "orden": { "type": "integer" },
+        "duracion": { "type": "number", "exclusiveMinimum": 0 },
+        "recipe": { "type": "string", "minLength": 1 },
+        "params": { "type": "object" },
+        "clip": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "videoId": { "type": "string" },
+            "famoso": { "type": "string" },
+            "offset": { "type": "number", "minimum": 0 },
+            "duracion": { "type": "number" },
+            "esImagen": { "type": "boolean" },
+            "parrafoIdx": { "type": "integer" },
+            "tipo_imagen": { "enum": ["captura_texto", "foto_persona"] }
+          }
+        },
+        "fuente": { "$ref": "#/$defs/fuente" },
+        "camara": {
+          "type": "object",
+          "properties": {
+            "mov": { "enum": ["estatico", "push_in", "pull_out", "pan_izq", "pan_der", "parallax", "handheld"] },
+            "intensidad": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "luz": {
+          "type": "object",
+          "properties": {
+            "preset": { "enum": ["natural", "tres_puntos", "contraluz", "alto_key", "bajo_key", "neon"] },
+            "intensidad": { "type": "number" }
+          }
+        },
+        "elementos": { "type": "array", "items": { "$ref": "#/$defs/elemento" } },
+        "sfx": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["t", "id"],
+            "additionalProperties": false,
+            "properties": { "t": { "type": "number" }, "id": { "type": "string" }, "gain_db": { "type": "number" } }
+          }
+        },
+        "certeza": { "$ref": "#/$defs/certeza" },
+        "transicion": { "$ref": "#/$defs/transicion" },
+        "locucion": {
+          "type": "object",
+          "properties": { "texto_tts": { "type": "string" }, "texto_pantalla": { "type": "string" } }
+        },
+        "sensitive_flag": { "enum": ["ninguno", "delito", "salud", "menor", "sexual"] },
+        "source_outlet": { "type": "string" },
+        "source_date": { "type": "string", "format": "date" },
+        "rights_holder": { "type": "string" },
+        "audio_third_party": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,5 +1,31 @@
 # Claude Code Setup — Farandula Video Generator
 
+## 🟢 2026-11-21 — Motor EDL, día 22: pruebas aisladas + validador (rama `feat/edl-motor`, NO desplegada)
+
+Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se empujó a
+`test-persistencia` ni se desplegó. Plan y notas de investigación fuera del repo:
+`D:\claude pro apps\proyecto-agente-video\investigacion\` (leer `00c-ADENDA-OLEADA-2.md` y `16-plan-v4.md`).
+
+- **Respaldo de datos reales** antes de empezar: `C:\Users\jorucarbus\backups-farandula\2026-11-21\`
+  (E: no estaba conectado) con `historial.json`, `data/jobs.json`, `data/respaldo-local` y sus `sha256`.
+- **Pruebas** (`npm test`, `node --test`): golden file de los argumentos ffmpeg del render 9:16
+  (`test/golden/args-9x16.json`, medios sintéticos), aislamiento de datos y validador de la EDL.
+- **Aislamiento**: `seleccion.js` y `jobStore.js` aceptan `HISTORIAL_PATH` / `JOBS_PATH` (sin ellas, las
+  rutas son las de siempre). `test/helpers/aislar.js` redirige a un temporal, reemplaza `driveCache` por
+  un cliente falso y se niega a seguir si esos módulos ya se cargaron. **Regla: toda prueba que importe
+  `seleccion`, `jobStore` o `driveCache` llama a `aislar()` ANTES del primer `require`.**
+- **EDL v1** (`edl/edl.v1.schema.json`, `edl/edlValidator.js`): V1 schema, V2 regla de 3 s, V3 mínimo 0,7 s,
+  V4 suma = audio, V5 resolución, V6 atribución, V7 certeza. `video.js` ahora exporta `esLimiteDeTanda` y
+  `TANDA_MAX` (sin cambiar lógica) para que el validador use la MISMA cuenta de padding que el render.
+- **Alcance de la regla de 3 s (decisión del usuario, 2026-11-21)**: aplica SOLO a tomas de VIDEO de
+  terceros (`fuente.tipo` tercero/licenciado y `clip.esImagen` falso). Lo generado en la PC y las
+  fotos/capturas no tienen tope; las fotos deben moverse un poco (`clip.tipo_imagen`: `captura_texto` o
+  `foto_persona`). **No subir `CLIP_MAX` ni quitar la guarda por toma.**
+- **Pendiente** (días 23+): `edlAPlan`, `planFormato` + parametrizar 1080x1920 (`video.js:220`, `:491`,
+  `exportar.js:30`, subtítulos), guardia `necesita > 3.001` en `video.js:475`, overlay PNG único.
+- La app ya usa `eleven_v4_turbo` para la locución (commit `0e772cf`); la prueba ciega del usuario
+  (2026-11-21) confirmó v4 y v4 Turbo empatados, v3/Flash/Multilingual v2 por debajo.
+
 ## 🔴 CIERRE 2026-08-27 — variedad de guiones, IMPLEMENTADO (supersede lo anterior)
 
 El usuario pidió ejecutar todo el diseño de variedad "sin preguntarme nada, con todos los permisos

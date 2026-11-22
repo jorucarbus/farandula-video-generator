@@ -714,6 +714,10 @@ module.exports = {
   detectarEncoder,
   argsEncoder,
   decidirEfecto,
+  // Exportada sin cambiar su lógica: el validador de la EDL tiene que calcular el padding de cada
+  // clip con la MISMA función que el render, o discreparía (ver montarVideoPlan).
+  esLimiteDeTanda,
+  TANDA_MAX,
   filtroZoom,
   // Exportadas para poder verificar el arreglo del color sin montar un render entero.
   infoColor,

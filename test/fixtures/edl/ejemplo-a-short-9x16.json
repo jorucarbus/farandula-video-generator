@@ -1,0 +1,37 @@
+{
+  "edl_version": "1",
+  "id": "edl_demo_short",
+  "jobId": "8f1c0000",
+  "aspect": "9:16",
+  "fps": 30,
+  "resolucion": { "w": 1080, "h": 1920 },
+  "audio": { "token": "a_123", "duracion_s": 10.0 },
+  "transicion_default": { "tipo": "fade", "dur": 0.35 },
+  "shots": [
+    {
+      "id": "s1", "orden": 1, "duracion": 2.4, "recipe": "hook_cold_open",
+      "params": { "titulo": "LO QUE NADIE VIO", "resaltar": "NADIE" },
+      "clip": { "videoId": "drv_abc", "famoso": "Shakira", "offset": 12.0, "duracion": 2.4 },
+      "fuente": { "tipo": "tercero", "licencia": "uso_legitimo_cita", "autor": "Canal X", "url": "https://ejemplo.test/x", "fecha_acceso": "2026-11-21" },
+      "camara": { "mov": "push_in", "intensidad": 0.6 },
+      "luz": { "preset": "natural" },
+      "certeza": { "nivel": "confirmado", "fuente_url": "https://ejemplo.test/x" },
+      "sfx": [{ "t": 0.0, "id": "hit_corto", "gain_db": -12 }]
+    },
+    {
+      "id": "s2", "orden": 2, "duracion": 2.4, "recipe": "clip_kenburns",
+      "params": { "dir": "out", "pct": 15 },
+      "clip": { "videoId": "drv_def", "famoso": "Piqué", "offset": 3.0, "duracion": 2.4 },
+      "fuente": { "tipo": "tercero", "licencia": "uso_legitimo_cita", "autor": "Canal Y", "url": "https://ejemplo.test/y", "fecha_acceso": "2026-11-21" },
+      "elementos": [{ "tipo": "lower_third", "t0": 0.2, "t1": 2.2, "texto": "Según Medio Z, 3 may", "motor": "ffmpeg" }],
+      "certeza": { "nivel": "reportado", "atribucion": "Medio Z", "fuente_url": "https://ejemplo.test/z" }
+    },
+    {
+      "id": "s3", "orden": 3, "duracion": 5.2, "recipe": "rumor_stamp",
+      "params": { "texto": "RUMOR SIN CONFIRMAR" },
+      "clip": { "videoId": "foto_01", "famoso": "Piqué", "offset": 0, "duracion": 5.2, "esImagen": true, "tipo_imagen": "foto_persona" },
+      "fuente": { "tipo": "cc0", "licencia": "CC0", "autor": "Wikimedia", "url": "https://ejemplo.test/w" },
+      "certeza": { "nivel": "rumor", "atribucion": "circula en redes, no confirmado" }
+    }
+  ]
+}

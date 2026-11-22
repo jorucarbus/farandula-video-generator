@@ -1,0 +1,38 @@
+{
+  "edl_version": "1",
+  "id": "edl_demo_ranking",
+  "aspect": "16:9",
+  "fps": 30,
+  "resolucion": { "w": 1920, "h": 1080 },
+  "audio": { "duracion_s": 12.0 },
+  "transicion_default": { "tipo": "corte", "dur": 0.1 },
+  "shots": [
+    {
+      "id": "r1", "orden": 1, "duracion": 3.0, "recipe": "ranking_item",
+      "params": { "numero": 3, "titulo": "El beso de la gala", "fit": "contain_blur" },
+      "clip": { "videoId": "drv_1", "famoso": "A", "offset": 5.0, "duracion": 3.0 },
+      "fuente": { "tipo": "tercero", "licencia": "uso_legitimo_cita", "autor": "Canal 1", "url": "https://ejemplo.test/1", "fecha_acceso": "2026-11-21" },
+      "elementos": [{ "tipo": "numero", "t0": 0, "t1": 3.0, "texto": "3", "motor": "ffmpeg" }],
+      "certeza": { "nivel": "confirmado", "fuente_url": "https://ejemplo.test/1" }
+    },
+    {
+      "id": "r2", "orden": 2, "duracion": 3.0, "recipe": "ranking_item",
+      "params": { "numero": 2, "titulo": "La entrevista", "fit": "contain_blur" },
+      "clip": { "videoId": "drv_2", "famoso": "B", "offset": 0.0, "duracion": 3.0 },
+      "fuente": { "tipo": "tercero", "licencia": "uso_legitimo_cita", "autor": "Canal 2", "url": "https://ejemplo.test/2", "fecha_acceso": "2026-11-21" },
+      "certeza": { "nivel": "confirmado" }
+    },
+    {
+      "id": "r3", "orden": 3, "duracion": 3.0, "recipe": "ranking_item",
+      "params": { "numero": 1, "titulo": "El anuncio", "fit": "contain_blur" },
+      "clip": { "videoId": "drv_3", "famoso": "C", "offset": 7.0, "duracion": 3.0 },
+      "fuente": { "tipo": "tercero", "licencia": "uso_legitimo_cita", "autor": "Canal 3", "url": "https://ejemplo.test/3", "fecha_acceso": "2026-11-21" },
+      "certeza": { "nivel": "reportado", "atribucion": "Medio Z" }
+    },
+    {
+      "id": "r4", "orden": 4, "duracion": 3.0, "recipe": "split_compare",
+      "params": { "izq": "r1", "der": "r3" },
+      "fuente": { "tipo": "generado", "licencia": "propio" }
+    }
+  ]
+}
