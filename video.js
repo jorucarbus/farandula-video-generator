@@ -1,6 +1,7 @@
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { planFormato } = require('./edl/planFormato');
 
 // Binarios estáticos de npm: no dependen del PATH del sistema (en Railway/Nixpacks
 // ffmpeg/ffprobe no llegan al runtime → spawn ENOENT). Se llaman por ruta absoluta.
@@ -207,7 +208,8 @@ function decidirEfecto(preset, index) {
 // min(...,1) al final: si el clip se corta más largo que duracionClip (cola extra para una
 // transición xfade, Fase 7), el zoom no se pasa del factor pedido — se sostiene en el 100%
 // final durante esa cola, que es justo lo que conviene para la mezcla.
-function filtroZoom(direccion, pct, duracionClip) {
+// `tamano` ("WxH") sale de planFormato; el default es el 9:16 de siempre.
+function filtroZoom(direccion, pct, duracionClip, tamano = '1080x1920') {
   const frames = Math.max(2, Math.round(duracionClip * FPS_EFECTOS));
   const factor = Math.max(0, pct) / 100;
   const progreso = `(1-pow(1-min(on/${frames},1),3))`;
@@ -217,7 +219,7 @@ function filtroZoom(direccion, pct, duracionClip) {
   // d DEBE ser un entero de frames. d=1 = 1 frame de salida por frame de entrada
   // (zoom suave sobre el video). d=decimal (ej. d=2.456) rompe con -22 "Invalid
   // argument" en ffmpeg estricto (Railway); d=frames congela el clip (imagen fija).
-  return `zoompan=z='${expr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=${FPS_EFECTOS}`;
+  return `zoompan=z='${expr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${tamano}:fps=${FPS_EFECTOS}`;
 }
 
 // ---- Transiciones entre clips (Fase 7) ----
@@ -255,6 +257,11 @@ function elegirTransicion(tipo) {
 // silencio a cortes secos, sin que el usuario supiera por qué. 10 clips en una sola cadena
 // verificado real: 9.2s, sin problema. Por eso el plan se corta en TANDAS (ver renderizarPorTandas).
 const TANDA_MAX = 10;
+
+// Límite legal por toma de video de terceros (el mismo que seleccion.CLIP_MAX). Se repite acá a
+// propósito: video.js no importa seleccion (arrastraría historial.json y Drive a las pruebas).
+const LIMITE_TOMA_AJENA = 3;
+const FUENTES_SIN_LIMITE = new Set(['propio', 'generado', 'cc0']);
 
 // true si el corte k (entre clip k y k+1) cae justo en el borde de una tanda — ahí NUNCA hay
 // transición (cada tanda se renderiza por separado), así que ese clip no necesita la cola de
@@ -393,6 +400,8 @@ async function renderizarPorTandas(segmentos, duracionesVisibles, outPath, opts,
 // — las transiciones NO acortan esa suma, solo agregan metraje extra por debajo (ver más abajo).
 async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, avisar = null) {
   const enc = argsEncoder(await detectarEncoder());
+  // Formato de salida: sin efectos.aspect es 9:16, idéntico al render de siempre.
+  const formato = planFormato(efectos.aspect);
   const zoomPreset = efectos.zoom || 'ninguno';
   const espejoPreset = efectos.espejo || 'ninguno';
   const zoomPct = Number.isFinite(efectos.zoomPct) ? efectos.zoomPct : 20;
@@ -473,6 +482,14 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     const activaTransicion = !esUltimo && transPreset !== 'ninguno' && decidirEfecto(transPreset, k).activo && !esLimiteDeTanda(k);
     const padding = activaTransicion ? transDur : 0;
     const necesita = clip.duracion + padding;
+    // ÚLTIMO GUARDIA del límite legal de 3 s (uso legítimo del material ajeno): ninguna capa
+    // nueva puede hacer que se lea más de eso de un video de tercero sin que alguien lo vea.
+    // Solo video ajeno: las imágenes y lo propio/generado no entran (clip.fuenteTipo lo marca; sin
+    // marca se asume ajeno, igual que el validador de la EDL).
+    if (!clip.esImagen && !FUENTES_SIN_LIMITE.has(clip.fuenteTipo) && necesita > LIMITE_TOMA_AJENA + 0.001) {
+      throw new Error(`Toma ${i} de video de tercero lee ${necesita.toFixed(3)} s continuos (máx. ${LIMITE_TOMA_AJENA}): `
+        + `duración ${clip.duracion} s + ${padding} s de cola de transición. Revisar CLIP_MAX/transición.`);
+    }
 
     let offsetEfectivo = clip.offset;
     // Material adicional, foto de apoyo: es una imagen estática, no tiene "offset" ni duración
@@ -488,10 +505,10 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     }
 
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
-    const base = 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30';
+    const base = formato.escalaYRecorte;
     const filtros = [base];
     const zoomInfo = decidirEfecto(zoomPreset, i);
-    if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion));
+    if (zoomInfo.activo) filtros.push(filtroZoom(zoomInfo.direccion, zoomPct, clip.duracion, formato.tamano));
     // Espejo NUNCA en una imagen: una foto de apoyo puede ser una captura de texto/pantallazo,
     // y espejarla la vuelve ilegible. El zoom (Ken Burns) sí es seguro, no altera el texto.
     if (!clip.esImagen && decidirEfecto(espejoPreset, i).activo) filtros.push('hflip');
@@ -574,6 +591,17 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     console.warn(`  ⚠️ [${jobId}] El PNG del cartel no está en disco, el video sale sin él`);
   }
 
+  // Overlays con ventana de tiempo (efectos.overlays: [{path, t0, t1, x?, y?}]). Los que no tienen
+  // PNG en disco o tienen una ventana inválida se descartan con aviso; el video sale igual.
+  const overlaysValidos = [];
+  for (const o of (efectos.overlays || [])) {
+    if (o && o.path && fs.existsSync(o.path) && Number.isFinite(o.t0) && Number.isFinite(o.t1) && o.t1 > o.t0 && o.t0 >= 0) {
+      overlaysValidos.push({ path: o.path, t0: o.t0, t1: o.t1, x: Number.isFinite(o.x) ? o.x : 0, y: Number.isFinite(o.y) ? o.y : 0 });
+    } else {
+      console.warn(`  ⚠️ [${jobId}] Overlay descartado (PNG ausente o ventana inválida): ${o && o.path}`);
+    }
+  }
+
   // Fase 8c: música de fondo (opcional). Se prepara ANTES del mux para no repetir el trabajo
   // en cada reintento de fallback. Si falla la preparación, el video sale igual, sin música.
   let musicaPreparada = null;
@@ -592,15 +620,31 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
   // El cartel se superpone con `overlay` limitado a `enable='lt(n,1)'` — n es el número de
   // fotograma, así que solo pinta el PRIMERO y nunca se ve durante la reproducción. Va después
   // de los subtítulos para quedar por encima de ellos, igual que antes.
-  const argsMux = (filtroV, conMusica, conCartel) => {
+  const argsMux = (filtroV, conMusica, conCartel, conOverlays = false) => {
     const entradas = ['-i', basePath, '-i', audioPath];
     if (conMusica) entradas.push('-i', musicaPreparada);
     if (conCartel) entradas.push('-i', cartelPath);
     const idxCartel = conMusica ? 3 : 2;
 
-    const cadenaV = conCartel
+    let cadenaV = conCartel
       ? `[0:v]${filtroV}[vbase];[vbase][${idxCartel}:v]overlay=0:0:enable='lt(n,1)'[vout]`
       : `[0:v]${filtroV}[vout]`;
+    // Overlays PNG con ventana de tiempo (rótulos, sellos): cada uno es una ENTRADA más de ffmpeg
+    // (no una ruta dentro del filtro, así no hay nada que escapar) y se pinta solo entre t0 y t1.
+    // Solo si se piden: sin overlays la cadena de arriba queda exactamente como siempre.
+    if (conOverlays) {
+      let ultimo = 'vbase';
+      let idx = 2 + (conMusica ? 1 : 0) + (conCartel ? 1 : 0);
+      const partes = [`[0:v]${filtroV}[vbase]`];
+      if (conCartel) { partes.push(`[${ultimo}][${idxCartel}:v]overlay=0:0:enable='lt(n,1)'[vcartel]`); ultimo = 'vcartel'; }
+      overlaysValidos.forEach((o, n) => {
+        entradas.push('-i', o.path);
+        const salida = n === overlaysValidos.length - 1 ? 'vout' : `vov${n}`;
+        partes.push(`[${ultimo}][${idx}:v]overlay=${o.x}:${o.y}:enable='between(t,${o.t0.toFixed(3)},${o.t1.toFixed(3)})'[${salida}]`);
+        ultimo = salida; idx++;
+      });
+      cadenaV = partes.join(';');
+    }
     const filtro = conMusica
       ? `${cadenaV};[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[afinal]`
       : cadenaV;
@@ -638,8 +682,19 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     await ffmpeg(argsMux(tpad, false, false));
   };
 
+  // Los overlays son lo PRIMERO que se sacrifica: si el mux con ellos falla, se reintenta sin
+  // ellos y entra la escalera de siempre (música, cartel, subtítulos). El video sale igual.
+  let muxHecho = false;
+  if (overlaysValidos.length) {
+    try {
+      await ffmpeg(argsMux(filtroVideoSinBanner, Boolean(musicaPreparada), Boolean(cartelPath), true));
+      muxHecho = true;
+    } catch (e) {
+      console.warn(`  ⚠️ [${jobId}] Los overlays fallaron al superponerse, el video sale sin ellos: ${e.message}`);
+    }
+  }
   try {
-    await ffmpeg(argsMux(filtroVideoSinBanner, Boolean(musicaPreparada), Boolean(cartelPath)));
+    if (!muxHecho) await ffmpeg(argsMux(filtroVideoSinBanner, Boolean(musicaPreparada), Boolean(cartelPath)));
   } catch (e) {
     if (musicaPreparada) {
       console.warn(`  ⚠️ [${jobId}] Mux con música falló, reintentando sin música: ${e.message}`);

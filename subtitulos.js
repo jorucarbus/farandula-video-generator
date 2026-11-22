@@ -107,10 +107,10 @@ function pausaPorPuntuacion(textoCrudo) {
 // Si la palabra (ya en MAYÚSCULAS) no entra en el ancho útil al tamaño pedido, la achica lo
 // justo para que quepa — nunca por debajo del tamaño anterior (88pt), como piso razonable.
 // factorAncho depende de la tipografía elegida (ver catálogo FUENTES).
-function tamanoSeguro(texto, tamanoBase, factorAncho) {
+function tamanoSeguro(texto, tamanoBase, factorAncho, anchoUtil = ANCHO_UTIL) {
   const anchoEstimado = texto.length * tamanoBase * factorAncho;
-  if (anchoEstimado <= ANCHO_UTIL) return tamanoBase;
-  return Math.max(88, Math.floor(ANCHO_UTIL / (texto.length * factorAncho)));
+  if (anchoEstimado <= anchoUtil) return tamanoBase;
+  return Math.max(88, Math.floor(anchoUtil / (texto.length * factorAncho)));
 }
 
 // Palabra en pantalla: pop con rebote CHICO (accel<1 = arranca rápido, frena), sin fundidos de
@@ -144,12 +144,12 @@ function construirLineas(palabras, maxChars) {
 // seguro), el resto en el estilo base. `tamano` es el pedido por el usuario (opciones.tamano en
 // generarASS, o TAMANO_DEFAULT) — tamanoSeguro() lo respeta salvo que la palabra no entre, según
 // el ancho por carácter de la tipografía elegida (`factorAncho`).
-function renderBloque(lineas, idxActivo, tamano, factorAncho) {
+function renderBloque(lineas, idxActivo, tamano, factorAncho, anchoUtil = ANCHO_UTIL) {
   let i = -1;
   return lineas
     .map(linea => linea.map(p => {
       i++;
-      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, tamano, factorAncho)) : escaparASS(p.texto);
+      return i === idxActivo ? resaltar(p.texto, tamanoSeguro(p.texto, tamano, factorAncho, anchoUtil)) : escaparASS(p.texto);
     }).join(' '))
     .join('\\N');
 }
@@ -177,8 +177,14 @@ function palabrasEstimadas(texto, ventana) {
 // omite y sigue con el resto — nunca tumba el render completo por un subtítulo.
 function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones = {}) {
   const fuente = FUENTES[opciones.fuente] || FUENTES[FUENTE_DEFAULT];
-  const tamano = opciones.tamano || TAMANO_DEFAULT;
-  const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : MARGIN_V;
+  // 16:9: valores PROVISIONALES (sin calibrar con un video real): con la mitad de alto de canvas
+  // hace falta letra más chica y menos margen inferior. 9:16 queda exactamente como siempre.
+  const horizontal = opciones.aspect === '16:9';
+  const resX = horizontal ? 1920 : 1080;
+  const resY = horizontal ? 1080 : 1920;
+  const anchoUtil = horizontal ? 1920 - 60 - 60 : ANCHO_UTIL;
+  const tamano = opciones.tamano || (horizontal ? 96 : TAMANO_DEFAULT);
+  const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : (horizontal ? 80 : MARGIN_V);
   const maxCharsLinea = opciones.maxCharsLinea || MAX_CHARS_LINEA;
   const porGrupo = opciones.palabrasPorGrupo || PALABRAS_POR_GRUPO;
 
@@ -227,15 +233,15 @@ function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones
     const lineas = construirLineas(grupo, maxCharsLinea);
     grupo.forEach((p, i) => {
       if (p.fin <= p.inicio) return; // evento de duración ≤0, se salta (no rompe el .ass)
-      const texto = renderBloque(lineas, i, tamano, fuente.factorAncho);
+      const texto = renderBloque(lineas, i, tamano, fuente.factorAncho, anchoUtil);
       eventos.push(`Dialogue: 0,${tiempoASS(p.inicio)},${tiempoASS(p.fin)},Base,,0,0,0,,${texto}`);
     });
   }
 
   const ass = `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${resX}
+PlayResY: ${resY}
 WrapStyle: 2
 ScaledBorderAndShadow: yes
 
