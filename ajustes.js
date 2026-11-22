@@ -26,7 +26,11 @@ const POR_DEFECTO = {
   // Modelo de voz de ElevenLabs. eleven_v4 por defecto (2026-11-10): sigue mejor las marcas de emoción
   // y en las pruebas a ciegas del usuario mantuvo mejor el acento. eleven_v3 queda como respaldo y
   // como vuelta atrás con un clic, sin redesplegar.
-  modeloVoz: 'eleven_v4',
+  // 2026-11-21: v4 turbo, la mitad de precio que v4 con el mismo resultado medido.
+  modeloVoz: 'eleven_v4_turbo',
+  // Marca de que el cambio a v4 turbo ya se aplicó una vez (ver `cargar`). Después de eso, lo que el
+  // usuario elija en el selector se respeta, aunque vuelva a la v4.
+  vozTurboAplicada: false,
   // Lo último que el usuario eligió en el Paso 6 (transiciones, zoom, espejo, subtítulos, música,
   // cartel). Pedido suyo (2026-11-11): "que las opciones que elijo ya queden por defecto". Se guarda
   // al mandar a generar un video y se aplica al abrir la app, en cualquier ventana o dispositivo.
@@ -36,7 +40,7 @@ const POR_DEFECTO = {
 
 // Ajustes que solo aceptan ciertos valores: lo que llega del navegador no puede inventar un modelo.
 const VALORES_PERMITIDOS = {
-  modeloVoz: ['eleven_v4', 'eleven_v3'],
+  modeloVoz: ['eleven_v4_turbo', 'eleven_v4', 'eleven_v3'],
 };
 
 let cache = null;
@@ -49,6 +53,18 @@ function cargar() {
       // Se mezcla contra los valores de fábrica: un ajuste nuevo que el archivo viejo no conoce
       // toma su default en vez de quedar `undefined`.
       cache = { ...POR_DEFECTO, ...(guardados && typeof guardados === 'object' ? guardados : {}) };
+      // Pedido del usuario (2026-11-21): "cambia la locución a v4 turbo en todo lado". Los ajustes ya
+      // guardados (en la PC y en Railway) decían v4; cambiar el valor de fábrica no los toca. Se pasa
+      // a turbo UNA vez y se marca, para no pisar una elección posterior del usuario.
+      if (!cache.vozTurboAplicada) {
+        if (cache.modeloVoz === 'eleven_v4') cache.modeloVoz = 'eleven_v4_turbo';
+        cache.vozTurboAplicada = true;
+        try {
+          fs.writeFileSync(AJUSTES_FILE, JSON.stringify(cache, null, 2));
+          driveCache.respaldar(AJUSTES_FILE, NOMBRE_DRIVE);
+        } catch {}
+        console.log(`⚙️ Voz de la locución: ${cache.modeloVoz}`);
+      }
       return cache;
     }
   } catch (e) {

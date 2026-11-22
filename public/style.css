@@ -1586,3 +1586,11 @@ main:not([data-vista="publicar"]) .vista-publicar { display: none; }
 .publicar-video.saliendo { opacity: 0; transform: scale(0.98); transition: opacity 0.25s, transform 0.25s; }
 .btn-publicado { background: var(--success-tint); border-color: var(--success-border); color: var(--success); }
 .btn-publicado:hover { background: var(--success); color: #fff; border-color: var(--success); }
+
+/* Dentro de una pestaña de la versión de escritorio: el encabezado, la barra Crear/Publicar y el pie
+   los pone la ventana de afuera (escritorio.html). */
+html.embebido header,
+html.embebido footer,
+html.embebido .vistas-nav { display: none !important; }
+html.embebido body { padding-top: 0; }
+html.embebido .container { margin-top: 0; }

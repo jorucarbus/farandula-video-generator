@@ -13,6 +13,14 @@ const FLUJO = {
 };
 let MODO = 'video';
 function apiBase() { return BACKENDS[MODO]; }
+
+// ¿Esta copia de la app vive dentro de una pestaña de la versión de escritorio (escritorio.html)? Ahí
+// el encabezado y la barra Crear/Publicar los pone la ventana de afuera, así que se esconden acá.
+const EMBEBIDO = (() => { try { return window.self !== window.top; } catch { return true; } })();
+if (EMBEBIDO) document.documentElement.classList.add('embebido');
+// La ventana de afuera lee de acá el proceso de cada pestaña (nombre, jobId) para rotularla y recordarla.
+// `state` es una variable `let` de este archivo, no una propiedad de `window`: sin esto no se ve desde afuera.
+window.__farandula = { get state() { return state; } };
 function cfg() { return FLUJO[MODO]; }
 
 // Helper: deshabilitar/habilitar botón mientras proceso está activo
@@ -2067,13 +2075,13 @@ async function cargarAjustes() {
         const r = await apiCall('/ajustes', 'GET');
         state.videosCortos = r.ajustes?.videosCortos !== false;
         state.guionDosTiempos = r.ajustes?.guionDosTiempos !== false;
-        state.modeloVoz = r.ajustes?.modeloVoz || 'eleven_v4';
+        state.modeloVoz = r.ajustes?.modeloVoz || 'eleven_v4_turbo';
         state.preferenciasVideo = r.ajustes?.preferenciasVideo || {};
     } catch {
         // Los valores de fábrica; si el servidor no contesta, la pantalla no miente.
         state.videosCortos = true;
         state.guionDosTiempos = true;
-        state.modeloVoz = 'eleven_v4';
+        state.modeloVoz = 'eleven_v4_turbo';
     }
     const chk = document.getElementById('chk-cortos');
     if (chk) chk.checked = state.videosCortos;
@@ -2093,7 +2101,7 @@ async function cambiarModeloVoz(modelo) {
     state.modeloVoz = modelo;
     try {
         await apiCall('/ajustes', 'PUT', { modeloVoz: modelo });
-        log(`🎙️ Voz de la locución: ${modelo === 'eleven_v3' ? 'v3 (anterior)' : 'v4 (nueva)'}`);
+        log(`🎙️ Voz de la locución: ${{ eleven_v4_turbo: 'v4 turbo', eleven_v4: 'v4', eleven_v3: 'v3 (anterior)' }[modelo] || modelo}`);
     } catch (e) {
         state.modeloVoz = antes;
         log(`⚠️ No se pudo guardar el ajuste: ${e.message}`);
@@ -2646,7 +2654,7 @@ async function regenerarAudio(modelo, v = state.varianteActiva) {
         invalidarPasos(['audio'], v);
         lockFrom('destination-section', v);
 
-        const nombreModelo = modelo || state.modeloVoz || 'eleven_v4';
+        const nombreModelo = modelo || state.modeloVoz || 'eleven_v4_turbo';
         showProgress(`${icon('microphone')} Generando locución de ${etiquetaVariante(v)} (${nombreModelo})...`);
         log(`🎙️ Generando locución (${nombreModelo}) — ${etiquetaVariante(v)}...`);
         updateProgress(65);
@@ -4762,6 +4770,18 @@ document.addEventListener('DOMContentLoaded', () => {
     elegirMotorGuion('grafo');   // los ángulos antiguos quedaron ocultos: el motor es siempre el del grafo
     if (API_KEY) cargarPublicar();   // deja al día la insignia de la pestaña Publicar (cuántos faltan hoy)
     if (location.hash === '#publicar') mostrarVista('publicar');
+    // Dentro de la versión de escritorio, "continuar" un proceso del historial abre una pestaña más de
+    // la misma ventana en vez de otra ventana del navegador.
+    if (EMBEBIDO) {
+        document.addEventListener('click', e => {
+            const a = e.target.closest?.('a[href*="?jobId="]');
+            if (!a) return;
+            const jobId = new URL(a.href, location.href).searchParams.get('jobId');
+            if (!jobId) return;
+            e.preventDefault();
+            window.parent.postMessage({ abrirProceso: jobId }, location.origin);
+        });
+    }
     // Dónde se están procesando los videos: en la PC del usuario o en Railway. Se dice en el encabezado
     // para no confundir las dos copias cuando están abiertas a la vez.
     fetch(apiBase() + '/api/health').then(r => r.json()).then(d => {

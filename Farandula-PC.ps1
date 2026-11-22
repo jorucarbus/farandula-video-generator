@@ -44,7 +44,7 @@ function Open-Ventana {
     )
     $navegador = $candidatos | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if ($navegador) {
-        Start-Process -FilePath $navegador -ArgumentList "--app=$url", "--user-data-dir=`"$perfil`"", '--window-size=1500,950', '--no-first-run'
+        Start-Process -FilePath $navegador -ArgumentList "--app=$url/escritorio.html", "--user-data-dir=`"$perfil`"", '--window-size=1500,950', '--no-first-run'
     } else {
         Start-Process $url   # sin Edge ni Chrome: se abre en el navegador que haya
     }

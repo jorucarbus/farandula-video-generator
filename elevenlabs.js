@@ -110,15 +110,18 @@ async function pedirTTSConTiempos(texto, modelId, extra = {}) {
   );
 }
 
-const MODELOS = { v4: 'eleven_v4', v3: 'eleven_v3', v2: 'eleven_multilingual_v2' };
+// v4 turbo es el de uso (2026-11-21): misma voz, mismas marcas y misma alineación que v4, habla igual
+// de rápido (2,68 contra 2,70 palabras por segundo, medido con un guion real) y cuesta la mitad.
+const MODELOS = { v4t: 'eleven_v4_turbo', v4: 'eleven_v4', v3: 'eleven_v3', v2: 'eleven_multilingual_v2' };
 
 // Cadena de respaldo: cada modelo cae al siguiente si falla (salvo cuota agotada, que no lo arregla
 // ningún modelo). v4 y v3 actúan las marcas; v2 no, así que a v2 se le quitan.
 function cadenaDeModelos(preferido) {
-  const p = preferido || MODELOS.v4;
+  const p = preferido || MODELOS.v4t;
   if (p === MODELOS.v2) return [MODELOS.v2];
   if (p === MODELOS.v3) return [MODELOS.v3, MODELOS.v2];
-  return [MODELOS.v4, MODELOS.v3, MODELOS.v2];
+  if (p === MODELOS.v4) return [MODELOS.v4, MODELOS.v3, MODELOS.v2];
+  return [MODELOS.v4t, MODELOS.v4, MODELOS.v3, MODELOS.v2];
 }
 
 // Lo que se le manda a cada modelo: v4/v3 reciben el texto CON marcas; v2 las recibiría como
@@ -155,9 +158,9 @@ async function pedirConRespaldo(guionConMarcas, preferido, pedir, prefijoError) 
 }
 
 // Generar audio a partir del guion con marcas.
-// modeloPreferido: 'eleven_v4' (por defecto) | 'eleven_v3' | 'eleven_multilingual_v2'. Cae en cadena
+// modeloPreferido: 'eleven_v4_turbo' (por defecto) | 'eleven_v4' | 'eleven_v3' | 'eleven_multilingual_v2'. Cae en cadena
 // al siguiente si el elegido falla.
-async function generarAudio(guionConMarcas, modeloPreferido = MODELOS.v4) {
+async function generarAudio(guionConMarcas, modeloPreferido = MODELOS.v4t) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
   }
@@ -170,7 +173,7 @@ async function generarAudio(guionConMarcas, modeloPreferido = MODELOS.v4) {
 // que ElevenLabs mide sobre el TEXTO QUE REALMENTE MANDÓ A HABLAR (con o sin marcas
 // según el modelo que terminó respondiendo). Fase 5: fuente real de tiempos, en vez
 // de estimar por % de caracteres.
-async function generarAudioConTiempos(guionConMarcas, modeloPreferido = MODELOS.v4) {
+async function generarAudioConTiempos(guionConMarcas, modeloPreferido = MODELOS.v4t) {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID en .env');
   }

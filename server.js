@@ -1967,7 +1967,7 @@ app.post('/api/add-markers', async (req, res) => {
 });
 
 // ETAPA 5 v2: Generar locución para APROBACIÓN (marcas + ElevenLabs, se escucha antes de renderizar)
-// body: { fragments, modelo?: 'eleven_v4' | 'eleven_v3' | 'eleven_multilingual_v2' }  (sin modelo: el ajuste modeloVoz)
+// body: { fragments, modelo?: 'eleven_v4_turbo' | 'eleven_v4' | 'eleven_v3' | 'eleven_multilingual_v2' }  (sin modelo: el ajuste modeloVoz)
 app.post('/api/generar-audio', async (req, res) => {
   try {
     const { fragments, modelo, jobId, variante = 'A' } = req.body;
