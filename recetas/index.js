@@ -112,16 +112,39 @@ const RECETAS = {
     },
   },
 
-  // Reservadas (día 25 en adelante): existen en el catálogo para que la EDL de ejemplo valide, pero
-  // todavía no tienen render propio. El render las trata como clip_kenburns y lo avisa.
+  // Ítem de un ranking/compilación: número grande + título, y `fit` para metraje que no es del
+  // formato de salida (contain_blur = toma entera al centro sobre su propio fondo desenfocado).
   ranking_item: {
-    id: 'ranking_item', cuando: 'ítem numerado de un ranking (pendiente: render propio)', aspects: AMBOS,
-    aplicaRegla3s: true, implementada: false,
-    params: { type: 'object' }, defaults: {},
-    aplicar({ shot }) {
-      return { zoom: { direccion: 'in', pct: 12 }, overlays: [], avisos: [`${shot.id}: ranking_item aún sin render propio, se usa clip_kenburns`] };
+    id: 'ranking_item',
+    cuando: 'ítem numerado de un ranking o compilación (número grande y título); fit contain_blur si el metraje no es del formato',
+    aspects: AMBOS,
+    aplicaRegla3s: true,
+    implementada: true,
+    params: {
+      type: 'object', additionalProperties: false, required: ['numero', 'titulo'],
+      properties: {
+        numero: { type: 'integer', minimum: 1, maximum: 99 },
+        titulo: { type: 'string', minLength: 1, maxLength: 50 },
+        fit: { enum: ['cover', 'contain_blur'] },
+      },
+    },
+    defaults: { fit: 'cover' },
+    aplicar({ shot, params, tInicio }) {
+      const t0 = tInicio + Math.min(0.1, shot.duracion * 0.05);
+      const t1 = tInicio + shot.duracion;
+      return {
+        zoom: { direccion: 'in', pct: 8 },
+        fit: params.fit,
+        overlays: [
+          { texto: `#${params.numero}`, estilo: 'numero', t0, t1 },
+          { texto: params.titulo, estilo: 'lowerthird', t0: t0 + 0.2, t1 },
+        ],
+        avisos: [],
+      };
     },
   },
+
+  // Reservada (sin render propio todavía): existe en el catálogo para que la EDL de ejemplo valide.
   split_compare: {
     id: 'split_compare', cuando: 'comparación lado a lado de dos shots (pendiente: render propio)', aspects: AMBOS,
     aplicaRegla3s: false, implementada: false,

@@ -44,6 +44,7 @@ async function planEdlARender(edl, opciones = {}) {
     const resultado = receta.aplicar({ shot, params, tInicio, formato });
     avisos.push(...resultado.avisos);
     if (item && resultado.zoom) item.zoom = { direccion: resultado.zoom.direccion, pct: resultado.zoom.pct };
+    if (item && resultado.fit && resultado.fit !== 'cover') item.fit = resultado.fit;
     for (const o of resultado.overlays) especificaciones.push({ ...o, shot: shot.id });
     tInicio += shot.duracion;
   }

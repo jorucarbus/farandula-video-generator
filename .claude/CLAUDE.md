@@ -50,9 +50,23 @@ Trabajo en la rama **`feat/edl-motor`** (sale de `test-persistencia`); nada se e
   (`🔎 Auditoría del plan`), nunca cambia el plan ni detiene el render. 60 pruebas verdes.
   La tipografía de los overlays es provisional (Arial Bold del sistema u `OVERLAY_FUENTE`/Anton si ya
   está en `temp-videos/fuentes`); el diseño final espera la elección de estilos del usuario.
-- **Pendiente** (días 25+): conectar `aspect`/`fuenteTipo`/recetas desde `server.js` (flag opt-in "plan por
-  recetas"), `ranking_item` con render propio, compilación 16:9 de ≥30 clips (medir RAM y tiempo),
-  llamada real a Gemini con `planificarEdl` (cuenta cuota: medir tokens), prueba de 5 estilos animados.
+- **Día 25 (hecho)**: modo OPT-IN "plan por recetas" (`edl/modoRecetas.js`; se activa con
+  `efectos.planPorRecetas === true` o `PLAN_POR_RECETAS=1`; sin la bandera nada cambia, con ella cualquier
+  fallo deja el plan clásico): convierte el plan en una EDL mínima (fuente declarada como
+  `biblioteca_propia`, sin inventar medios), el planificador elige recetas ignorando V2/V3/V4/V6 (los clips
+  ya los decidió `seleccion.js`) y el plan original solo gana `zoom`/`fit` por clip y overlays. `ranking_item`
+  con render propio (número + título, `fit: contain_blur` = toma entera sobre su propio fondo
+  desenfocado). **Medido** (`scripts/medir-compilacion.js`, NVENC, fuentes 1080p sintéticas, 16:9, clips de
+  2,5 s): 36 clips/90 s sin transiciones 27 s y 414 MB pico de ffmpeg; 36 clips con `alternado` 44 s y
+  1,75 GB; 72 clips/180 s con `todos` 143 s y 4,3 GB. **Con libx264 en Railway no se midió.**
+  **Gemini real** (`scripts/probar-planificador-real.js`, flash-lite): 2 llamadas, ~750 tokens, ~3 s.
+  Hallazgo: el modelo agregó "reporte reciente" a un rótulo de atribución y "Rumor" en vez del texto fijo, así
+  que el LLM solo escribe textos creativos (título del gancho, título de ranking); la atribución sale de
+  `fuente` y el sello es texto fijo. Los títulos del modelo pueden exagerar ("acuerdo oculto"): revisar.
+  65 pruebas verdes.
+- **Pendiente** (días 26+): interruptor en la UI (`public/app.js`), compilación horizontal real (guion
+  puente, no solo unir shorts), logo/loudnorm/música por EDL, `split_compare`, calibrar subtítulos 16:9 con
+  un video real, medir con libx264, prueba de 5 estilos animados con el usuario.
 - La app ya usa `eleven_v4_turbo` para la locución (commit `0e772cf`); la prueba ciega del usuario
   (2026-11-21) confirmó v4 y v4 Turbo empatados, v3/Flash/Multilingual v2 por debajo.
 

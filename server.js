@@ -12,6 +12,7 @@ const elevenlabs = require('./elevenlabs');
 const driveHelper = require('./drive');
 const video = require('./video');
 const { auditarPlanLegado } = require('./edl/edlValidator');
+const { aplicarPlanPorRecetas } = require('./edl/modoRecetas');
 const fuentes = require('./fuentes');
 const sheets = require('./sheets');
 const seleccion = require('./seleccion');
@@ -2449,8 +2450,25 @@ async function renderizarVideo(params, renderId) {
     // en video.js (montarVideoHyper) y en el historial de git por si se retoma.
     colaRender.reportar(renderId, 45, 'Montando el video');
     console.log(`🎞️ [${renderId}] Montando video con FFmpeg...`);
-    const resultado = await video.montarVideoPlan(plan, archivos, audioPath, renderId, {
-      ...(efectos || {}), subsPath, fuentesDir, musicaPath, musicaOffset, musicaGananciaDb,
+    // MODO OPT-IN "plan por recetas" (efectos.planPorRecetas === true): un planificador elige recetas
+    // (zoom por clip, gancho con título, sellos) sobre el mismo plan. Sin la bandera no pasa nada
+    // distinto; con ella, cualquier fallo deja el plan clásico tal cual (el video sale igual).
+    let planParaMontar = plan;
+    let efectosParaMontar = { ...(efectos || {}) };
+    // (También se activa con la variable de entorno PLAN_POR_RECETAS=1, útil en el clon de pruebas.)
+    if ((efectos && efectos.planPorRecetas === true) || process.env.PLAN_POR_RECETAS === '1') {
+      try {
+        colaRender.reportar(renderId, 46, 'Planificando recetas de edición');
+        const r = await aplicarPlanPorRecetas({ plan, efectos: efectosParaMontar, titulo: metadatos?.titulo || null });
+        planParaMontar = r.plan;
+        efectosParaMontar = r.efectos;
+        console.log(`  🧩 Plan por recetas (${r.info.origen}): ${r.info.overlays} overlay(s); recetas: ${[...new Set(r.info.recetas)].join(', ')}${r.info.avisos.length ? ` | avisos: ${r.info.avisos.slice(0, 3).join(' | ')}` : ''}`);
+      } catch (e) {
+        console.warn(`  ⚠️ Plan por recetas falló, sigue el plan clásico: ${e.message}`);
+      }
+    }
+    const resultado = await video.montarVideoPlan(planParaMontar, archivos, audioPath, renderId, {
+      ...efectosParaMontar, subsPath, fuentesDir, musicaPath, musicaOffset, musicaGananciaDb,
       cartelPath,
     }, (pct, etapa) => colaRender.reportar(renderId, pct, etapa));
     console.log(`  ✅ ${resultado.clips} clips montados, duración final: ${resultado.duracion}s${resultado.conMusica ? ' (con música)' : ''}`);

@@ -51,10 +51,13 @@ const PROMPT_ETAPA_2 = (necesitan) => `Rellena los parámetros de texto de estos
 ${necesitan.map(n => `- ${n.id} (${n.recipe}): ${n.pide}`).join('\n')}
 Responde SOLO JSON: {"shots":[{"id":"...","params":{...}}]}`;
 
+// Solo los textos CREATIVOS los escribe el modelo (título del gancho, título de un ítem de ranking).
+// El texto de atribución ("Según X, fecha") y el del sello de rumor NO: salen de los datos de la
+// fuente y del texto fijo de la receta. En la primera prueba real, el modelo agregó por su cuenta
+// "reporte reciente" a un rótulo de atribución: un dato que nadie le dio, en pantalla.
 const PIDE = {
   hook_cold_open: `params {"titulo": string de máx. ${recetas.MAX_TITULO} caracteres}`,
-  source_lowerthird: 'params {"texto": "Según <medio>, <fecha corta>"} (máx. 80 caracteres)',
-  rumor_stamp: 'params {"texto": string de máx. 40 caracteres} o {} para el texto por defecto',
+  ranking_item: 'params {"numero": entero 1-99, "titulo": string de máx. 50 caracteres, "fit": "cover" o "contain_blur"}',
 };
 
 function clonar(x) { return JSON.parse(JSON.stringify(x)); }
@@ -94,7 +97,10 @@ function aplicarEtapa1(edl, respuesta, avisos) {
   return salida;
 }
 
-async function planificarEdl(edl, { llamar = llamarGemini, maxReintentos = MAX_REINTENTOS } = {}) {
+// `reglasIgnoradas` (p. ej. ['V2','V3']): reglas de validarEdl que NO le competen al planificador en
+// ese contexto (el modo recetas del flujo clásico, donde los clips ya los decidió seleccion.js).
+async function planificarEdl(edl, { llamar = llamarGemini, maxReintentos = MAX_REINTENTOS, reglasIgnoradas = [] } = {}) {
+  const ignoradas = new Set(reglasIgnoradas);
   const avisos = [];
   let errores = [];
   let candidata = null;
@@ -110,7 +116,7 @@ async function planificarEdl(edl, { llamar = llamarGemini, maxReintentos = MAX_R
     candidata = aplicarEtapa1(edl, respuesta, avisos);
     // Los `params` todavía no existen en la etapa 1 (llegan en la 2): sus errores se miran al final.
     const v = validarEdl(candidata);
-    const erroresEtapa1 = v.errores.filter(e => !(e.regla === 'V10' && /^params de /.test(e.mensaje)));
+    const erroresEtapa1 = v.errores.filter(e => !ignoradas.has(e.regla) && !(e.regla === 'V10' && /^params de /.test(e.mensaje)));
     if (erroresEtapa1.length === 0) { errores = []; break; }
     errores = erroresEtapa1.map(e => `${e.regla}${e.shot ? ' ' + e.shot : ''}: ${e.mensaje}`);
     candidata = null;
@@ -146,7 +152,7 @@ async function planificarEdl(edl, { llamar = llamarGemini, maxReintentos = MAX_R
       shot.recipe = 'clip_kenburns'; shot.params = {};
     }
   }
-  const final = validarEdl(candidata);
+  const final = { errores: validarEdl(candidata).errores.filter(e => !ignoradas.has(e.regla)) };
   if (final.errores.length) {
     avisos.push(`tras la etapa 2 quedaron errores (${final.errores.length}): plan determinista de respaldo`);
     return { edl: planDeterminista(edl), origen: 'respaldo', avisos, errores: final.errores.map(e => `${e.regla}: ${e.mensaje}`) };

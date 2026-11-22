@@ -119,15 +119,42 @@ test('planEdlARender: si el overlay no se puede dibujar, se omite con aviso y el
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('planEdlARender: una receta reservada cae a clip_kenburns y lo avisa; sin clip se omite', async () => {
+test('planEdlARender: ranking_item da número y título por shot y fit contain_blur; el shot sin clip se omite', async () => {
   const edl = cargar('ejemplo-b-ranking-16x9.json');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edl-b-'));
   try {
-    const r = await planEdlARender(edl, { dirTemp: dir, renderizar: async () => {} });
+    const dibujados = [];
+    const r = await planEdlARender(edl, { dirTemp: dir, renderizar: async o => { dibujados.push(o.estilo + ':' + o.texto); } });
     assert.equal(r.efectos.aspect, '16:9');
     assert.equal(r.plan.length, 3);
     assert.ok(r.plan.every(p => p.zoom && p.zoom.pct > 0));
-    assert.ok(r.avisos.some(a => /ranking_item/.test(a)));
+    assert.ok(r.plan.every(p => p.fit === 'contain_blur'));
+    assert.deepEqual(dibujados.filter(d => d.startsWith('numero')), ['numero:#3', 'numero:#2', 'numero:#1']);
+    assert.equal(r.efectos.overlays.length, 6);
     assert.deepEqual(r.omitidos, ['r4']);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('contain_blur: una toma vertical en 16:9 se ve entera al centro y el fondo es su propio desenfoque (sin barras negras)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'blur-'));
+  const jobId = 't-blur';
+  try {
+    const vertical = path.join(dir, 'vertical.mp4');
+    ff(['-f', 'lavfi', '-i', 'color=c=green:size=360x640:rate=30:duration=6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', vertical]);
+    const audio = path.join(dir, 'audio.mp3');
+    ff(['-f', 'lavfi', '-i', 'sine=frequency=440:duration=4', '-c:a', 'libmp3lame', audio]);
+    const verde = p => p[1] > 100 && p[0] < 80 && p[2] < 80;
+
+    const conBlur = [{ videoId: 'a', famoso: 'X', offset: 0, duracion: 2.0, fit: 'contain_blur' }, { videoId: 'a', famoso: 'X', offset: 2, duracion: 2.0, fit: 'contain_blur' }];
+    const r1 = await video.montarVideoPlan(conBlur, { a: vertical }, audio, jobId, { aspect: '16:9' });
+    assert.ok(verde(pixel(r1.finalPath, 10, 10, 1)), 'el fondo desenfocado llena la esquina');
+    assert.ok(verde(pixel(r1.finalPath, 960, 540, 1)), 'la toma está al centro');
+
+    const sinBlur = conBlur.map(c => ({ ...c, fit: undefined }));
+    const r2 = await video.montarVideoPlan(sinBlur, { a: vertical }, audio, jobId + 'b', { aspect: '16:9' });
+    assert.ok(verde(pixel(r2.finalPath, 10, 10, 1)), 'cover también llena el cuadro (recorta)');
+  } finally {
+    video.limpiarTemporales(jobId); video.limpiarTemporales(jobId + 'b');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

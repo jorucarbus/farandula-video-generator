@@ -23,6 +23,8 @@ const ESTILOS = {
   titulo:     { tam: 0.085, maxAncho: 0.88, y: 0.16, color: 'white', borde: 8, fondo: null },
   // "Según X, fecha": franja oscura abajo a la izquierda.
   lowerthird: { tam: 0.042, maxAncho: 0.84, y: 0.74, color: 'white', borde: 0, fondo: 'black@0.79', relleno: 22, izquierda: 0.06 },
+  // Número de ranking: grande, arriba a la izquierda, blanco con borde negro.
+  numero:     { tam: 0.17, maxAncho: 0.40, y: 0.05, color: 'white', borde: 10, fondo: null, izquierda: 0.06 },
   // Sello de rumor: caja roja centrada.
   sello:      { tam: 0.060, maxAncho: 0.80, y: 0.44, color: 'white', borde: 0, fondo: 'red@0.94', relleno: 26 },
 };

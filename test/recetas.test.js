@@ -8,9 +8,9 @@ const { validarEdl, auditarPlanLegado } = require('../edl/edlValidator');
 
 const cargar = n => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'edl', n), 'utf8'));
 
-test('catálogo: las 4 recetas P0 están implementadas y las 2 reservadas no', () => {
-  for (const id of ['clip_kenburns', 'hook_cold_open', 'source_lowerthird', 'rumor_stamp']) assert.equal(recetas.obtener(id).implementada, true, id);
-  for (const id of ['ranking_item', 'split_compare']) assert.equal(recetas.obtener(id).implementada, false, id);
+test('catálogo: las recetas P0 y ranking_item están implementadas; split_compare está reservada', () => {
+  for (const id of ['clip_kenburns', 'hook_cold_open', 'source_lowerthird', 'rumor_stamp', 'ranking_item']) assert.equal(recetas.obtener(id).implementada, true, id);
+  assert.equal(recetas.obtener('split_compare').implementada, false);
   assert.equal(recetas.existe('blender_set_shot'), false);
 });
 

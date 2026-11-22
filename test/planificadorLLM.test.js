@@ -31,6 +31,9 @@ test('camino feliz: recetas del LLM + params, validado, sin tocar duraciones ni 
   assert.equal(r.origen, 'llm');
   assert.deepEqual(r.edl.shots.map(s => s.recipe), ['hook_cold_open', 'source_lowerthird', 'rumor_stamp']);
   assert.equal(r.edl.shots[0].params.titulo, 'Lo que nadie vio');
+  // la atribución y el sello NO los escribe el modelo: sus params siguen vacíos aunque los mande
+  assert.deepEqual(r.edl.shots[1].params, {});
+  assert.deepEqual(r.edl.shots[2].params, {});
   assert.deepEqual(validarEdl(r.edl).errores, []);
   assert.deepEqual(r.edl.shots.map(s => s.duracion), A().shots.map(s => s.duracion));
   assert.deepEqual(r.edl.shots.map(s => s.clip), A().shots.map(s => s.clip));
@@ -95,7 +98,7 @@ test('params inválidos de la etapa 2 se descartan y se usan los de la receta', 
   const r = await planificarEdl(A(), { llamar: falso([etapa1Buena, e2]) });
   // sin título válido, el gancho pasa a clip_kenburns (no se inventa el título)
   assert.equal(r.edl.shots[0].recipe, 'clip_kenburns');
-  assert.equal(r.edl.shots[1].params.texto, 'Según Medio Z');
+  assert.deepEqual(r.edl.shots[1].params, {}, 'el texto de atribución nunca viene del modelo');
   assert.deepEqual(r.edl.shots[2].params, {});
   assert.deepEqual(validarEdl(r.edl).errores, []);
 });

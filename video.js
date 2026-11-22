@@ -222,6 +222,14 @@ function filtroZoom(direccion, pct, duracionClip, tamano = '1080x1920') {
   return `zoompan=z='${expr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${tamano}:fps=${FPS_EFECTOS}`;
 }
 
+// Toma entera centrada sobre una copia suya desenfocada que llena el cuadro (sin barras negras).
+// Grafo con una entrada y una salida: válido dentro de -vf.
+function filtroContainBlur(formato) {
+  const { w, h, fps } = formato;
+  return `split[a][b];[a]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},boxblur=40:5[bg];`
+    + `[b]scale=${w}:${h}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,fps=${fps}`;
+}
+
 // ---- Transiciones entre clips (Fase 7) ----
 // Subconjunto curado de las transiciones `xfade` de ffmpeg (tiene 58) — las que se ven bien en
 // un corte rápido vertical de farándula, sin las muy lentas/cinematográficas que no pegan con
@@ -505,7 +513,9 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
     }
 
     const segPath = path.join(TEMP_DIR, `${jobId}_seg${i}.mp4`);
-    const base = formato.escalaYRecorte;
+    // fit 'contain_blur' (lo pide la receta ranking_item): la toma entera al centro sobre su propio
+    // fondo desenfocado, para metraje que no es del formato de salida. Sin fit, el recorte de siempre.
+    const base = clip.fit === 'contain_blur' ? filtroContainBlur(formato) : formato.escalaYRecorte;
     const filtros = [base];
     // Zoom por clip (lo fija la receta del shot en la EDL: clip.zoom = {direccion, pct}); sin él, el
     // preset global de siempre. Así el flujo clásico queda exactamente igual.
