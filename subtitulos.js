@@ -177,14 +177,14 @@ function palabrasEstimadas(texto, ventana) {
 // omite y sigue con el resto — nunca tumba el render completo por un subtítulo.
 function generarASS(fragments, tiemposFragmentos, palabrasPorFragmento, opciones = {}) {
   const fuente = FUENTES[opciones.fuente] || FUENTES[FUENTE_DEFAULT];
-  // 16:9: valores PROVISIONALES (sin calibrar con un video real): con la mitad de alto de canvas
+  // 16:9: valores calibrados a ojo sobre un render real (2026-11-22: 96 se leía chico, 128 bien): con la mitad de alto de canvas
   // hace falta letra más chica y menos margen inferior. 9:16 queda exactamente como siempre.
   const horizontal = opciones.aspect === '16:9';
   const resX = horizontal ? 1920 : 1080;
   const resY = horizontal ? 1080 : 1920;
   const anchoUtil = horizontal ? 1920 - 60 - 60 : ANCHO_UTIL;
-  const tamano = opciones.tamano || (horizontal ? 96 : TAMANO_DEFAULT);
-  const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : (horizontal ? 80 : MARGIN_V);
+  const tamano = opciones.tamano || (horizontal ? 128 : TAMANO_DEFAULT);
+  const marginV = Number.isFinite(opciones.marginV) ? opciones.marginV : (horizontal ? 90 : MARGIN_V);
   const maxCharsLinea = opciones.maxCharsLinea || MAX_CHARS_LINEA;
   const porGrupo = opciones.palabrasPorGrupo || PALABRAS_POR_GRUPO;
 

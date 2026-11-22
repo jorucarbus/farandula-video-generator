@@ -3412,3 +3412,8 @@ consecuencias:
 - `video.js`: loudnorm de una pasada (-14 LUFS, TP -1.5) en la mezcla final, solo en 16:9 o con `efectos.normalizarVolumen`. 9:16 sin la opción queda igual (golden intacto). Real: -26 → -15.8 LUFS, pico -1.4 dBFS.
 - `edl/paqueteMetricool.js`: CSV de programación masiva (BOM, 50 filas/archivo, Draft TRUE). Lee los encabezados de la plantilla oficial de Metricool (bajarla UNA vez: Calendario > Importar CSV) y mapea por nombre; sin plantilla usa columnas por defecto y avisa. Encabezados exactos NO verificados. Exige `videoUrl` http(s) estable (Drive es frágil).
 - Pendiente: conectar el exportador a la interfaz/historial, subtítulos 16:9, `split_compare`.
+
+## Día 29 (2026-11-22) — subtítulos 16:9 calibrados
+- Probados 96/130/170 sobre un fotograma del render real: 96 chico, 170 grande. Defaults 16:9: tamaño 128, margen 90 (antes 96/80 provisionales).
+- Descartada la "ficha de publicación": la pestaña Publicar de la app ya tiene título y descripción+hashtags con botón de copiar. Metricool: el usuario carga a mano (ver memoria); `paqueteMetricool.js` queda dormido.
+- Pendiente: prueba de 5 estilos animados para que el usuario elija, `split_compare`, libx264/Railway, integración con test-persistencia (solo cuando el usuario decida).
