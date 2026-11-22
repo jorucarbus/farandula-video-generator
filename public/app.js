@@ -4514,8 +4514,9 @@ function mostrarVista(vista) {
 }
 
 // El rango se calcula en la hora LOCAL del navegador: "hoy" es el día del usuario, no el del servidor.
-// Desde cuándo cuenta "Por publicar": el día en que se pidió (hora de Ecuador). Lo anterior nunca se marcó.
-const PENDIENTES_DESDE = '2026-11-21T00:00:00-05:00';
+// Desde cuándo cuenta "Por publicar": el momento en que el usuario lo pidió ("solo los que haga desde
+// ahorita"). Lo anterior nunca se marcó como publicado y no se trae.
+const PENDIENTES_DESDE = '2026-11-22T02:59:00Z';
 
 function rangoPublicar() {
     const cual = document.getElementById('publicar-rango')?.value || 'pendientes';
@@ -4526,7 +4527,7 @@ function rangoPublicar() {
     if (cual === 'semana') return { desde: new Date(inicioDeHoy - 6 * DIA), hasta: new Date() };
     // "Por publicar" no tiene límite de días: un video sigue en la lista hasta que se marca como
     // publicado (pedido del usuario, 2026-11-21: "que sigan hasta que presione publicar"). Arranca en
-    // ese día para no traer de golpe todos los videos anteriores, que nunca se marcaron.
+    // ese momento para no traer de golpe todos los videos anteriores, que nunca se marcaron.
     if (cual === 'pendientes') return { desde: new Date(PENDIENTES_DESDE), hasta: new Date() };
     return { desde: inicioDeHoy, hasta: new Date() };
 }
