@@ -3401,3 +3401,9 @@ consecuencias:
   afirmaciones — `#infiel`, `#estafadora`, `#mentirosa` acusan a una persona real con su nombre al
   lado. Lo seguro es descriptivo: famoso, tema, marca del canal. Aparte, los mega-tags genéricos
   (`#parati`) no acusan pero son señal de engagement bait.
+
+## Día 28 (2026-11-22) — primer compilado real de punta a punta
+- Prueba real en el clon: locución ElevenLabs + render 16:9 con clips de Drive (carpeta de salida local `data-motor/renders`, `RENDERS_LOCAL_PATH` en el `.env` del clon; Drive de renders y Sheet siguen apagados). Script: `scripts/probar-compilado-real.js`.
+- Resultado: 1920x1080, 62.4 s, 4 rótulos de historia, NVENC.
+- BUG hallado y corregido: `dimensionesDe` usaba `stream_side_data` en `-show_entries`; el ffprobe empaquetado (4.0.2) lo rechaza y devolvía null, así que 'auto' caía SIEMPRE a cover (verticales recortados). Ahora usa `-show_streams`. Prueba de regresión agregada (88 pruebas).
+- Pendiente: subtítulos 16:9 (se leen pero son pequeños), loudnorm/música por EDL, paquete por plataforma.

@@ -146,8 +146,9 @@ async function codecDe(filePath) {
 async function dimensionesDe(filePath) {
   try {
     const j = JSON.parse(await ffprobe([
-      '-v', 'error', '-select_streams', 'v:0',
-      '-show_entries', 'stream=width,height:stream_tags=rotate:stream_side_data=rotation',
+      // -show_streams (no -show_entries con stream_side_data): el ffprobe empaquetado es el 4.0.2 y
+      // rechaza esa sección ("No match for section"), con lo que antes siempre caía a 'cover'.
+      '-v', 'error', '-select_streams', 'v:0', '-show_streams',
       '-of', 'json', filePath,
     ]));
     const s = (j.streams || [])[0];

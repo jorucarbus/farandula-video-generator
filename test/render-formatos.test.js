@@ -116,3 +116,17 @@ test('guardia de 3 s: lo propio y las imágenes no entran en el límite', async 
     assert.ok(fs.existsSync(r.finalPath));
   } finally { limpiar(m.dir, 't-propio'); }
 });
+
+test('dimensionesDe lee el tamaño con el ffprobe empaquetado (4.0.2) y respeta la rotación', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dims-'));
+  try {
+    const vert = path.join(dir, 'vert.mp4');
+    ff(['-f', 'lavfi', '-i', 'color=c=blue:size=360x640:rate=30:duration=1', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', vert]);
+    assert.deepEqual(await video.dimensionesDe(vert), { w: 360, h: 640 });
+    // regresión: un 9:16 en una salida 16:9 tiene que ir a contain_blur, no a cover
+    assert.equal(video.decidirFit('auto', await video.dimensionesDe(vert), { w: 1920, h: 1080 }), 'contain_blur');
+    const rot = path.join(dir, 'rot.mp4');
+    ff(['-display_rotation', '90', '-i', vert, '-c', 'copy', rot]);
+    assert.deepEqual(await video.dimensionesDe(rot), { w: 640, h: 360 });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
