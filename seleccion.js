@@ -12,7 +12,10 @@ const fs = require('fs');
 const path = require('path');
 const driveCache = require('./driveCache');
 
-const HISTORIAL_FILE = path.join(__dirname, 'historial.json');
+// HISTORIAL_PATH existe para que las pruebas puedan usar un archivo temporal sin tocar el real
+// (una prueba mal aislada ya vació historial.json y jobs.json reales). Sin la variable, la ruta es
+// la de siempre.
+const HISTORIAL_FILE = process.env.HISTORIAL_PATH || path.join(__dirname, 'historial.json');
 // CLIP_MAX es un LÍMITE LEGAL, no estético: ningún clip de material ajeno puede pasar de 3
 // segundos (uso legítimo). No subirlo sin decisión explícita del usuario, y al agregar capas
 // nuevas de edición verificar que no lo rompan por un costado (p. ej. la cola extra que
@@ -399,4 +402,4 @@ function insertarMaterialesEnPlan(plan, materialesPorFragmento) {
 module.exports = {
   planificarClips, tiemposPorFragmento, repartirTomas, agruparParaClips, CLIP_MAX, CLIP_MIN, RECORTE_INICIAL,
   emparejarCarpetaTono, elegirPista,
-  insertarMaterialesEnPlan, recordarDuraciones};
+  insertarMaterialesEnPlan, recordarDuraciones, HISTORIAL_FILE};

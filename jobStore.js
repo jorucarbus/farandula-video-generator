@@ -6,8 +6,10 @@ const path = require('path');
 const crypto = require('crypto');
 const driveCache = require('./driveCache');
 
-const DATA_DIR = path.join(__dirname, 'data');
-const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
+// JOBS_PATH existe para que las pruebas puedan usar un archivo temporal sin tocar el real. Sin la
+// variable, la ruta es la de siempre (data/jobs.json).
+const JOBS_FILE = process.env.JOBS_PATH || path.join(__dirname, 'data', 'jobs.json');
+const DATA_DIR = path.dirname(JOBS_FILE);
 const MAX_JOBS = 100; // evita crecimiento infinito del archivo
 
 function cargar() {
@@ -111,4 +113,4 @@ function marcarInsumosLimpiados(carpetaIds) {
   return marcados;
 }
 
-module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken, buscarVariantePorAudioToken, marcarInsumosLimpiados };
+module.exports = { crearJob, actualizarJob, obtenerJob, listarJobs, buscarPorAudioToken, buscarVariantePorAudioToken, marcarInsumosLimpiados, JOBS_FILE };
