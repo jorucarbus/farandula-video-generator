@@ -10,7 +10,7 @@ const { existePieza } = require('../lienzo/recortes');
 const { numerosEnFrase } = require('./partituraVisual');
 
 const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'lugares.json'), 'utf8'))).filter(([k]) => !k.startsWith('_')));
-const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario'];
+const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip'];
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste'], TRAJES = ['bastonera', 'gala'];
 const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', 'baston'], ESCENARIOS = ['casa', 'escenario', 'cartel'];
 const MAX_EXTRAS = 2;
@@ -21,7 +21,8 @@ const contiene = (frase, texto) => normalizar(frase).replace(/\s+/g, ' ').includ
 const tieneAncla = (frase, ancla) => tokens(frase).includes(normalizar(ancla).trim());
 const nombreDePieza = (traje, pose) => (pose === 'reposo' ? `cuerpo-${traje}` : `cuerpo-${traje}-${pose}`);
 
-function validarEscena(e, beats, hechos) {
+// clips: Map beat(0-based) → { id, ss, motivo } con los clips reales candidatos (de edl/biblioteca.elegirClips).
+function validarEscena(e, beats, hechos, clips = null) {
   const errores = [], n = e && e.beat, frase = n >= 1 && n <= beats.length ? beats[n - 1].frase : null;
   if (frase === null) return [`beat ${n}: no existe`];
   const err = m => errores.push(`beat ${n}: ${m}`);
@@ -60,6 +61,12 @@ function validarEscena(e, beats, hechos) {
     const s = e.escenario || {};
     if (!ESCENARIOS.includes(s.tipo)) err(`escenario "${s.tipo}" no válido`); literal(s.texto, 'letrero'); ancla(s.ancla, 'escenario');
   }
+  if (e.principal === 'clip') { // video real: solo el candidato elegido por la búsqueda, nunca uno inventado
+    const cand = clips && clips.get(n - 1), c = e.clip || {};
+    if (!cand) err('no hay clip real candidato para esta frase');
+    else { if (c.id !== cand.id) err('el clip debe ser el candidato ' + cand.id + ', no ' + c.id); if (Number(c.ss) !== Number(cand.ss)) err('el inicio (ss) debe ser el del candidato'); }
+    if (c.marca) { if (c.marca.tipo !== 'circulo') err('la marca solo puede ser un círculo'); ancla(c.marca.ancla, 'marca'); }
+  }
   const extras = e.extras || [];
   if (extras.length > MAX_EXTRAS) err(`más de ${MAX_EXTRAS} extras`);
   const iconos = new Set(disponibles());
@@ -73,10 +80,10 @@ function validarEscena(e, beats, hechos) {
   return errores;
 }
 
-function validarDireccion(escenas, beats, hechos) {
+function validarDireccion(escenas, beats, hechos, clips = null) {
   if (!Array.isArray(escenas)) return ['la respuesta no trae "escenas"'];
   const errores = [], vistos = new Set();
-  for (const e of escenas) { if (vistos.has(e.beat)) errores.push(`beat ${e.beat}: más de una escena`); vistos.add(e.beat); errores.push(...validarEscena(e, beats, hechos)); }
+  for (const e of escenas) { if (vistos.has(e.beat)) errores.push(`beat ${e.beat}: más de una escena`); vistos.add(e.beat); errores.push(...validarEscena(e, beats, hechos, clips)); }
   for (let i = 1; i <= beats.length; i++) if (!vistos.has(i)) errores.push(`beat ${i}: sin escena (cada frase necesita al menos una pieza)`);
   return errores;
 }
@@ -90,15 +97,17 @@ const RE_ESCENARIO = [/Unidad Educativa \p{Lu}\p{L}+/u, /Coliseo La California/u
 
 function palabraOriginal(frase, norm) { return (frase.match(/[\p{L}\p{N}]+/gu) || []).find(w => normalizar(w) === norm); }
 
-function escenaPorReglas(b, i, hechos, previa) {
+function escenaPorReglas(b, i, hechos, previa, clips = null) {
   const frase = b.frase, n = i + 1, toks = tokens(frase), usa = new Set();
   const noConf = (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false);
   const e = { beat: n, extras: [] };
+  const cand = clips && clips.get(i); // si hay video real que calza, va primero: es la mejor evidencia
+  if (cand) { e.principal = 'clip'; e.clip = { id: cand.id, ss: cand.ss, marca: { tipo: 'circulo', ancla: toks.find(t => t.length >= 6) || toks[0] } }; }
   const anios = frase.match(/\b(19|20)\d{2}\b/g) || [];
   const lugar = Object.keys(LUGARES).find(l => contiene(frase, l));
   const cifra = (() => { const m = frase.replace(RE_FECHA, '').match(/(\d[\d.]*)\s+([a-záéíóúñ]+)?/i); if (!m) return null; const v = parseInt(m[1].replace(/\./g, ''), 10); return Number.isFinite(v) && v > 1 && !(v >= 1900 && v <= 2100) ? { valor: v, sufijo: m[2] && m[2].length <= 11 ? m[2] : undefined, ancla: normalizar(m[1].replace(/\./g, '')) } : null; })();
   const escen = RE_ESCENARIO.map(re => frase.match(re)).find(Boolean);
-  if (anios.length >= 3) {
+  if (!e.principal && anios.length >= 3) {
     const partes = frase.split(/,\s*| y /).map(p => p.trim()).filter(p => /\b(19|20)\d{2}\b/.test(p));
     if (partes.length >= 2) { e.principal = 'lista'; e.lista = { titulo: 'Títulos', items: partes.slice(0, 4).map(p => { const t = p.replace(RE_VERBO_LISTA, '').replace(/[.]$/, ''); return { texto: t, ancla: tokens(t)[0] }; }) }; }
   }
@@ -128,15 +137,15 @@ function escenaPorReglas(b, i, hechos, previa) {
   return e;
 }
 
-function directorPorReglas(beats, hechos) {
-  const escenas = []; beats.forEach((b, i) => escenas.push(escenaPorReglas(b, i, hechos, escenas[i - 1])));
+function directorPorReglas(beats, hechos, clips = null) {
+  const escenas = []; beats.forEach((b, i) => escenas.push(escenaPorReglas(b, i, hechos, escenas[i - 1], clips)));
   return escenas;
 }
 
 // ── Director con modelo (catálogo cerrado) + validador + respaldo ─────────────────────────────────────────────
 const PROMPT = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada". Para CADA frase del guion decide qué se ve.
 Catálogo cerrado:
-- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) .
+- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; sin muñeco en esa frase) .
 - "muneco": {traje: ${TRAJES.join('|')}, pose: ${POSES.join('|')} (celebrar/senalar solo con traje bastonera), emocion: ${EMOCIONES.join('|')}, accesorio?: "corona", pegatina?: {id: ${PEGATINAS.join('|')}, ancla}, ancla_pose?, ancla_emocion?, ancla_accesorio?}. Solo con principal muneco o escenario.
 - extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
 Reglas:
@@ -150,6 +159,7 @@ Formas EXACTAS (una por tipo de principal; usa estas claves tal cual):
 {"beat":3,"principal":"cifra","cifra":{"valor":12,"sufijo":"aspirantes","ancla":"doce"},"extras":[]}
 {"beat":4,"principal":"lista","lista":{"titulo":"Títulos","items":[{"texto":"Chonera Bonita 2023","ancla":"Chonera"},{"texto":"Miss Turismo Manabí 2024","ancla":"Miss"}]},"extras":[]}
 {"beat":5,"principal":"escenario","escenario":{"tipo":"casa","texto":"Unidad Educativa Amazonas","ancla":"Unidad"},"muneco":{"traje":"bastonera","pose":"senalar","emocion":"normal","ancla_pose":"Unidad"},"extras":[]}
+{"beat":6,"principal":"clip","clip":{"id":"<id del clipCandidato>","ss":2,"marca":{"tipo":"circulo","ancla":"corona"}},"extras":[]}
 Responde SOLO JSON: {"escenas":[ ... una por frase ... ]}${errores.length ? `\nTu respuesta anterior tuvo estos problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
 
 function llamarGemini(prompt, mensaje) { const gemini = require('../gemini'); return gemini.llamarJSON(prompt, mensaje, gemini.TAREAS.guionNarrativo); }
@@ -164,16 +174,16 @@ function normalizarEscena(e) {
   return x;
 }
 
-async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1 } = {}) {
-  const avisos = [], mensaje = JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase, noConfirmado: (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false) })));
+async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1, clips = null } = {}) {
+  const avisos = [], mensaje = JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase, ...(clips && clips.get(i) ? { clipCandidato: { id: clips.get(i).id, ss: clips.get(i).ss, motivo: clips.get(i).motivo } } : {}), noConfirmado: (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false) })));
   let errores = [];
   for (let intento = 0; intento <= maxReintentos; intento++) {
     let r; try { r = await llamar(PROMPT(errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
     const escenas = ((r && r.escenas) || []).map(normalizarEscena);
-    errores = validarDireccion(escenas, beats, hechos);
+    errores = validarDireccion(escenas, beats, hechos, clips);
     if (!errores.length) return { escenas, origen: 'llm', avisos };
   }
-  const escenas = directorPorReglas(beats, hechos), malas = validarDireccion(escenas, beats, hechos);
+  const escenas = directorPorReglas(beats, hechos, clips), malas = validarDireccion(escenas, beats, hechos, clips);
   avisos.push(`director por reglas de respaldo (${errores.join('; ') || 'sin respuesta'})`);
   if (malas.length) avisos.push(`el respaldo tiene avisos: ${malas.join('; ')}`);
   return { escenas, origen: 'respaldo', avisos };

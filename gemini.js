@@ -56,6 +56,8 @@ const TAREAS = {
   encuadres:     { nombre: 'encuadres',     cadena: CADENAS.creativo },
   // Guion narrativo (noticia contada): redacta solo con los hechos dados; creativo porque decide el gancho y el orden.
   guionNarrativo: { nombre: 'guion narrativo', cadena: CADENAS.creativo },
+  // Etiquetar clips de la biblioteca por contenido y elegir cuál ilustra cada frase: tareas pautadas (describir lo que se ve), mecánicas.
+  etiquetaClip: { nombre: 'etiquetar clip', cadena: CADENAS.mecanico },
 };
 
 // Prompts maestros
@@ -1620,7 +1622,7 @@ module.exports = {
   escribirGuion, escribirGuionEnDosTiempos, MOTORES_GUION, variarMetadatos,
   promptGuion,   // el prompt maestro con el largo del canal ya puesto
   limpiarGuion,   // guarda: el guion sale sin el razonamiento del modelo pegado
-  bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, parsearJsonRobusto, PROMPTS,
+  bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, parsearJsonRobusto, parteMultimodal, PROMPTS,
   procesarLectura,
   extraerActa,
   sintetizarCronica,

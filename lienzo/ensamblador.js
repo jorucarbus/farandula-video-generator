@@ -7,6 +7,7 @@ const P = require('./piezas');
 const { muneco } = require('./recortes');
 const { escenario } = require('./escenarios');
 const { LUGARES, nombreDePieza, tokens } = require('../edl/director');
+const { rostroEnVentana, USO_MAX_S } = require('../edl/biblioteca');
 
 // Posiciones (fracciones del cuadro) de las piezas EXTRA según el principal de la escena.
 const SLOTS = {
@@ -15,15 +16,17 @@ const SLOTS = {
   cifra: [{ cx: 0.30, cy: 0.64 }, { cx: 0.70, cy: 0.64 }],
   lista: [{ cx: 0.30, cy: 0.76 }, { cx: 0.70, cy: 0.76 }],
   escenario: [{ cx: 0.75, cy: 0.30 }, { cx: 0.25, cy: 0.30 }],
+  clip: [{ cx: 0.24, cy: 0.30 }, { cx: 0.76, cy: 0.86 }], // sobre las esquinas del recuadro, como pegatinas
 };
 const PEGATINA = { baston: { dx: 0.34, dy: 0.40, ancho: 0.40, giro: true }, 'guante-pulgar': { dx: -0.36, dy: 0.62, ancho: 0.24 }, 'guante-abierto': { dx: -0.36, dy: 0.62, ancho: 0.28 } };
 
-// cfg: { foto (Buffer|ruta de la cabeza), recorte, anclas?, proporcion = 0.30, voz = null }
+// cfg: { foto (Buffer|ruta de la cabeza), recorte, anclas?, proporcion = 0.30, voz = null, clips = { id: { ruta, ancho, alto, rostro } } }
+// Devuelve { elementos, claves, avisos }. Regla de 3 s: un clip real se muestra como máximo USO_MAX_S seguidos y en total.
 function ensamblar(escenas, beats, V, palabras, cfg) {
   const fin = k => V[k].t1 + 0.4;
   const idxEn = (k, ancla) => { const n = tokens(String(ancla))[0]; for (let i = V[k].desde; i < V[k].hasta; i++) if (tokens(palabras[i].palabra)[0] === n) return i; return V[k].desde; };
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
-  const elementos = [], claves = new Set();
+  const elementos = [], claves = new Set(), avisos = [], uso = new Map();
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
 
   // 1) piezas principales y extras, frase por frase
@@ -31,6 +34,19 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
     const t0 = V[k].t0, t1 = fin(k);
+    if (e.principal === 'clip') {
+      const info = (cfg.clips || {})[e.clip.id];
+      if (!info) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' no está disponible; se omite'); continue; }
+      const gastado = uso.get(e.clip.id) || 0, dur = Math.min(USO_MAX_S - gastado, fin(k) - t0, USO_MAX_S);
+      if (dur < 0.5) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' ya agotó sus ' + USO_MAX_S + ' s de uso; se omite'); continue; }
+      uso.set(e.clip.id, gastado + dur);
+      const marcas = [], m = e.clip.marca, cara = m && info.rostro ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
+      if (m && cara) { // círculo rojo a mano sobre el rostro, en la palabra ancla (dentro de la ventana del clip)
+        const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
+        marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + k }); marca(k, m.ancla);
+      } else if (m) avisos.push('frase ' + (k + 1) + ': sin coordenadas del rostro; el clip va sin círculo');
+      elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas }));
+    }
     if (e.principal === 'escenario') { elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: 0.90, ancho: 0.56, t0: Math.max(0, tPal(k, e.escenario.ancla) - 0.2), t1 })); marca(k, e.escenario.ancla); }
     if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: 0.56, t0, t1 })); marca(k, e.mapa.ancla); }
     if (e.principal === 'cifra') { elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: 0.42, t0: Math.max(0, tPal(k, e.cifra.ancla) - 0.1), t1 })); marca(k, e.cifra.ancla); }
@@ -74,7 +90,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
     }
   }
-  return { elementos, claves };
+  return { elementos, claves, avisos };
 }
 
 module.exports = { ensamblar, SLOTS };
