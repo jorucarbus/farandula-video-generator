@@ -29,7 +29,7 @@ function validarEscena(e, beats, hechos, clips = null) {
   const ancla = (a, quien) => { if (a !== undefined && a !== null && !tieneAncla(frase, a)) err(`${quien}: la palabra ancla "${a}" no está en la frase`); };
   const literal = (t, quien) => { if (!t || !contiene(frase, t)) err(`${quien}: el texto "${t}" no está literalmente en la frase`); };
   if (!PRINCIPALES.includes(e.principal)) return [`beat ${n}: principal "${e.principal}" fuera del catálogo (${PRINCIPALES.join(', ')})`];
-  if (e.muneco && !['muneco', 'escenario'].includes(e.principal)) err('el muñeco solo puede ir con principal muneco o escenario');
+  if (e.muneco && !['muneco', 'escenario', 'clip'].includes(e.principal)) err('el muñeco solo puede ir con principal muneco, escenario o clip');
   if (e.principal === 'muneco' && !e.muneco) err('principal muneco sin datos del muñeco');
   if (e.muneco) {
     const m = e.muneco;
@@ -121,6 +121,7 @@ function escenaPorReglas(b, i, hechos, previa, clips = null) {
     if (toks.includes('bastonera')) m.pegatina = { id: 'baston', ancla: 'bastonera' };
     return m;
   };
+  if (e.principal === 'clip' && !e.muneco) e.muneco = muneco(); // tras los 3 s del clip, el muñeco actúa lo narrado
   if (!e.principal && escen) { e.principal = 'escenario'; e.escenario = { tipo: 'casa', texto: escen[0], ancla: tokens(escen[0])[0] }; e.muneco = { traje: 'bastonera', pose: 'senalar', emocion: 'normal', ancla_pose: tokens(escen[0])[0] }; }
   if (!e.principal) { e.principal = 'muneco'; e.muneco = muneco(); }
   // extras: fecha, y el primer ícono que calce con una palabra de la frase (sin repetir lo que ya hace el principal)
@@ -145,13 +146,14 @@ function directorPorReglas(beats, hechos, clips = null) {
 // ── Director con modelo (catálogo cerrado) + validador + respaldo ─────────────────────────────────────────────
 const PROMPT = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada". Para CADA frase del guion decide qué se ve.
 Catálogo cerrado:
-- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; sin muñeco en esa frase) .
+- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; el clip dura 3 s y DESPUÉS entra el muñeco: puedes dar "muneco" en esa misma frase) .
 - "muneco": {traje: ${TRAJES.join('|')}, pose: ${POSES.join('|')} (celebrar/senalar solo con traje bastonera), emocion: ${EMOCIONES.join('|')}, accesorio?: "corona", pegatina?: {id: ${PEGATINAS.join('|')}, ancla}, ancla_pose?, ancla_emocion?, ancla_accesorio?}. Solo con principal muneco o escenario.
 - extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
 Reglas:
 - Toda frase lleva al menos una pieza. Todo texto en pantalla (etiqueta, letrero, elementos de lista, sufijo) COPIA palabras exactas de la frase; nunca añadas nada que la frase no diga.
 - Cada "ancla" es UNA palabra de la frase: en ella aparece esa pieza.
 - Los elementos de una lista son las cosas nombradas (nombres propios, títulos, cifras), no palabras sueltas como "primera" o "segunda"; si no hay al menos 2 así, usa otro principal.
+- Si la frase trae clipCandidato, úsalo como principal "clip" (con el muñeco actuando después); solo descártalo si la frase pide un mapa, una cifra o una lista.
 - Varía: no repitas el mismo principal más de 2 frases seguidas; la protagonista actúa el hito (ganar, coronarse) con pose celebrar y emoción feliz; nadie habla.
 Formas EXACTAS (una por tipo de principal; usa estas claves tal cual):
 {"beat":1,"principal":"muneco","muneco":{"traje":"bastonera","pose":"celebrar","emocion":"feliz","accesorio":"corona","ancla_pose":"ganó","ancla_emocion":"ganó","ancla_accesorio":"corona","pegatina":{"id":"baston","ancla":"bastonera"}},"extras":[{"tipo":"insignia","icono":"wand","etiqueta":"bastonera","ancla":"bastonera","color":"negro"}]}
@@ -181,7 +183,12 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
     let r; try { r = await llamar(PROMPT(errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
     const escenas = ((r && r.escenas) || []).map(normalizarEscena);
     errores = validarDireccion(escenas, beats, hechos, clips);
-    if (!errores.length) return { escenas, origen: 'llm', avisos };
+    if (!errores.length) {
+      // Tras los 3 s del clip la pantalla no puede quedar vacía: si el modelo no dio muñeco para una frase con clip, lo completa el código.
+      const porReglas = directorPorReglas(beats, hechos, clips);
+      for (const e of escenas) if (e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
+      return { escenas, origen: 'llm', avisos };
+    }
   }
   const escenas = directorPorReglas(beats, hechos, clips), malas = validarDireccion(escenas, beats, hechos, clips);
   avisos.push(`director por reglas de respaldo (${errores.join('; ') || 'sin respuesta'})`);

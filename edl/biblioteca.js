@@ -72,10 +72,11 @@ async function etiquetarClips(clips, { cache, etiquetador = llamarGeminiVideo, c
 // ── Elegir qué clip ilustra cada frase ───────────────────────────────────────────────────────────
 const lineaDeClip = e => `${e.id} | ${e.fecha || '?'} | ${e.tipo} | ${e.descripcion}${e.vestuario.length ? ` | viste: ${e.vestuario.join(', ')}` : ''}${e.lugar ? ` | lugar: ${e.lugar}` : ''}${e.texto_en_pantalla ? ` | texto: ${e.texto_en_pantalla}` : ''} | ${Math.round(e.duracion || 0)}s`;
 
-const PROMPT_ELEGIR = (catalogo, errores) => `Eres editor de video de farándula. Para cada frase del guion, elige el clip REAL de la protagonista que mejor la ilustra, o null si ninguno calza de verdad.
+const PROMPT_ELEGIR = (catalogo, errores, protagonista) => `Eres editor de video de farándula. Los clips son SOLO de ${protagonista || 'la protagonista'}. Para cada frase del guion, elige el clip REAL que mejor la ilustra, o null si ninguno calza de verdad.
 Catálogo (id | fecha | tipo | descripción...):
 ${catalogo}
 Reglas:
+- Solo en frases cuyo SUJETO es ${protagonista || 'la protagonista'} (ella, su nombre, sus logros). En frases sobre OTRAS personas (otras concursantes, su antecesora, la virreina, etc.) la respuesta es null.
 - Solo si el clip muestra lo que la frase dice (vestuario, lugar, evento, época). Si la frase menciona un año, prefiere clips publicados ese año. Mejor null que un clip que no calza.
 - No repitas un clip en dos frases. Máximo ${USO_MAX_S} s por aparición: "ss" es el segundo de inicio (0 hasta duración − ${USO_MAX_S}).
 - "motivo": una frase breve de por qué calza.
@@ -99,18 +100,33 @@ function validarElecciones(elecciones, beats, etiquetas) {
   return errores;
 }
 
-// → Map beat(0-based) → { id, ss, motivo }. Sin modelo o con respuesta mala: ninguna frase usa clip (nunca se inventa uno).
-async function elegirClips(beats, etiquetas, { llamar = llamarGeminiTexto, maxReintentos = 1 } = {}) {
+// Se queda con lo VÁLIDO (el primer uso de cada clip, inicio que cabe, motivo) y descarta lo malo, en vez de tirar toda la respuesta.
+function filtrarElecciones(frases, beats, etiquetas) {
+  const ok = [], descartes = [], usados = new Set();
+  for (const e of Array.isArray(frases) ? frases : []) {
+    const errs = validarElecciones([e], beats, etiquetas);
+    if (e && e.clip && usados.has(e.clip)) errs.push('beat ' + e.beat + ': el clip ' + e.clip + ' ya se usó en otra frase');
+    if (errs.length) { descartes.push(...errs); continue; }
+    if (e.clip) usados.add(e.clip);
+    ok.push(e);
+  }
+  return { ok, descartes };
+}
+
+// → Map beat(0-based) → { id, ss, motivo }. Sin modelo o sin nada válido: ninguna frase usa clip (nunca se inventa uno).
+async function elegirClips(beats, etiquetas, { llamar = llamarGeminiTexto, maxReintentos = 1, protagonista = null } = {}) {
   const lista = Object.values(etiquetas).filter(e => (e.duracion || 0) >= USO_MAX_S);
   const avisos = []; if (!lista.length) return { elecciones: new Map(), avisos: ['la biblioteca no tiene clips etiquetados de al menos 3 s'] };
   const catalogo = lista.map(lineaDeClip).join('\n'), mensaje = JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase })));
   let errores = [];
   for (let intento = 0; intento <= maxReintentos; intento++) {
-    let r; try { r = await llamar(PROMPT_ELEGIR(catalogo, errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
-    errores = validarElecciones(r && r.frases, beats, etiquetas);
-    if (!errores.length) return { elecciones: new Map((r.frases || []).filter(f => f.clip).map(f => [f.beat - 1, { id: f.clip, ss: f.ss, motivo: f.motivo }])), avisos };
+    let r; try { r = await llamar(PROMPT_ELEGIR(catalogo, errores, protagonista), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
+    const { ok, descartes } = filtrarElecciones(r && r.frases, beats, etiquetas); errores = descartes;
+    const hechas = new Map(ok.filter(f => f.clip).map(f => [f.beat - 1, { id: f.clip, ss: f.ss, motivo: f.motivo }]));
+    if (!descartes.length) return { elecciones: hechas, avisos };
+    if (intento === maxReintentos && hechas.size) { avisos.push('se descartó lo inválido: ' + descartes.join('; ')); return { elecciones: hechas, avisos }; }
   }
-  avisos.push(`sin clips reales (${errores.join('; ') || 'sin respuesta'})`);
+  avisos.push('sin clips reales (' + (errores.join('; ') || 'sin respuesta') + ')');
   return { elecciones: new Map(), avisos };
 }
 
@@ -132,4 +148,4 @@ function dimensiones(ruta) {
   return giro ? { ancho: v.height, alto: v.width } : { ancho: v.width, alto: v.height };
 }
 
-module.exports = { dimensiones, fechaDeNombre, descargarCarpeta, etiquetarClips, limpiarEtiqueta, elegirClips, validarElecciones, rostroEnVentana, lineaDeClip, RAIZ, USO_MAX_S, TIPOS };
+module.exports = { filtrarElecciones, dimensiones, fechaDeNombre, descargarCarpeta, etiquetarClips, limpiarEtiqueta, elegirClips, validarElecciones, rostroEnVentana, lineaDeClip, RAIZ, USO_MAX_S, TIPOS };

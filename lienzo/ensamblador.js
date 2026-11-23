@@ -16,7 +16,7 @@ const SLOTS = {
   cifra: [{ cx: 0.30, cy: 0.64 }, { cx: 0.70, cy: 0.64 }],
   lista: [{ cx: 0.30, cy: 0.76 }, { cx: 0.70, cy: 0.76 }],
   escenario: [{ cx: 0.75, cy: 0.30 }, { cx: 0.25, cy: 0.30 }],
-  clip: [{ cx: 0.24, cy: 0.30 }, { cx: 0.76, cy: 0.86 }], // sobre las esquinas del recuadro, como pegatinas
+  clip: [{ cx: 0.76, cy: 0.40 }, { cx: 0.76, cy: 0.64 }], // a la derecha, como con el muñeco (que entra después del clip)
 };
 const PEGATINA = { baston: { dx: 0.34, dy: 0.40, ancho: 0.40, giro: true }, 'guante-pulgar': { dx: -0.36, dy: 0.62, ancho: 0.24 }, 'guante-abierto': { dx: -0.36, dy: 0.62, ancho: 0.28 } };
 
@@ -26,7 +26,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   const fin = k => V[k].t1 + 0.4;
   const idxEn = (k, ancla) => { const n = tokens(String(ancla))[0]; for (let i = V[k].desde; i < V[k].hasta; i++) if (tokens(palabras[i].palabra)[0] === n) return i; return V[k].desde; };
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
-  const elementos = [], claves = new Set(), avisos = [], uso = new Map();
+  const elementos = [], claves = new Set(), avisos = [], uso = new Map(), finClip = new Map(); // finClip: beat → segundo en que termina su clip real
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
 
   // 1) piezas principales y extras, frase por frase
@@ -39,7 +39,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       if (!info) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' no está disponible; se omite'); continue; }
       const gastado = uso.get(e.clip.id) || 0, dur = Math.min(USO_MAX_S - gastado, fin(k) - t0, USO_MAX_S);
       if (dur < 0.5) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' ya agotó sus ' + USO_MAX_S + ' s de uso; se omite'); continue; }
-      uso.set(e.clip.id, gastado + dur);
+      uso.set(e.clip.id, gastado + dur); finClip.set(k, t0 + dur);
       const marcas = [], m = e.clip.marca, cara = m && info.rostro ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
       if (m && cara) { // círculo rojo a mano sobre el rostro, en la palabra ancla (dentro de la ventana del clip)
         const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
@@ -76,7 +76,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     const lado = primero.principal === 'escenario';
     elementos.push(muneco({
       cuerpo: nombreDePieza(m0.traje, 'reposo'), cabeza: cfg.foto, recorte: cfg.recorte, anclas: cfg.anclas, proporcion: cfg.proporcion ?? 0.30, voz: cfg.voz || null,
-      cx: lado ? 0.26 : 0.30, base: 0.93, alto: lado ? 0.56 : 0.60, t0: V[tr[0]].t0 + 0.1, t1: fin(tr[tr.length - 1]),
+      cx: lado ? 0.26 : 0.30, base: 0.93, alto: lado ? 0.56 : 0.60, t0: finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1: fin(tr[tr.length - 1]),
       poses: poses.sort((a, b) => a.t - b.t), emociones: emociones.sort((a, b) => a.t - b.t), accesorios, pegatinas, saltos,
     }));
   }

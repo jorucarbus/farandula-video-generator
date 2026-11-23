@@ -50,11 +50,19 @@ test('elegirClips: acepta solo clips del catálogo, con inicio que cabe en 3 s, 
   err([{ beat: 1, clip: 'c1', ss: 19, motivo: 'x' }], /no cabe en un clip/);
   err([{ beat: 1, clip: 'c1', ss: 0, motivo: 'x' }, { beat: 2, clip: 'c1', ss: 5, motivo: 'x' }], /ya se usó/);
   err([{ beat: 1, clip: 'c1', ss: 0, motivo: '' }], /falta el motivo/);
+  const mezcla = await B.elegirClips(beats, etiquetas, { llamar: async () => ({ frases: [{ beat: 1, clip: 'c1', ss: 2, motivo: 'bien' }, { beat: 2, clip: 'c1', ss: 5, motivo: 'repetido' }] }) });
+  assert.deepEqual([...mezcla.elecciones.keys()], [0], 'se conserva el primer uso y se descarta el repetido');
+  assert.ok(mezcla.avisos.some(a => /se descartó lo inválido/.test(a)));
   const mal = await B.elegirClips(beats, etiquetas, { llamar: async () => ({ frases: [{ beat: 1, clip: 'inventado', ss: 0, motivo: 'x' }] }) });
   assert.equal(mal.elecciones.size, 0); assert.ok(mal.avisos.some(a => /sin clips reales/.test(a)));
   const sinRed = await B.elegirClips(beats, etiquetas, { llamar: async () => { throw new Error('sin red'); } });
   assert.equal(sinRed.elecciones.size, 0);
   assert.equal((await B.elegirClips(beats, { corto: etiquetas.corto })).elecciones.size, 0, 'clips de menos de 3 s no se ofrecen');
+});
+
+test('elegirClips: la regla del sujeto va en el prompt (solo frases sobre la protagonista) con su nombre', async () => {
+  let visto = ''; await B.elegirClips(beats, etiquetas, { protagonista: 'Leidy Alvarez', llamar: async p => { visto = p; return { frases: [] }; } });
+  assert.match(visto, /SOLO de Leidy Alvarez/); assert.match(visto, /OTRAS personas/);
 });
 
 test('rostroEnVentana: cuadro vertical 9:16 no cambia; uno ancho recorta los lados; uno más alto recorta arriba y abajo', () => {
@@ -90,6 +98,10 @@ test('director: el principal clip solo acepta el candidato; sin candidato o con 
   assert.deepEqual(validarDireccion(reglas, beats, hechos, elecciones), []);
   const llm = await dirigir(beats, hechos, { clips: elecciones, llamar: async p => { assert.match(p, /clipCandidato|VIDEO REAL/); return { escenas: reglas }; } });
   assert.equal(llm.origen, 'llm');
+  // si el modelo no da muñeco para la frase con clip, el código lo completa (la pantalla no queda vacía tras los 3 s)
+  const sinMuneco = reglas.map(e => { const { muneco, ...resto } = e; return e.principal === 'clip' ? resto : e; });
+  const completado = await dirigir(beats, hechos, { clips: elecciones, llamar: async () => ({ escenas: sinMuneco }) });
+  assert.equal(completado.origen, 'llm'); assert.ok(completado.escenas[0].muneco, 'el muñeco se añadió a la frase con clip');
 });
 
 test('ensamblar con clip: ventana de a lo sumo 3 s, círculo sobre el rostro en la palabra ancla y regla de 3 s por clip', () => {

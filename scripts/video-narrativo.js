@@ -30,7 +30,7 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   const rEtiq = path.join(RAIZ, `${carpeta}.etiquetas.json`), rClips = path.join(RAIZ, `${carpeta}.clips.json`);
   if (!process.argv.includes('--sin-clips') && fs.existsSync(rEtiq) && fs.existsSync(rClips)) {
     const etiquetas = JSON.parse(fs.readFileSync(rEtiq, 'utf8')), rutaDe = Object.fromEntries(JSON.parse(fs.readFileSync(rClips, 'utf8')).map(c => [c.id, c.ruta]));
-    const r = await elegirClips(g.beats, etiquetas); elecciones = r.elecciones;
+    const r = await elegirClips(g.beats, etiquetas, { protagonista: arg('--protagonista', carpeta.replace(/_/g, ' ')) }); elecciones = r.elecciones;
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = { ruta: rutaDe[c.id], ...dimensiones(rutaDe[c.id]), rostro: t.rostro }; console.log(`  frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
