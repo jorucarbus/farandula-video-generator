@@ -20,9 +20,11 @@ module.exports = {
   ],
   tipografia: { numero: '"Big Shoulders"', texto: 'Outfit' },
   // Niveles de los efectos (dB, relativos a la voz ya mezclada): se ajustan a oído. maestro baja todo parejo.
-  sonido: { maestro: -4, ganancias: { pop: -10, trazo: -13, tick: -16, golpe: -7, ding: -13, clic: -13 } },
+  sonido: { maestro: -10, ganancias: { pop: -10, trazo: -13, tick: -18, golpe: -7, ding: -14, clic: -14 } },
   movimiento: {
     fps: 30,
+    // Los elementos "flotan" como las pegatinas de capitol: sube/baja suave y leve inclinación, con fase distinta por elemento.
+    flote: { amp: 0.0065, periodo: 3.4, giroGrados: 0.55 },
     pop:    { dur: 0.34, escalaInicial: 0.45, sobreimpulso: 1.9 },   // aparece creciendo con rebote
     conteo: { dur: 0.95 },                                           // 0 → valor, frena al final
     sello:  { dur: 0.30, escalaInicial: 2.5, escalaImpacto: 0.94, giroGrados: -6 }, // cae y se asienta

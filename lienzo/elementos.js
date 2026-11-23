@@ -45,7 +45,7 @@ function cifra({ valor, sufijo, prefijo, agrupar, conteo, cy = 0.46, t0, t1 }) {
   const datos = { valor, sufijo, prefijo, agrupar, conteo, ancla: 'centro' };
   return {
     t0, t1,
-    eventos: [{ t: t0, sonido: 'pop' }, ...(conteo === false ? [] : [...ticksDeConteo(valor, t0, 0.95, easeOutCubic).map(t => ({ t, sonido: 'tick' })), { t: t0 + 0.95, sonido: 'ding' }])],
+    eventos: [{ t: t0, sonido: 'pop' }, ...(conteo === false ? [] : [...ticksDeConteo(valor, t0, 0.95, easeOutCubic).map((t, k, a) => ({ t, sonido: 'tick', pitch: 1 + 0.4 * k / Math.max(1, a.length - 1) })), { t: t0 + 0.95, sonido: 'ding' }])],
     dibujar(ctx, { t, w, h, u, estilo }) {
       const comp = COMPONENTES.cifra_pildora, caja = comp.caja({ w, h, u, datos, estilo, ctx });
       ctx.save(); ctx.translate(caja.x, Math.round(h * cy - caja.ch / 2));

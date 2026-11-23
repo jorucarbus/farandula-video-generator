@@ -32,10 +32,15 @@ async function renderizar({ w = 1080, h = 1920, fps = 30, duracion, audio, salid
     for (let i = 0; i < n; i++) {
       const t = i / fps;
       B.fondo(ctx, w, h, estilo);
-      for (const el of elementos) {
+      const fl = estilo.movimiento.flote;
+      for (const [k, el] of elementos.entries()) {
         if (t < el.t0 || t >= el.t1) continue;
         const salida_ = acotar((el.t1 - t) / 0.18); // sale con un fundido rápido
         ctx.save(); ctx.globalAlpha = salida_;
+        if (fl && el.flota !== false) { // flote: sube/baja + leve giro alrededor del centro del escenario
+          const fase = k * 1.9, dy = Math.sin(Math.PI * 2 * (t / fl.periodo) + fase) * fl.amp * u, giro = Math.sin(Math.PI * 2 * (t / (fl.periodo * 1.37)) + fase + 1) * fl.giroGrados * Math.PI / 180;
+          ctx.translate(w / 2, h * 0.55 + dy); ctx.rotate(giro); ctx.translate(-w / 2, -h * 0.55);
+        }
         await el.dibujar(ctx, { t: t - el.t0, tAbs: t, w, h, u, estilo });
         ctx.restore();
       }

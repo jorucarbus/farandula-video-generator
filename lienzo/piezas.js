@@ -41,7 +41,7 @@ function insignia({ icono, color: c = 'negro', etiqueta, cx = 0.5, cy = 0.5, r =
 }
 
 // nodos: [{ icono, etiqueta, color?, t (abs) }] de 2 a 3. Cada nodo entra en su palabra; la flecha se traza justo antes del siguiente.
-function progresion({ nodos, cy = 0.66, t0, t1 }) {
+function progresion({ nodos, cy = 0.66, cx = 0.5, sep = null, t0, t1 }) {
   let imgs = [];
   const ini = t0 ?? nodos[0].t;
   return {
@@ -49,9 +49,9 @@ function progresion({ nodos, cy = 0.66, t0, t1 }) {
     eventos: nodos.flatMap((n, i) => [{ t: n.t, sonido: i === nodos.length - 1 ? 'golpe' : 'pop', db: i === nodos.length - 1 ? -4 : 0 }, ...(i ? [{ t: n.t - 0.42, sonido: 'trazo' }] : [])]),
     async preparar() { imgs = await Promise.all(nodos.map(n => cargarIcono(n.icono, { color: '#FFFFFF', grosor: 1.8 }))); },
     dibujar(ctx, { tAbs, w, h, u, estilo }) {
-      const n = nodos.length, sep = n === 2 ? 0.46 : 0.31, Y = h * cy;
+      const n = nodos.length, sp = sep ?? (n === 2 ? 0.46 : 0.31), Y = h * cy;
       const R = i => u * (i === n - 1 ? 0.112 : 0.092);
-      const X = i => w * (0.5 + (i - (n - 1) / 2) * sep);
+      const X = i => w * (cx + (i - (n - 1) / 2) * sp);
       const defecto = i => (i === 0 ? 'gris' : i === n - 1 ? 'rojo' : 'verde');
       nodos.forEach((nd, i) => { // flechas debajo de los discos
         if (!i) return;
