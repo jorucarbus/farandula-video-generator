@@ -12,7 +12,7 @@ const video = require('../video');
 fs.mkdirSync(video.TEMP_DIR, { recursive: true });
 const estilo = require('../estilos/capitol');
 const { generarSecuencia } = require('../overlay/animacion');
-const { COMPONENTES, formatear } = require('../overlay/componentes');
+const { COMPONENTES, formatear, sufijoDe } = require('../overlay/componentes');
 const recetas = require('../recetas');
 const { planEdlARender } = require('../edl/planEdlARender');
 
@@ -120,4 +120,12 @@ test('render real: la píldora roja no está antes de su ventana y sostiene el �
     video.limpiarTemporales(jobId);
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('sufijo de la cifra: las palabras llevan espacio, los símbolos no', () => {
+  assert.equal(sufijoDe({ sufijo: 'años' }), ' años');
+  assert.equal(sufijoDe({ sufijo: ' aspirantes' }), ' aspirantes');
+  assert.equal(sufijoDe({ sufijo: '$' }), '$');
+  assert.equal(sufijoDe({ sufijo: '%' }), '%');
+  assert.equal(sufijoDe({}), '');
 });

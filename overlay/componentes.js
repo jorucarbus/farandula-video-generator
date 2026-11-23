@@ -28,6 +28,9 @@ function ubicar(ancla, w, h, cw, ch) {
   return { x: Math.round((w - cw) / 2), y: Math.round(h * cy - ch / 2) };
 }
 
+// Sufijo con espacio si empieza en letra ("6" + "años" → "6 años"); "$" y "%" se quedan pegados como vengan.
+const sufijoDe = d => { const x = d.sufijo || ''; return /^[A-Za-zÁ-úñÑ]/.test(x) ? ` ${x}` : x; };
+
 // Miles con punto, como se escribe en Ecuador/España ("500.000"). `agrupar:false` para años.
 const formatear = (n, agrupar = true) => (agrupar ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : String(n));
 
@@ -36,7 +39,7 @@ const cifraPildora = {
   dur: (est, datos) => (datos.conteo === false ? est.movimiento.pop.dur : Math.max(est.movimiento.pop.dur, est.movimiento.conteo.dur)),
   _medidas({ w, u, datos, estilo, ctx }) {
     let tam = Math.round(u * 0.17);
-    const final = `${datos.prefijo || ''}${formatear(datos.valor, datos.agrupar !== false)}${datos.sufijo || ''}`;
+    const final = `${datos.prefijo || ''}${formatear(datos.valor, datos.agrupar !== false)}${sufijoDe(datos)}`;
     ctx.font = `${tam}px ${estilo.tipografia.numero}`; espaciar(ctx, 0);
     let tw = ctx.measureText(final).width;
     // Si no cabe en el cuadro (p. ej. "12 aspirantes"), se achica el tamaño completo en vez de recortar.
@@ -64,7 +67,7 @@ const cifraPildora = {
     ctx.shadowColor = 'transparent';
     ctx.fillStyle = estilo.colores.blanco; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `${m.tam}px ${estilo.tipografia.numero}`;
-    ctx.fillText(`${datos.prefijo || ''}${formatear(valor, datos.agrupar !== false)}${datos.sufijo || ''}`, 0, m.tam * 0.03);
+    ctx.fillText(`${datos.prefijo || ''}${formatear(valor, datos.agrupar !== false)}${sufijoDe(datos)}`, 0, m.tam * 0.03);
     ctx.restore();
   },
 };
@@ -148,4 +151,4 @@ const tarjetaDato = {
 };
 
 const COMPONENTES = { cifra_pildora: cifraPildora, sello_animado: selloAnimado, tarjeta_dato: tarjetaDato };
-module.exports = { COMPONENTES, formatear, rectRedondo, envolver, ubicar };
+module.exports = { COMPONENTES, formatear, sufijoDe, rectRedondo, envolver, ubicar };

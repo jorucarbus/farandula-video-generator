@@ -6,7 +6,7 @@
 // parrafoIdx, esImagen, famoso) se conserva tal cual: el flujo clásico no cambia de forma.
 //
 // Si algo falla, quien llama sigue con el plan original (server.js lo envuelve en try/catch).
-const { planificarEdl } = require('./planificadorLLM');
+const { planificarEdl, planDeterminista } = require('./planificadorLLM');
 const { planEdlARender } = require('./planEdlARender');
 
 // El plan clásico no trae metadatos de fuente (los clips salen de la biblioteca de Drive del usuario):
@@ -19,13 +19,20 @@ const REGLAS_IGNORADAS = ['V2', 'V3', 'V4', 'V6'];
 
 function edlDesdePlan(plan, { aspect = '9:16', efectos = {}, titulo = null } = {}) {
   const clips = plan.map((c, i) => ({ c, i })).filter(x => x.c);
+  // Partitura visual (efectos.recetasPorParrafo: índice de fragmento → {recipe, params}): la pieza va en el
+  // PRIMER clip del párrafo. En un short 9:16 el primer shot queda libre para el gancho (regla del catálogo).
+  const partitura = efectos.recetasPorParrafo || {};
+  const usados = new Set();
   const shots = clips.map(({ c, i }, k) => {
+    const pedida = partitura[c.parrafoIdx];
+    const aplica = pedida && !usados.has(c.parrafoIdx) && !(k === 0 && aspect === '9:16');
+    if (pedida) usados.add(c.parrafoIdx);
     const shot = {
       id: `c${i}`,
       orden: k + 1,
       duracion: c.duracion,
-      recipe: 'clip_kenburns',
-      params: {},
+      recipe: aplica ? pedida.recipe : 'clip_kenburns',
+      params: aplica ? pedida.params : {},
       clip: { videoId: c.videoId, famoso: c.famoso, offset: c.offset, duracion: c.duracion },
       fuente: FUENTE_BIBLIOTECA(c.videoId),
     };
@@ -51,7 +58,10 @@ function edlDesdePlan(plan, { aspect = '9:16', efectos = {}, titulo = null } = {
 async function aplicarPlanPorRecetas({ plan, efectos = {}, titulo = null, llamar, dirTemp, fuenteArchivo }) {
   const aspect = efectos.aspect || '9:16';
   const edl = edlDesdePlan(plan, { aspect, efectos, titulo });
-  const planificado = await planificarEdl(edl, { llamar, reglasIgnoradas: REGLAS_IGNORADAS });
+  // Con partitura el planificador LLM no interviene: las recetas ya vienen elegidas y verificadas.
+  const planificado = efectos.recetasPorParrafo
+    ? { edl: planDeterminista(edl), origen: 'partitura', avisos: [] }
+    : await planificarEdl(edl, { llamar, reglasIgnoradas: REGLAS_IGNORADAS });
   const render = await planEdlARender(planificado.edl, { dirTemp, fuenteArchivo });
 
   // Mezclar: el plan original manda; solo se le agrega el zoom por clip de la receta.
