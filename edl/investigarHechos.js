@@ -9,7 +9,7 @@ const MAX_NUEVOS = 6;
 
 // Temas con riesgo de privacidad/difamación: nunca entran solos al guion. Quedan en `apartados` para que
 // una persona decida (decisión de plan v4: el riesgo legal principal en farándula es difamación/privacidad).
-const SENSIBLE = /\b(intim[oa]s?|sexual(es)?|desnud[oa]s?|porn\w*|violacion|abus[oa]\w*|acoso|menor(es)? de edad|suicid\w*|enfermedad|cancer|vih|embarazo|aborto|detenid[oa]s?|arrestad[oa]s?|denuncia\w*|demanda\w*|imputad[oa]s?|condenad[oa]s?|carcel|drogas?|adiccion|infidelidad|amante)\b/;
+const SENSIBLE = /\b(intim[oa]s?|sexual(es)?|desnud[oa]s?|porn\w*|violacion|abus[oa]\w*|acoso|menor(es)? de edad|suicid\w*|enfermedad|cancer|vih|embarazo|aborto|detenid[oa]s?|arrestad[oa]s?|denuncia\w*|demanda\w*|imputad[oa]s?|condenad[oa]s?|carcel|drogas?|adiccion|infidelidad|amante|sentimental|romance|noviazgo|novi[oa]s?|pareja|divorciw*|separacion|esposo|esposa|casad[oa]s?)\b/;
 const esSensible = t => SENSIBLE.test(String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''));
 
 const PROMPT = `Eres investigador de una redacción de farándula. Te doy los HECHOS de una noticia.

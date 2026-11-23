@@ -2,6 +2,7 @@
 // Uso: node scripts/probar-investigacion-real.js
 require('dotenv').config();
 const { investigarHechos } = require('../edl/investigarHechos');
+const { seleccionarHechos } = require('../edl/seleccionarHechos');
 const { generarGuion } = require('../edl/guionNarrativo');
 const hechos = [
   { texto: 'El Coliseo La California de Portoviejo fue la sede de la elección de la Reina de Manabí 2026-2027.' },
@@ -20,7 +21,12 @@ const hechos = [
   console.log('CONSULTAS:', inv.consultas.join(' | ') || '-');
   console.log('CITAS:', inv.citas.map(c => c.titulo).join(' | ') || '-');
   inv.nuevos.forEach((h, i) => console.log(`NUEVO ${i + 1} [${h.confirmado ? 'corroborado' : 'sin corroborar'}; ${h.fuente}] ${h.texto}`));
-  const r = await generarGuion(inv.hechos, { tema: 'Chone retiene la corona de Reina de Manabí' });
+  const sel = await seleccionarHechos(inv.hechos, { tema: 'Chone retiene la corona de Reina de Manabí' });
+  console.log(`
+SELECCIÓN (${sel.origen}): ${sel.hechos.length} de ${inv.hechos.length} hechos | AVISOS: ${sel.avisos.join(' || ') || '-'}`);
+  console.log('GANCHO:', sel.gancho ? `${sel.gancho.frase} [hecho ${sel.gancho.de + 1} → ${sel.gancho.a + 1}]` : 'ninguno');
+  sel.descartados.forEach(h => console.log('  descartado:', h.texto.slice(0, 80)));
+  const r = await generarGuion(sel.hechos, { tema: 'Chone retiene la corona de Reina de Manabí', gancho: sel.gancho });
   console.log('\nORIGEN:', r.origen, '| PALABRAS:', r.palabras, '| AVISOS:', r.avisos.join(' || ') || '-');
   r.beats.forEach((b, i) => console.log(`${i + 1}. [${b.rol}] ${b.frase}`));
 })().catch(e => { console.error('FALLO', e.message); process.exit(1); });

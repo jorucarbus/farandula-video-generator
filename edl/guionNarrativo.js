@@ -11,7 +11,8 @@ const normalizar = t => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ
 const contarPalabras = t => (normalizar(t).match(/[a-z0-9ñ]+/g) || []).length;
 
 const VALORACION = ['increible', 'escandalo', 'escandaloso', 'impactante', 'polemico', 'tremendo', 'brutal', 'devastador', 'sorprendente', 'indignante', 'lamentable', 'espectacular', 'bochornoso'];
-const MORALEJA = /\b(moraleja|ensenanza|leccion|conclusion|reflexion|al final del dia)\b/;
+const SIN_RESPALDO = /\b(pocos|nadie|casi nadie|muy pocos|poco se|pocas personas)\s+(\w+\s+)?(sabe|saben|menciona|mencionan|mencionado|mencionados|cuenta|cuentan|habla|hablan|conoce|conocen|sabia|sabe)\b|\blo que (nadie|pocos)\b|\bpoco (conocid|mencionad|contad)/;
+const MORALEJA =/\b(moraleja|ensenanza|leccion|conclusion|reflexion|al final del dia)\b/;
 const ATRIBUCION = /\b(segun|de acuerdo con|asegura|aseguran|afirma|afirman|dijo|dice|dicen|declaro|conto|cuenta|publico|informo|informa|medios|prensa|se rumora|presuntamente|supuestamente|habria|rumor)\b/;
 const TEMPORAL = /\b(hoy|ayer|antes|despues|luego|mientras|al final|desde|hace|en 1\d{3}|en 20\d{2}|ese dia|esa noche|meses|semanas|anos|primero|finalmente|entonces|cuando|tras)\b|\b(19|20)\d{2}\b/;
 
@@ -39,6 +40,7 @@ function validarGuion(beats, hechos, { palabrasMin = PALABRAS_MIN, palabrasMax =
     const n0 = normalizar(frase);
     const val = VALORACION.filter(v => new RegExp(`\\b${v}\\b`).test(n0));
     if (val.length) errores.push(`frase ${n}: adjetivo de valoración (${val.join(', ')}); cuenta, no opines`);
+    if (SIN_RESPALDO.test(n0)) errores.push(`frase ${n}: afirma qué saben o cuentan los demás (no está en los hechos); quítalo`);
     if (TEMPORAL.test(n0)) conTiempo++;
     const refs = Array.isArray(b.hechos) ? b.hechos : [];
     for (const r of refs) {
@@ -59,12 +61,12 @@ function validarGuion(beats, hechos, { palabrasMin = PALABRAS_MIN, palabrasMax =
   return { errores, avisos, palabras: total };
 }
 
-const PROMPT = (errores, min = PALABRAS_MIN, max = PALABRAS_MAX) => `Eres guionista de videos cortos de farándula, estilo "noticia contada": narras lo que pasó, en orden, sin opinar.
+const PROMPT = (errores, min = PALABRAS_MIN, max = PALABRAS_MAX, gancho = null) => `Eres guionista de videos cortos de farándula, estilo "noticia contada": narras lo que pasó, en orden, sin opinar.
 Usa SOLO los hechos que te doy. Español neutro, frases cortas, una sola idea por frase.
 Reglas:
 - Entre ${min} y ${max} palabras en total (cuéntalas; NO rellenes: si hay pocos hechos, el guion es corto); máx. ${PALABRAS_FRASE_MAX} por frase.
 - Cada hecho se dice UNA vez; no lo repitas ni lo reformules. No generalices ("años de trayectoria", "certámenes locales") si los hechos no lo dicen.
-- Primera frase = gancho: contrasta lo que todos ven con lo que pasa de verdad, o promete lo menos contado. Sin saludos ni presentaciones.
+- Primera frase = gancho. ${gancho ? `Úsalo así: contrasta el hecho ${gancho.de + 1} con el hecho ${gancho.a + 1} (${gancho.frase}). Una sola frase que contenga ambos extremos del contraste, solo con lo que dicen esos hechos.` : 'Contrasta dos hechos reales de la lista (de dónde venía / qué logró). Si no hay contraste real, abre con el hecho más fuerte.'} Sin saludos ni presentaciones. No afirmes qué cuentan o saben los demás ("pocos mencionan", "nadie sabe").
 - Ordena con marcas de tiempo y orden: hoy, antes, mientras tanto, desde, al final.
 - NO introduzcas nombres propios, cifras, fechas, lugares ni motivos que no estén en los hechos. NO describas escenas ni emociones.
 - NO uses adjetivos de valoración (increíble, escandaloso, impactante...). NO opines ni concluyas.
@@ -86,14 +88,14 @@ function guionDeterminista(hechos) {
   }));
 }
 
-async function generarGuion(hechos, { tema = '', llamar = llamarGemini, maxReintentos = 2, ...opciones } = {}) {
+async function generarGuion(hechos, { tema = '', llamar = llamarGemini, maxReintentos = 2, gancho = null, ...opciones } = {}) {
   const avisos = [];
   const mensaje = JSON.stringify({ tema, hechos: hechos.map((h, i) => ({ n: i + 1, texto: h.texto, confirmado: h.confirmado !== false, fuente: h.fuente || null })) });
   const limites = { ...limitesDeLargo(hechos), ...opciones };
   let errores = [];
   for (let intento = 0; intento <= maxReintentos; intento++) {
     let r;
-    try { r = await llamar(PROMPT(errores, limites.palabrasMin, limites.palabrasMax), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
+    try { r = await llamar(PROMPT(errores, limites.palabrasMin, limites.palabrasMax, gancho), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
     const beats = (r && r.beats) || [];
     const v = validarGuion(beats, hechos, limites);
     errores = v.errores;
