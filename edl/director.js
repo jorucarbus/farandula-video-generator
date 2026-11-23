@@ -11,6 +11,7 @@ const { numerosEnFrase } = require('./partituraVisual');
 
 const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'lugares.json'), 'utf8'))).filter(([k]) => !k.startsWith('_')));
 const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip'];
+const GESTOS = Object.keys(require('../lienzo/titere-rig').GESTOS); // reacciones de las manos del muñeco (catálogo cerrado)
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste'], TRAJES = ['bastonera', 'gala'];
 const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', 'baston'], ESCENARIOS = ['casa', 'escenario', 'cartel'];
 const MAX_EXTRAS = 2;
@@ -41,6 +42,7 @@ function validarEscena(e, beats, hechos, clips = null) {
     if (m.pegatina && !PEGATINAS.includes(m.pegatina.id)) err(`pegatina "${m.pegatina.id}" no válida (${PEGATINAS.join(', ')})`);
     ancla(m.ancla_pose, 'ancla_pose'); ancla(m.ancla_emocion, 'ancla_emocion'); ancla(m.ancla_accesorio, 'ancla_accesorio'); if (m.pegatina) ancla(m.pegatina.ancla, 'pegatina');
     for (const s of m.saltos || []) ancla(s, 'salto');
+    if (m.gesto) { if (!GESTOS.includes(m.gesto.id)) err(`gesto "${m.gesto.id}" no válido (${GESTOS.join(', ')})`); ancla(m.gesto.ancla, 'gesto'); }
   }
   if (e.principal === 'mapa') {
     if (!e.mapa || !LUGARES[e.mapa.lugar]) err(`lugar "${e.mapa && e.mapa.lugar}" fuera del catálogo`); else { literal(e.mapa.lugar, 'lugar'); ancla(e.mapa.ancla, 'mapa'); }
@@ -119,6 +121,9 @@ function escenaPorReglas(b, i, hechos, previa, clips = null) {
     const w = toks.find(t => /^(gano|corona|campeona|triunfo)$/.test(t)); if (celebra && w) { m.ancla_pose = w; m.ancla_emocion = w; }
     if (toks.includes('corona')) { m.accesorio = 'corona'; m.ancla_accesorio = 'corona'; }
     if (toks.includes('bastonera')) m.pegatina = { id: 'baston', ancla: 'bastonera' };
+    // gesto de reacción según lo que se cuenta (palabras de la frase; el ancla es la propia palabra)
+    const gesto = [[/^(segun|aseguran|supuestamente|rumor|presuntamente|dicen)$/, 'boca'], [/^(sorprendio|sorpresa|increible|nadie|inesperado)$/, 'mejillas'], [/^(agradecio|gracias|respaldo|carino|apoyo)$/, 'pecho'], [/^(premio|aplausos|reconocimiento|reconocio)$/, 'aplauso'], [/^(supero|enfrento|desafio|competencia)$/, 'cintura'], [/^(quiza|posible|talvez|duda)$/, 'encoger']];
+    for (const [re, id] of gesto) { const w2 = toks.find(t => re.test(t)); if (w2) { m.gesto = { id, ancla: w2 }; break; } }
     return m;
   };
   if (e.principal === 'clip' && !e.muneco) e.muneco = muneco(); // tras los 3 s del clip, el muñeco actúa lo narrado
@@ -147,7 +152,7 @@ function directorPorReglas(beats, hechos, clips = null) {
 const PROMPT = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada". Para CADA frase del guion decide qué se ve.
 Catálogo cerrado:
 - principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; el clip dura 3 s y DESPUÉS entra el muñeco: puedes dar "muneco" en esa misma frase) .
-- "muneco": {traje: ${TRAJES.join('|')}, pose: ${POSES.join('|')} (celebrar/senalar solo con traje bastonera), emocion: ${EMOCIONES.join('|')}, accesorio?: "corona", pegatina?: {id: ${PEGATINAS.join('|')}, ancla}, ancla_pose?, ancla_emocion?, ancla_accesorio?}. Solo con principal muneco o escenario.
+- "muneco": {traje: ${TRAJES.join('|')}, pose: ${POSES.join('|')} (celebrar/senalar solo con traje bastonera), emocion: ${EMOCIONES.join('|')}, accesorio?: "corona", pegatina?: {id: ${PEGATINAS.join('|')}, ancla}, gesto?: {id: ${GESTOS.join('|')}, ancla} (reacción de las manos: mejillas=sorpresa, pecho=ternura/agradecimiento, boca=chisme o rumor, aplauso=premio, cintura=reto/competencia, encoger=duda, saludo), ancla_pose?, ancla_emocion?, ancla_accesorio?}. Solo con principal muneco o escenario.
 - extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
 Reglas:
 - Toda frase lleva al menos una pieza. Todo texto en pantalla (etiqueta, letrero, elementos de lista, sufijo) COPIA palabras exactas de la frase; nunca añadas nada que la frase no diga.
@@ -196,4 +201,4 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
   return { escenas, origen: 'respaldo', avisos };
 }
 
-module.exports = { normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
+module.exports = { GESTOS, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };

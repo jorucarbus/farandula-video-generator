@@ -173,7 +173,7 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.56, t0, t
 // el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
 // Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
 const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
-function montaje({ cortes, t0, t1, cy = 0.615, ancho = 0.74, atenuar = [], base = 0.08, fuerte = 0.30 }) {
+function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.56, atenuar = [], base = 0.08, fuerte = 0.30 }) {
   let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
   const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
   const velo = tAbs => { let a = base; for (const v of atenuar) { const k = acotar((tAbs - v.t0) / 0.3) * acotar((v.t1 - tAbs) / 0.3); a = Math.max(a, lerp(base, fuerte, k)); } return a; };
@@ -183,7 +183,7 @@ function montaje({ cortes, t0, t1, cy = 0.615, ancho = 0.74, atenuar = [], base 
     return memo.get(arch);
   };
   return {
-    t0, t1, flota: false, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => ({ t: c.t0, sonido: 'clic', db: -10 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
+    t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => ({ t: c.t0, sonido: 'clic', db: -10 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
     async preparar({ w, h, fps }) {
       fpsM = fps; WW = Math.round(w * ancho); HH = Math.round(WW * 16 / 9); dir = fs.mkdtempSync(path.join(os.tmpdir(), 'montaje-'));
       const ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static');
