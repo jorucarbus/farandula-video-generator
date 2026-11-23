@@ -1,0 +1,18 @@
+{
+  "_nota": "Lugares de Ecuador que el mapa sabe marcar (lat/lon aproximados de la ciudad). El director solo puede pedir un lugar de esta lista; para agregar uno, añade la clave tal como se escribe en el texto.",
+  "Portoviejo": { "lat": -1.0546, "lon": -80.4545 },
+  "Chone": { "lat": -0.6836, "lon": -80.0937 },
+  "Manta": { "lat": -0.9677, "lon": -80.7089 },
+  "El Carmen": { "lat": -0.2667, "lon": -79.4333 },
+  "Bolívar": { "lat": -0.8458, "lon": -80.165 },
+  "Calceta": { "lat": -0.8458, "lon": -80.165 },
+  "Jipijapa": { "lat": -1.3489, "lon": -80.5791 },
+  "Montecristi": { "lat": -1.0467, "lon": -80.6592 },
+  "Junín": { "lat": -0.9333, "lon": -80.2167 },
+  "Quito": { "lat": -0.1807, "lon": -78.4678 },
+  "Guayaquil": { "lat": -2.1894, "lon": -79.8891 },
+  "Cuenca": { "lat": -2.9001, "lon": -79.0059 },
+  "Esmeraldas": { "lat": 0.9592, "lon": -79.6539 },
+  "Loja": { "lat": -3.9931, "lon": -79.2042 },
+  "Ambato": { "lat": -1.2417, "lon": -78.6197 }
+}
