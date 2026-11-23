@@ -19,6 +19,8 @@ module.exports = {
     { familia: 'Outfit', archivo: path.join(FUENTES, 'Outfit-Bold.ttf') },              // texto
   ],
   tipografia: { numero: '"Big Shoulders"', texto: 'Outfit' },
+  // Niveles de los efectos (dB, relativos a la voz ya mezclada): se ajustan a oído. maestro baja todo parejo.
+  sonido: { maestro: -4, ganancias: { pop: -10, trazo: -13, tick: -16, golpe: -7, ding: -13, clic: -13 } },
   movimiento: {
     fps: 30,
     pop:    { dur: 0.34, escalaInicial: 0.45, sobreimpulso: 1.9 },   // aparece creciendo con rebote

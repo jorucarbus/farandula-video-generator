@@ -11,6 +11,7 @@ const { feature } = require('topojson-client');
 const { lerp, acotar, easeOutCubic, easeOutBack } = require('../overlay/animacion');
 const { COMPONENTES } = require('../overlay/componentes');
 const B = require('./base');
+const { ticksDeConteo } = require('./sonidos');
 
 const imagen = f => (Buffer.isBuffer(f) ? loadImage(f) : loadImage(fs.readFileSync(f)));
 const pop = (t, dur = 0.34) => lerp(0.5, 1, easeOutBack(t / dur, 1.7));
@@ -19,7 +20,7 @@ const pop = (t, dur = 0.34) => lerp(0.5, 1, easeOutBack(t / dur, 1.7));
 function retrato({ foto, nombre, cx = 0.5, cy = 0.5, r = 0.2, foco, t0, t1 }) {
   let img = null;
   return {
-    t0, t1,
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }],
     async preparar() { img = await imagen(foto); },
     dibujar(ctx, { t, w, h, u, estilo }) {
       const R = u * r, X = w * cx, flote = Math.sin(t * 1.7) * u * 0.004, Y = h * cy + flote, e = pop(t);
@@ -44,6 +45,7 @@ function cifra({ valor, sufijo, prefijo, agrupar, conteo, cy = 0.46, t0, t1 }) {
   const datos = { valor, sufijo, prefijo, agrupar, conteo, ancla: 'centro' };
   return {
     t0, t1,
+    eventos: [{ t: t0, sonido: 'pop' }, ...(conteo === false ? [] : [...ticksDeConteo(valor, t0, 0.95, easeOutCubic).map(t => ({ t, sonido: 'tick' })), { t: t0 + 0.95, sonido: 'ding' }])],
     dibujar(ctx, { t, w, h, u, estilo }) {
       const comp = COMPONENTES.cifra_pildora, caja = comp.caja({ w, h, u, datos, estilo, ctx });
       ctx.save(); ctx.translate(caja.x, Math.round(h * cy - caja.ch / 2));
@@ -56,7 +58,7 @@ function cifra({ valor, sufijo, prefijo, agrupar, conteo, cy = 0.46, t0, t1 }) {
 // ── Lista numerada (tarjeta blanca con insignias negras; cada fila entra en su palabra) ─────────
 function listaNumerada({ titulo, items, cy = 0.5, t0, t1 }) { // items: [{ texto, t (abs) }]
   return {
-    t0, t1,
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...items.map(i => ({ t: i.t, sonido: 'clic' }))],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       const ancho = w * 0.80, tam = Math.round(u * 0.04), fila = tam * 2.2, pad = u * 0.045, tit = titulo ? tam * 1.8 : 0;
       const alto = pad * 2 + tit + fila * items.length, x = (w - ancho) / 2, y = h * cy - alto / 2, e = pop(t, 0.3);
@@ -100,7 +102,7 @@ function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, t0, t1 }) {
   const { paises } = mundo();
   const destino = paises.find(f => f.properties.name === pais);
   return {
-    t0, t1,
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       const cw = Math.round(w * 0.86), ch = Math.round(h * 0.40), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
       const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) };
@@ -141,7 +143,7 @@ function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, t0, t1 }) {
 function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.56, t0, t1 }) {
   let dir = null, nFrames = 0, WW = 0, HH = 0, fpsClip = 30;
   return {
-    t0, t1,
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...marcas.map(m => ({ t: m.t, sonido: 'trazo' }))],
     async preparar({ w, h, fps }) {
       fpsClip = fps; WW = Math.round(w * ancho); HH = Math.round(WW * 16 / 9); nFrames = Math.ceil((t1 - t0) * fps);
       dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ventana-'));
