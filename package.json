@@ -16,6 +16,7 @@
     "@napi-rs/canvas": "1.1.0",
     "axios": "^1.18.1",
     "cors": "^2.8.6",
+    "d3-geo": "3.1.1",
     "dotenv": "^17.4.2",
     "elevenlabs": "^1.59.0",
     "express": "^5.2.1",
@@ -25,6 +26,8 @@
     "google-auth-library": "^10.9.0",
     "googleapis": "^173.0.0",
     "multer": "^2.2.0",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2",
     "youtube-dl-exec": "^3.1.12"
   },
   "devDependencies": {
