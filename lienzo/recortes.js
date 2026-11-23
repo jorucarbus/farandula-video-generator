@@ -48,58 +48,147 @@ function ejeCuello(img) {
   return n ? s / n : img.width / 2;
 }
 
-// ── Expresiones dibujadas sobre la foto (coordenadas con origen en el centro de la cabeza; w,h = tamaño de la cabeza) ──
-function parche(ctx, x, y, rx, ry, color) { // tapa el ojo/ceja de la foto con el color de la piel, borde suave
-  const g = ctx.createRadialGradient(x, y, Math.min(rx, ry) * 0.5, x, y, Math.max(rx, ry)); g.addColorStop(0, color); g.addColorStop(0.7, color); g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.save(); ctx.translate(x, y); ctx.scale(1, ry / rx); ctx.translate(-x, -y); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rx, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+// y del cuello: primera fila opaca en la franja central (±8 % del eje). En poses con los brazos arriba, las manos son lo más alto de la foto
+// y el cuello queda más abajo: sin esto la cabeza flota sobre el torso.
+function cuelloY(img, eje) {
+  const c = createCanvas(img.width, img.height), x = c.getContext('2d'); x.drawImage(img, 0, 0);
+  const x0 = Math.max(0, Math.round(eje - img.width * 0.08)), ancho = Math.max(2, Math.round(img.width * 0.16)), d = x.getImageData(x0, 0, ancho, img.height).data;
+  for (let j = 0; j < img.height; j++) { let n = 0; for (let i = 0; i < ancho; i++) if (d[(j * ancho + i) * 4 + 3] > 128) n++; if (n > ancho * 0.5) return j; }
+  return 0;
 }
-function ojoAbierto(ctx, x, y, r, mirar = 0) { // ojo anime: esclera, iris grande, brillos
-  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = r * 0.16; ctx.beginPath(); ctx.ellipse(x, y, r * 1.05, r * 1.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+// ── Expresiones dibujadas sobre la foto (origen en el centro de la cabeza; w,h = tamaño de la cabeza) ──────────────────
+// Regla: cada dibujo es OPACO y MÁS GRANDE que la parte real que reemplaza (ojos ×1.55, boca ×1.45, cejas más gruesas), y
+// debajo se CLONA piel de otra zona de la cara (con su textura) para que no asome nada del ojo, la ceja o los labios reales.
+const TINTA = '#1b1b1b', LABIO = '#C24E5A', LABIO_OSC = '#8E2F3A', INTERIOR = '#3A0E14';
+
+// Borra una zona (ojo, ceja, labios) rellenándola con piel interpolada: se toman muestras de color en un anillo JUSTO fuera de la
+// zona y cada píxel interior es el promedio de esas muestras ponderado por cercanía (así sigue la luz y el tono de ese punto de la
+// cara, sin copiar de otro sitio que puede estar fuera del óvalo). Borde difuminado. Se calcula una vez por zona y se cachea.
+const _borrados = new Map();
+function borrar(ctx, fuente, x, y, rx, ry, _dx, _dy, color = '#d9a37f') {
+  const W = Math.max(4, Math.round(rx * 2)), Hh = Math.max(4, Math.round(ry * 2));
+  const clave = fuente ? [fuente.cab.width, fuente.cab.height, Math.round(x), Math.round(y), W, Hh].join('|') : null;
+  let img = clave && _borrados.get(clave);
+  if (!img) {
+    img = createCanvas(W, Hh); const tx = img.getContext('2d'), id = tx.createImageData(W, Hh), d = id.data;
+    let muestras = [];
+    if (fuente) {
+      const { cab, hw, hh } = fuente, cx = cab.getContext('2d');
+      for (let k = 0; k < 24; k++) {
+        const an = (k / 24) * Math.PI * 2, px = Math.round(x + hw / 2 + Math.cos(an) * rx * 1.18), py = Math.round(y + hh / 2 + Math.sin(an) * ry * 1.25);
+        if (px < 1 || py < 1 || px >= cab.width - 1 || py >= cab.height - 1) continue;
+        const p = cx.getImageData(px - 1, py - 1, 3, 3).data; let r = 0, g = 0, bl = 0, al = 0;
+        for (let i = 0; i < 36; i += 4) { r += p[i]; g += p[i + 1]; bl += p[i + 2]; al += p[i + 3]; }
+        if (al / 9 > 240) muestras.push({ x: Math.cos(an) * rx * 1.18, y: Math.sin(an) * ry * 1.25, c: [r / 9, g / 9, bl / 9] }); // solo píxeles dentro de la cara
+      }
+    }
+    if (muestras.length > 4) { // se descartan pelo, cejas y pestañas: lo que se aleja del tono de piel típico del anillo
+      const med = c => { const v = muestras.map(m => m.c[c]).sort((p, q) => p - q); return v[v.length >> 1]; }, mr = med(0), mg = med(1), mb = med(2);
+      const luz = (mr + mg + mb) / 3, buenas = muestras.filter(m => Math.hypot(m.c[0] - mr, m.c[1] - mg, m.c[2] - mb) < 38 && (m.c[0] + m.c[1] + m.c[2]) / 3 > luz - 14); // sin sombras de pestañas/cejas
+      if (buenas.length >= 3) muestras = buenas;
+    }
+    for (let j = 0; j < Hh; j++) for (let i = 0; i < W; i++) {
+      const px = i - W / 2 + 0.5, py = j - Hh / 2 + 0.5, nr = Math.hypot(px / (W / 2), py / (Hh / 2)); let r = 0, g = 0, bl = 0, wt = 0;
+      if (muestras.length) for (const m of muestras) { const w = 1 / ((px - m.x) ** 2 + (py - m.y) ** 2 + 4); r += m.c[0] * w; g += m.c[1] * w; bl += m.c[2] * w; wt += w; }
+      const o = (j * W + i) * 4;
+      if (wt) { d[o] = r / wt; d[o + 1] = g / wt; d[o + 2] = bl / wt; } else { const n = parseInt(color.slice(1), 16); d[o] = n >> 16 & 255; d[o + 1] = n >> 8 & 255; d[o + 2] = n & 255; }
+      d[o + 3] = Math.round(255 * acotar((1 - nr) / 0.32)); // borde suave
+    }
+    tx.putImageData(id, 0, 0); if (clave) _borrados.set(clave, img);
+  }
+  ctx.drawImage(img, x - rx, y - ry);
+}
+
+function ojoAbierto(ctx, x, y, r, mirar = 0, trazo = r * 0.16) { // ojo anime: esclera, iris grande, brillos
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = TINTA; ctx.lineWidth = trazo; ctx.beginPath(); ctx.ellipse(x, y, r * 1.05, r * 1.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#2a1a14'; ctx.beginPath(); ctx.ellipse(x + mirar * r * 0.2, y + r * 0.05, r * 0.62, r * 0.78, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + mirar * r * 0.2 - r * 0.2, y - r * 0.28, r * 0.2, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(x + mirar * r * 0.2 + r * 0.22, y + r * 0.2, r * 0.1, 0, Math.PI * 2); ctx.fill();
 }
-function ceja(ctx, x, y, largo, ang, grosor) { ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.strokeStyle = '#1b1b1b'; ctx.lineCap = 'round'; ctx.lineWidth = grosor; ctx.beginPath(); ctx.moveTo(-largo / 2, 0); ctx.lineTo(largo / 2, 0); ctx.stroke(); ctx.restore(); }
-function estrella(ctx, x, y, r, color = '#FFE27A') { ctx.save(); ctx.translate(x, y); ctx.fillStyle = color; ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? r * 0.28 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill(); ctx.restore(); }
+function ojoCerradoFeliz(ctx, x, y, r, grosor) { ctx.strokeStyle = TINTA; ctx.lineWidth = grosor; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x, y + r * 0.45, r * 1.15, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+function ojoEnojado(ctx, x, y, r, lado, trazo) { // medio párpado: arriba plano e inclinado
+  ctx.save(); ctx.beginPath(); ctx.ellipse(x, y, r * 1.1, r * 0.75, 0, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = '#fff'; ctx.fillRect(x - r * 2, y - r * 2, r * 4, r * 4);
+  ctx.fillStyle = '#2a1a14'; ctx.beginPath(); ctx.ellipse(x - lado * r * 0.12, y + r * 0.05, r * 0.5, r * 0.62, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.strokeStyle = TINTA; ctx.lineWidth = trazo; ctx.beginPath(); ctx.ellipse(x, y, r * 1.1, r * 0.75, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = trazo * 1.8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - r * 1.2, y - r * 0.45 - lado * r * 0.2); ctx.lineTo(x + r * 1.2, y - r * 0.45 + lado * r * 0.2); ctx.stroke();
+}
+function cejaGruesa(ctx, x, y, largo, ang, grosor) { // ceja con forma (más gruesa al centro), siempre más ancha que la real
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = TINTA; ctx.beginPath(); ctx.moveTo(-largo / 2, grosor * 0.1);
+  ctx.quadraticCurveTo(0, -grosor * 1.5, largo / 2, grosor * 0.1); ctx.quadraticCurveTo(0, grosor * 0.55, -largo / 2, grosor * 0.1); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function estrella(ctx, x, y, r, color = '#FFE27A') { ctx.save(); ctx.translate(x, y); ctx.fillStyle = color; ctx.beginPath(); for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4, rr = i % 2 ? r * 0.28 : r; ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); } ctx.closePath(); ctx.fill(); ctx.restore(); }
 
-function dibujarExpresion(ctx, { emocion, t, w, h, piel, anclas: a, ap }) {
-  const ojoY = h * a.ojoY, dx = w * a.ojoDx, r = w * a.ojoR, bocaY = h * a.bocaY, p = easeOutBack(acotar(t / 0.25), 2);
-  ctx.save(); ctx.scale(lerp(0.9, 1, p), lerp(0.9, 1, p)); ctx.globalAlpha = acotar(t / 0.08);
-  const pielDe = s => (Array.isArray(piel) ? piel[s < 0 ? 0 : 1] : piel); // color de piel bajo CADA ojo
-  const ojos = (f) => { for (const s of [-1, 1]) f(s * dx, ojoY, s); };
+// Boca de labios completa. a = semiancho. abre 0..1 (apertura), k = curvatura de las comisuras (<0 sonrisa, >0 triste),
+// dientes: muestra dientes. Estados: cerrada (abre 0), pequeña/grande (abre), "O" (a chico y abre alto), sonrisa (k<0), triste (k>0).
+function boca(ctx, { x, y, a, abre = 0, k = 0, dientes = false, trazo }) {
+  const o = abre * a * 0.95, c = k * a, d = o * 1.9; // d = cuánto baja el labio de abajo
+  ctx.save(); ctx.translate(x, y); ctx.lineJoin = 'round'; ctx.lineWidth = trazo; ctx.strokeStyle = TINTA;
+  if (o > 1) { // interior oscuro con dientes y lengua
+    ctx.beginPath(); ctx.moveTo(-a * 0.96, c); ctx.quadraticCurveTo(0, c * 0.3 - a * 0.04, a * 0.96, c); ctx.quadraticCurveTo(0, c + d, -a * 0.96, c); ctx.closePath(); ctx.fillStyle = INTERIOR; ctx.fill();
+    ctx.save(); ctx.clip();
+    if (dientes) {
+      const alto = Math.min(d * 0.55, a * 0.34); ctx.fillStyle = '#fff'; ctx.fillRect(-a, c * 0.3 - a * 0.06, a * 2, alto + a * 0.06);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = trazo * 0.5; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * a * 0.28, c * 0.3); ctx.lineTo(i * a * 0.28, c * 0.3 + alto); ctx.stroke(); }
+    }
+    ctx.fillStyle = '#E56F7A'; ctx.beginPath(); ctx.ellipse(0, c + d * 0.72, a * 0.5, Math.max(1, d * 0.28), 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  ctx.strokeStyle = TINTA; ctx.lineWidth = trazo;
+  // labio de arriba (con arco de cupido)
+  ctx.beginPath(); ctx.moveTo(-a, c); ctx.quadraticCurveTo(-a * 0.5, -a * 0.36 + c * 0.5, 0, -a * 0.22); ctx.quadraticCurveTo(a * 0.5, -a * 0.36 + c * 0.5, a, c);
+  ctx.quadraticCurveTo(0, c * 0.3 - a * 0.02, -a, c); ctx.closePath(); ctx.fillStyle = LABIO; ctx.fill(); ctx.stroke();
+  // labio de abajo (baja con la apertura)
+  ctx.beginPath(); ctx.moveTo(-a, c); ctx.quadraticCurveTo(0, c * 0.3 - a * 0.02 + (o > 1 ? d : 0), a, c);
+  ctx.quadraticCurveTo(a * 0.55, c + d + a * 0.46, 0, c + d + a * 0.44); ctx.quadraticCurveTo(-a * 0.55, c + d + a * 0.46, -a, c); ctx.closePath(); ctx.fillStyle = LABIO; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(-a * 0.12, c + d + a * 0.24, a * 0.3, a * 0.06, -0.05, 0, Math.PI * 2); ctx.fill(); // brillo
+  ctx.strokeStyle = LABIO_OSC; ctx.lineWidth = trazo * 0.7; ctx.beginPath(); ctx.moveTo(-a * 0.9, c); ctx.quadraticCurveTo(0, c * 0.3 - a * 0.02, a * 0.9, c); ctx.stroke(); // línea de unión
+  ctx.restore();
+}
+
+// Parpadeo: cada ~3.1 s los ojos se cierran 0.14 s (la fase se desfasa por muñeco con 'fase'). Solo en reposo.
+const parpadea = (tAbs, fase = 0) => ((tAbs + fase) % 3.1) < 0.14;
+const EMOCION_BOCA = { normal: { k: -0.04, dientes: false, base: 0 }, feliz: { k: -0.28, dientes: true, base: 0.2 }, sorpresa: { k: 0, dientes: false, base: 0.8, estrecha: 0.85 }, enojo: { k: 0.14, dientes: true, base: 0.22 }, triste: { k: 0.3, dientes: false, base: 0 } };
+
+function dibujarExpresion(ctx, { emocion, t, w, h, piel, anclas: an, ap, tAbs = 0, fase = 0, cab = null, escala = 1 }) {
+  const fuente = cab ? { cab, hw: w, hh: h } : null, pielDe = s => (Array.isArray(piel) ? piel[s < 0 ? 0 : 1] : piel);
+  const ojoY = h * an.ojoY, dx = w * an.ojoDx, rReal = w * an.ojoR, R = rReal * 1.55 * escala, cejaY = ojoY + h * an.cejaY, bocaY = h * an.bocaY, aReal = w * an.bocaAncho;
+  const trazo = Math.max(2, w * 0.016), p = easeOutBack(acotar(t / 0.25), 2);
+  const hablando = ap > 0.08, bocaVisible = emocion !== 'normal' || hablando;
+  ctx.save(); ctx.scale(lerp(0.92, 1, p), lerp(0.92, 1, p)); ctx.globalAlpha = acotar(t / 0.08);
+  const cierra = emocion === 'normal' && parpadea(tAbs, fase), dibujaOjos = emocion !== 'normal' || cierra;
+  if (dibujaOjos) for (const s of [-1, 1]) borrar(ctx, fuente, s * dx, ojoY, R * 1.15, R * 0.8, 0, R * 2.6, pielDe(s));                       // el ojo real desaparece
+  if (emocion !== 'normal') for (const s of [-1, 1]) borrar(ctx, fuente, s * dx, cejaY, R * 1.5, R * 0.55, 0, -R * 2.4, pielDe(s));             // y la ceja real
+  if (bocaVisible) borrar(ctx, fuente, 0, bocaY, aReal * 1.2, aReal * 0.5, 0, aReal * 1.5, pielDe(1));                                      // y los labios reales
+  const st = EMOCION_BOCA[emocion] || EMOCION_BOCA.normal, aD = aReal * 1.3 * (st.estrecha || 1) * escala;
+  if (cierra) for (const s of [-1, 1]) ojoCerradoFeliz(ctx, s * dx, ojoY, R * 0.95, trazo * 1.5);
   if (emocion === 'sorpresa') {
-    ojos((x, y, s) => { parche(ctx, x, y, r * 1.7, r * 1.5, pielDe(s)); ojoAbierto(ctx, x, y, r * 1.15); });
-    for (const s of [-1, 1]) ceja(ctx, s * dx, ojoY - r * 2.1, r * 1.9, s * -0.12, w * 0.018);
-    ctx.fillStyle = '#4A1A20'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = w * 0.012; ctx.beginPath(); ctx.ellipse(0, bocaY + h * 0.03, w * 0.07, h * 0.07 + ap * h * 0.03, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#7FC8F8'; ctx.beginPath(); ctx.moveTo(w * 0.36, ojoY - h * 0.1); ctx.quadraticCurveTo(w * 0.42, ojoY - h * 0.02, w * 0.36, ojoY + h * 0.02); ctx.quadraticCurveTo(w * 0.3, ojoY - h * 0.02, w * 0.36, ojoY - h * 0.1); ctx.fill(); // gota de sudor
+    for (const s of [-1, 1]) ojoAbierto(ctx, s * dx, ojoY, R * 1.12, 0, trazo);
+    for (const s of [-1, 1]) cejaGruesa(ctx, s * dx, cejaY - R * 0.5, R * 2.5, s * -0.1, R * 0.5);
+    ctx.fillStyle = '#7FC8F8'; ctx.strokeStyle = '#3B8FCB'; ctx.lineWidth = trazo * 0.5; ctx.beginPath(); ctx.moveTo(w * 0.38, ojoY - h * 0.1); ctx.quadraticCurveTo(w * 0.44, ojoY - h * 0.02, w * 0.38, ojoY + h * 0.02); ctx.quadraticCurveTo(w * 0.32, ojoY - h * 0.02, w * 0.38, ojoY - h * 0.1); ctx.fill(); ctx.stroke(); // gota
   } else if (emocion === 'feliz') {
-    ojos((x, y, s) => { parche(ctx, x, y, r * 1.35, r * 0.95, pielDe(s)); ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = w * 0.022; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x, y + r * 0.5, r * 1.0, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); });
-    for (const s of [-1, 1]) ceja(ctx, s * dx, ojoY - r * 1.9, r * 1.7, s * -0.18, w * 0.017);
-    ctx.strokeStyle = '#7A2A30'; ctx.fillStyle = '#4A1A20'; ctx.lineWidth = w * 0.016; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-w * 0.11, bocaY - h * 0.01); ctx.quadraticCurveTo(0, bocaY + h * 0.085 + ap * h * 0.03, w * 0.11, bocaY - h * 0.01); if (ap > 0.08) { ctx.closePath(); ctx.fill(); } ctx.stroke(); // sonrisa (se abre al hablar)
-    ctx.fillStyle = 'rgba(255,120,130,0.45)'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * w * 0.3, ojoY + h * 0.12, w * 0.07, h * 0.04, 0, 0, Math.PI * 2); ctx.fill(); }
-    estrella(ctx, -w * 0.4, -h * 0.34, w * 0.05); estrella(ctx, w * 0.42, -h * 0.2, w * 0.035);
+    for (const s of [-1, 1]) ojoCerradoFeliz(ctx, s * dx, ojoY, R, trazo * 1.8);
+    for (const s of [-1, 1]) cejaGruesa(ctx, s * dx, cejaY - R * 0.4, R * 2.4, s * -0.2, R * 0.42);
+    ctx.fillStyle = 'rgba(255,110,125,0.5)'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * w * 0.3, ojoY + h * 0.12, w * 0.075, h * 0.042, 0, 0, Math.PI * 2); ctx.fill(); }
+    estrella(ctx, -w * 0.4, -h * 0.34, w * 0.055); estrella(ctx, w * 0.42, -h * 0.2, w * 0.04);
   } else if (emocion === 'enojo') {
-    ojos((x, y, s) => { parche(ctx, x, y, r * 1.5, r * 1.2, pielDe(s)); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = r * 0.16; ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.62, s * 0.2, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#2a1a14'; ctx.beginPath(); ctx.arc(x - s * r * 0.15, y, r * 0.38, 0, Math.PI * 2); ctx.fill(); });
-    for (const s of [-1, 1]) ceja(ctx, s * dx * 0.95, ojoY - r * 1.3, r * 2.2, s * 0.42, w * 0.026);
-    ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = w * 0.016; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-w * 0.1, bocaY + h * 0.02); ctx.quadraticCurveTo(0, bocaY - h * 0.03, w * 0.1, bocaY + h * 0.02); ctx.stroke();
-    ctx.strokeStyle = '#D8232A'; ctx.lineWidth = w * 0.017; const vx = w * 0.3, vy = -h * 0.3; for (const [ax, ay] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { ctx.beginPath(); ctx.moveTo(vx + ax * w * 0.012, vy + ay * h * 0.012); ctx.quadraticCurveTo(vx + ax * w * 0.04, vy + ay * h * 0.01, vx + ax * w * 0.05, vy + ay * h * 0.05); ctx.stroke(); } // vena
+    for (const s of [-1, 1]) ojoEnojado(ctx, s * dx, ojoY, R, s, trazo);
+    for (const s of [-1, 1]) cejaGruesa(ctx, s * dx * 0.95, cejaY + R * 0.1, R * 2.7, s * 0.45, R * 0.55);
+    ctx.strokeStyle = '#D8232A'; ctx.lineWidth = w * 0.02; ctx.lineCap = 'round'; const vx = w * 0.3, vy = -h * 0.3; for (const [ax, ay] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { ctx.beginPath(); ctx.moveTo(vx + ax * w * 0.012, vy + ay * h * 0.012); ctx.quadraticCurveTo(vx + ax * w * 0.045, vy + ay * h * 0.01, vx + ax * w * 0.055, vy + ay * h * 0.055); ctx.stroke(); } // vena
   } else if (emocion === 'triste') {
-    ojos((x, y, s) => { parche(ctx, x, y, r * 1.5, r * 1.3, pielDe(s)); ojoAbierto(ctx, x, y + r * 0.1, r * 1.0, -s * 0.1); });
-    for (const s of [-1, 1]) ceja(ctx, s * dx, ojoY - r * 1.7, r * 1.8, s * 0.32, w * 0.017);
-    ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = w * 0.014; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-w * 0.09, bocaY + h * 0.03); ctx.quadraticCurveTo(0, bocaY - h * 0.02, w * 0.09, bocaY + h * 0.03); ctx.stroke();
-    ctx.fillStyle = '#7FC8F8'; const ly = ojoY + h * 0.1 + ((t * 1.2) % 1) * h * 0.18; for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * (dx + w * 0.03), ly, w * 0.016, h * 0.028, 0, 0, Math.PI * 2); ctx.fill(); }
+    for (const s of [-1, 1]) ojoAbierto(ctx, s * dx, ojoY + R * 0.1, R * 1.05, -s * 0.1, trazo);
+    for (const s of [-1, 1]) cejaGruesa(ctx, s * dx, cejaY - R * 0.2, R * 2.4, s * 0.36, R * 0.46);
+    ctx.fillStyle = '#7FC8F8'; const ly = ojoY + h * 0.1 + ((t * 1.2) % 1) * h * 0.18; for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * (dx + w * 0.03), ly, w * 0.018, h * 0.03, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  if (ap > 0.08 && emocion === 'normal') { // boca dibujada que aparece SOLO cuando habla (estilo Robot Chicken)
-    ctx.fillStyle = '#3A0E14'; ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = w * 0.012; ctx.beginPath(); ctx.ellipse(0, bocaY + ap * h * 0.02, w * 0.1 * (0.8 + ap * 0.3), h * 0.012 + ap * h * 0.05, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  }
+  if (bocaVisible) boca(ctx, { x: 0, y: bocaY, a: aD, abre: Math.min(1, Math.max(st.base, hablando ? ap : 0)), k: st.k, dientes: st.dientes || (hablando && ap > 0.5), trazo });
   ctx.restore();
 }
 
 // Elemento del lienzo. cabeza: foto (Buffer|ruta) + recorte (óvalo). Todo lo temporal en segundos ABSOLUTOS del video.
-function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}, cx = 0.5, base = 0.9, alto = 0.5, t0, t1,
+function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}, cx = 0.5, base = 0.9, alto = 0.5, proporcion = 0.30, escalaExpr = 1, t0, t1,
   saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], voz = null }) {
-  const A = { ojoY: -0.09, ojoDx: 0.2, ojoR: 0.062, bocaY: 0.155, ...anclas };
+  // Anclas de la cabeza de relleno de mujer (fracciones del óvalo): posición y tamaño REAL de ojos, cejas y boca.
+  const A = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075, ...anclas };
   const lista = [...emociones].sort((a, b) => a.t - b.t), cambios = [{ t: t0, pieza: cuerpo }, ...poses].sort((a, b) => a.t - b.t);
-  let imgs = {}, ejes = {}, cab = null, piel = '#d9a37f', estado = null;
+  let imgs = {}, ejes = {}, cuellos = {}, cab = null, piel = '#d9a37f', estado = null;
   const eventos = [{ t: t0 + 0.5, sonido: 'golpe' }, ...poses.map(p => ({ t: p.t, sonido: 'clic' })), ...saltos.map(t => ({ t, sonido: 'clic', db: -3 })),
     ...accesorios.map(a => ({ t: a.t + 0.45, sonido: 'ding' })), ...pegatinas.map(p => ({ t: p.t0, sonido: 'pop' })), ...lista.filter(e => e.t > t0).map(e => ({ t: e.t, sonido: 'trazo', db: -5 }))];
   const nuevoEstado = () => ({ ult: null, cabDx: new Resorte(150, 11), cabDy: new Resorte(170, 12), cabAng: new Resorte(130, 9), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
@@ -108,8 +197,8 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
     async preparar({ w, h }) {
       const nombres = new Set([cuerpo, ...poses.map(p => p.pieza), ...accesorios.map(a => ACCESORIOS[a.id].archivo), ...pegatinas.map(p => p.id)]);
       for (const n of nombres) { if (!existePieza(n)) throw new Error(`pieza del kit desconocida: ${n}`); imgs[n] = await piezaKit(n); }
-      for (const n of new Set([cuerpo, ...poses.map(p => p.pieza)])) ejes[n] = ejeCuello(imgs[n]);
-      const H = h * alto, hh = Math.round(H * 0.42), hw = Math.round(hh * 0.92);
+      for (const n of new Set([cuerpo, ...poses.map(p => p.pieza)])) { ejes[n] = ejeCuello(imgs[n]); cuellos[n] = cuelloY(imgs[n], ejes[n]); }
+      const H = h * alto, hh = Math.round(H * proporcion), hw = Math.round(hh * 0.92);
       cab = await cabezaDesdeFoto(cabeza, recorte, hw, hh);
       const muestra = fx => { const d = cab.getContext('2d').getImageData(Math.round(hw * fx) - 3, Math.round(hh * (0.5 + A.ojoY + 0.15)) - 3, 6, 6).data; return `rgb(${d[0]},${d[1]},${d[2]})`; };
       piel = [muestra(0.5 - A.ojoDx), muestra(0.5 + A.ojoDx)]; // piel justo bajo cada ojo: el tono que rodea al párpado
@@ -121,7 +210,7 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
       // pose y emoción vigentes
       const pose = [...cambios].reverse().find(c => c.t <= tAbs) || cambios[0], poseIni = pose.t;
       const emo = [...lista].reverse().find(e => e.t <= tAbs) || { t: t0, e: 'normal' };
-      const img = imgs[pose.pieza], bodyH = H * 0.60, e = bodyH / img.height, bodyW = img.width * e, eje = ejes[pose.pieza] * e;
+      const img = imgs[pose.pieza], bodyH = H * (1 - 0.84 * proporcion), e = bodyH / img.height, bodyW = img.width * e, eje = ejes[pose.pieza] * e;
       // movimiento del cuerpo: caída de entrada + saltos + respiración y balanceo
       const c = caida(tAbs - t0); let dy = c.dy, sy = c.sy;
       for (const tj of saltos) { const s = salto(tAbs, tj); dy += s.dy; sy *= s.sy; }
@@ -136,9 +225,9 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
       ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / 0.05 + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx, sy);
       B.sombraDeCapa(ctx, u, 0.35, 0.28); ctx.drawImage(img, -eje, -bodyH, bodyW, bodyH); B.sinSombra(ctx);
       // cabeza (centrada sobre el cuello, con la barbilla un poco sobre el cuello del traje)
-      ctx.save(); ctx.translate(hDx * H, -bodyH - hh * 0.34 + hDy * H); ctx.rotate(hAng);
+      ctx.save(); ctx.translate(hDx * H, -bodyH + cuellos[pose.pieza] * e - hh * 0.34 + hDy * H); ctx.rotate(hAng);
       B.sombraDeCapa(ctx, u, 0.3, 0.25); ctx.drawImage(cab, -hw / 2, -hh / 2); B.sinSombra(ctx);
-      dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: hw, h: hh, piel, anclas: A, ap });
+      dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: hw, h: hh, piel, anclas: A, ap, tAbs, fase: 0.9, cab, escala: escalaExpr });
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], im = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;
         const aw = hw * ac.ancho, ah = aw * im.height / im.width, caidaY = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * hh * 1.1 : 0, rebote = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * hh * 0.04 : 0;
@@ -160,4 +249,4 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
   };
 }
 
-module.exports = { muneco, EMOCIONES, PEGATINAS, ACCESORIOS, Resorte, salto, caida, ejeCuello, piezaKit, existePieza, dibujarExpresion };
+module.exports = { cuelloY, parpadea, muneco, EMOCIONES, PEGATINAS, ACCESORIOS, Resorte, salto, caida, ejeCuello, piezaKit, existePieza, dibujarExpresion };

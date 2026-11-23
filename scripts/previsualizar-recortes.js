@@ -1,4 +1,6 @@
-// Hoja del muñeco de recortes: expresiones sobre la foto (ampliadas) y el cuerpo entero en varios instantes.
+// Hojas de revisión del muñeco de recortes.
+//   node scripts/previsualizar-recortes.js proporciones [salida.png]   → 3 proporciones cabeza-cuerpo, en reposo y feliz
+//   node scripts/previsualizar-recortes.js emociones [salida.png] [prop] → las 5 emociones con el rostro grande
 const fs = require('fs'), path = require('path');
 const { createCanvas } = require('@napi-rs/canvas');
 const estilo = require('../estilos/capitol');
@@ -8,24 +10,33 @@ const { muneco, EMOCIONES } = require('../lienzo/recortes');
 registrarFuentes(estilo);
 const W = 1080, H = 1920;
 const foto = fs.readFileSync(path.join(__dirname, '..', 'assets', 'kit', 'cabeza-relleno-mujer.png'));
-const recorte = { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 }, anclas = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.05, bocaY: 0.33 };
+const recorte = { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 };
+
+async function cuadro(cfg, tAbs = 4) {
+  const tile = createCanvas(W, H), tx = tile.getContext('2d');
+  const m = muneco({ cabeza: foto, recorte, t0: -9, t1: 99, ...cfg });
+  await m.preparar({ w: W, h: H });
+  for (let k = Math.round((tAbs - 2) * 30); k <= Math.round(tAbs * 30); k++) { B.fondo(tx, W, H, estilo); m.dibujar(tx, { t: k / 30 + 9, tAbs: k / 30, w: W, h: H, u: W, estilo }); }
+  return tile;
+}
+
 (async () => {
-  const salida = process.argv[2] || 'data-motor/lamina/hoja-recortes-muneco.png';
-  const tile = createCanvas(W, H), tx = tile.getContext('2d'), CW = 300, CH = Math.round(CW * H / W);
-  const hoja = createCanvas(CW * 5, CH * 2), c = hoja.getContext('2d');
-  // fila 1: cada emoción (cerca)
-  for (const [i, emo] of EMOCIONES.entries()) {
-    const m = muneco({ cuerpo: 'cuerpo-bastonera', cabeza: foto, recorte, anclas, emociones: [{ t: 0, e: emo }], t0: -5, t1: 99, cx: 0.5, base: 0.97, alto: 0.78 });
-    await m.preparar({ w: W, h: H }); B.fondo(tx, W, H, estilo); m.dibujar(tx, { t: 9, tAbs: 4, w: W, h: H, u: W, estilo });
-    c.drawImage(tile, 0, H * 0.18, W, H * 0.45, i * CW, 0, CW, CW * 0.45 * H / W);
+  const modo = process.argv[2] || 'proporciones';
+  if (modo === 'proporciones') {
+    const props = [0.26, 0.30, 0.34, 0.42], CW = 330, CH = Math.round(CW * H / W), hoja = createCanvas(CW * props.length, CH * 2), c = hoja.getContext('2d');
+    for (const [i, p] of props.entries()) for (const [fila, emo] of ['normal', 'feliz'].entries()) {
+      const t = await cuadro({ proporcion: p, emociones: [{ t: -9, e: emo }], accesorios: emo === 'feliz' ? [{ id: 'corona', t: -9 }] : [], cx: 0.5, base: 0.93, alto: 0.62 }, 4.0);
+      c.drawImage(t, 0, 0, W, H, i * CW, fila * CH, CW, CH);
+      c.fillStyle = '#222'; c.font = '22px sans-serif'; c.fillText(`cabeza ${Math.round(p * 100)} %${p === 0.42 ? ' (la anterior)' : ''}`, i * CW + 10, fila * CH + 28);
+    }
+    fs.writeFileSync(process.argv[3] || 'data-motor/lamina/hoja-proporciones.png', hoja.toBuffer('image/png'));
+  } else {
+    const prop = Number(process.argv[4]) || 0.30, CW = 360, CH = 444, hoja = createCanvas(CW * 5, CH), c = hoja.getContext('2d');
+    for (const [i, emo] of EMOCIONES.entries()) {
+      const alto = 1.6, base = 1.9, t = await cuadro({ proporcion: prop, emociones: [{ t: -9, e: emo }], alto, base, cx: 0.5 }, emo === 'normal' ? 0.5 : 4.0);
+      c.drawImage(t, W * 0.14, H * 0.28, W * 0.72, H * 0.5, i * CW, 0, CW, CH);
+    }
+    fs.writeFileSync(process.argv[3] || 'data-motor/lamina/hoja-emociones.png', hoja.toBuffer('image/png'));
   }
-  // fila 2: poses y accesorio
-  const casos = [[{ cuerpo: 'cuerpo-bastonera' }, 0.3], [{ cuerpo: 'cuerpo-bastonera' }, 0.45], [{ cuerpo: 'cuerpo-bastonera', poses: [{ t: 1, pieza: 'cuerpo-bastonera-celebrar' }], emociones: [{ t: 1, e: 'sorpresa' }] }, 2], [{ cuerpo: 'cuerpo-bastonera', poses: [{ t: 1, pieza: 'cuerpo-bastonera-senalar' }], accesorios: [{ id: 'corona', t: 1.2 }], emociones: [{ t: 1.2, e: 'feliz' }], pegatinas: [{ id: 'guante-pulgar', t0: 1.4, dx: 0.34, dy: 0.62, ancho: 0.26 }] }, 3], [{ cuerpo: 'cuerpo-gala', accesorios: [{ id: 'corona', t: 0.2 }], emociones: [{ t: 0.2, e: 'feliz' }] }, 2]];
-  for (const [i, [cfg, t]] of casos.entries()) {
-    const m = muneco({ cabeza: foto, recorte, anclas, t0: 0, t1: 99, cx: 0.5, base: 0.93, alto: 0.5, ...cfg });
-    await m.preparar({ w: W, h: H }); B.fondo(tx, W, H, estilo);
-    for (let k = 0; k <= Math.round(t * 30); k++) { B.fondo(tx, W, H, estilo); m.dibujar(tx, { t: k / 30, tAbs: k / 30, w: W, h: H, u: W, estilo }); } // avanza la simulación
-    c.drawImage(tile, 0, 0, W, H, i * CW, CH, CW, CH);
-  }
-  fs.writeFileSync(salida, hoja.toBuffer('image/png')); console.log('ok');
+  console.log('ok');
 })().catch(e => { console.error(e); process.exit(1); });

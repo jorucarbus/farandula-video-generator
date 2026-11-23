@@ -21,7 +21,7 @@ const t = (norm) => palabras[idx(0, norm)].t0;
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const m = muneco({
     cuerpo: 'cuerpo-bastonera', cabeza: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')),
-    recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 }, anclas: { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.05, bocaY: 0.33 },
+    recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 }, proporcion: 0.30,
     cx: 0.5, base: 0.92, alto: 0.60, t0: V[0].t0 + 0.1, t1: hasta,
     saltos: [t('bastonera'), t('gano')],
     poses: [{ t: t('gano'), pieza: 'cuerpo-bastonera-celebrar' }],

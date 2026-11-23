@@ -7,7 +7,9 @@ const fs = require('fs');
 const mediana = v => { v.sort((a, b) => a - b); return v[v.length >> 1]; };
 
 // entrada: Buffer | ruta. → canvas recortado con alfa. opciones: tol (distancia RGB al fondo), suave (rampa del borde), margen (px).
-async function quitarFondo(entrada, { tol = 32, suave = 30, margen = 3, matiz = 18, sat = 0.2 } = {}) {
+// limpiarGlobal: además del fondo conectado al borde, borra CUALQUIER píxel con el tono saturado del fondo (franjas entre las piernas,
+// reflejos). Solo para piezas sin colores parecidos al fondo (cuerpos): en una corona con esmalte rosa sobre magenta la vaciaría.
+async function quitarFondo(entrada, { tol = 32, suave = 30, margen = 3, matiz = 18, sat = 0.2, limpiarGlobal = false } = {}) {
   const img = await loadImage(Buffer.isBuffer(entrada) ? entrada : fs.readFileSync(entrada));
   const w = img.width, h = img.height, c = createCanvas(w, h), ctx = c.getContext('2d');
   ctx.drawImage(img, 0, 0);
@@ -38,6 +40,7 @@ async function quitarFondo(entrada, { tol = 32, suave = 30, margen = 3, matiz = 
     const p = cola[ini++], x = p % w, y = (p / w) | 0;
     if (x > 0) semilla(x - 1, y); if (x < w - 1) semilla(x + 1, y); if (y > 0) semilla(x, y - 1); if (y < h - 1) semilla(x, y + 1);
   }
+  if (limpiarGlobal) for (let p = 0; p < w * h; p++) { if (fondo[p]) continue; const i = p * 4; const [hh, ss, vv] = hsv(d[i], d[i + 1], d[i + 2]); const dh = Math.min(Math.abs(hh - tono), 360 - Math.abs(hh - tono)); if (dh < matiz + 6 && ss > 0.28 && vv > 0.2) fondo[p] = 1; }
   // Islotes: manchas sueltas (esquinas del degradado, motas) que no son el objeto → también son fondo. Se conservan los trozos
   // con al menos 0.3 % del área del cuadro (manos, botas u otras partes separadas del objeto).
   { const visto = new Uint8Array(w * h), minimo = Math.max(30, Math.round(w * h * 0.003)), pila = new Int32Array(w * h);

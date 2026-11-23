@@ -7,7 +7,7 @@ const { createCanvas } = require('@napi-rs/canvas');
 const estilo = require('../estilos/capitol');
 const { registrarFuentes } = require('../overlay/animacion');
 const { quitarFondo } = require('../lienzo/recorte');
-const { muneco, EMOCIONES, Resorte, salto, caida, ejeCuello, piezaKit, existePieza } = require('../lienzo/recortes');
+const { muneco, EMOCIONES, Resorte, salto, caida, ejeCuello, piezaKit, existePieza, parpadea, cuelloY } = require('../lienzo/recortes');
 const B = require('../lienzo/base');
 
 const KIT = path.join(__dirname, '..', 'assets', 'kit');
@@ -69,4 +69,18 @@ test('muñeco: se dibuja con cabeza de foto, cambia con cada emoción y rechaza 
     const otra = await pix(e); let distintos = 0; for (let i = 0; i < normal.length; i += 4) if (normal[i] !== otra[i] || normal[i + 1] !== otra[i + 1]) distintos++;
     assert.ok(distintos > 150, `la emoción ${e} cambia la cara (${distintos} px)`);
   }
+});
+
+test('parpadeo: breve, periódico (~3.1 s) y desfasable', () => {
+  const cerrados = []; for (let k = 0; k < 620; k++) if (parpadea(k / 100)) cerrados.push(k / 100);
+  assert.ok(cerrados.length >= 2 * 13 && cerrados.length <= 2 * 16 + 1, `dos parpadeos en 6.2 s, ~0.14 s cada uno (${cerrados.length} muestras)`);
+  assert.equal(parpadea(1), false); assert.equal(parpadea(0.05), true);
+  assert.notEqual(parpadea(0.05, 0.9), parpadea(0.05));
+});
+
+test('altura del cuello: con los brazos arriba el cuello queda bastante más abajo que en reposo (la cabeza no flota)', async () => {
+  const reposo = await piezaKit('cuerpo-bastonera'), arriba = await piezaKit('cuerpo-bastonera-celebrar');
+  const yR = cuelloY(reposo, ejeCuello(reposo)) / reposo.height, yA = cuelloY(arriba, ejeCuello(arriba)) / arriba.height;
+  assert.ok(yR < 0.05, `en reposo el cuello está arriba (${yR.toFixed(3)})`);
+  assert.ok(yA > 0.08, `con los brazos arriba baja (${yA.toFixed(3)})`);
 });
