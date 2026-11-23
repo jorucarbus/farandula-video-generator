@@ -14,19 +14,24 @@ const { edlAPlan } = require('./edlAPlan');
 const { planFormato } = require('./planFormato');
 const recetas = require('../recetas');
 const { renderPng } = require('../overlay/renderPng');
+const { generarSecuencia } = require('../overlay/animacion');
+const { COMPONENTES } = require('../overlay/componentes');
+const estiloCapitol = require('../estilos/capitol');
 
 function ordenar(shots) {
   return shots.map((s, i) => ({ s, i }))
     .sort((a, b) => (a.s.orden ?? a.i + 1) - (b.s.orden ?? b.i + 1) || a.i - b.i).map(x => x.s);
 }
 
-// opciones: { dirTemp?, fuenteArchivo?, renderizar? (inyectable para pruebas) }
+// opciones: { dirTemp?, fuenteArchivo?, renderizar?, animar? (inyectables para pruebas) }
 async function planEdlARender(edl, opciones = {}) {
   const base = edlAPlan(edl);
   const avisos = [...base.avisos];
   const formato = planFormato(edl.aspect);
   const dirTemp = opciones.dirTemp || fs.mkdtempSync(path.join(os.tmpdir(), 'edl-overlays-'));
   const dibujar = opciones.renderizar || renderPng;
+  const animar = opciones.animar || generarSecuencia;
+  const estilo = opciones.estilo || estiloCapitol;
   fs.mkdirSync(dirTemp, { recursive: true });
 
   const shots = ordenar(edl.shots);
@@ -51,6 +56,18 @@ async function planEdlARender(edl, opciones = {}) {
 
   const overlays = [];
   for (const [n, o] of especificaciones.entries()) {
+    if (o.componente) {
+      // Pieza animada: secuencia de fotogramas PNG (ver overlay/animacion.js). Si falla, se omite y se avisa.
+      try {
+        const comp = COMPONENTES[o.componente];
+        if (!comp) throw new Error(`componente desconocido: ${o.componente}`);
+        const r = animar({ componente: comp, datos: o.datos, estilo, w: formato.w, h: formato.h, dirDestino: path.join(dirTemp, `anim_${n}_${o.componente}`) });
+        overlays.push({ secuencia: r.secuencia, t0: o.t0, t1: o.t1, x: r.x, y: r.y });
+      } catch (e) {
+        avisos.push(`${o.shot}: animación '${o.componente}' omitida (${e.message})`);
+      }
+      continue;
+    }
     const destino = path.join(dirTemp, `overlay_${n}_${o.estilo}.png`);
     try {
       await dibujar({ texto: o.texto, estilo: o.estilo, w: formato.w, h: formato.h, destino, fuenteArchivo: opciones.fuenteArchivo });

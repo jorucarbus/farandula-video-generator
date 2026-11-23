@@ -147,6 +147,61 @@ const RECETAS = {
     },
   },
 
+  // ── Estilo "capitol": piezas animadas dibujadas en código (overlay/componentes.js) ──────────────
+  // Entran con rebote en cuanto empieza la toma y se sostienen hasta que termina.
+  cifra_pildora: {
+    id: 'cifra_pildora',
+    cuando: 'toma donde se dice una cifra o monto clave (dinero, años, porcentaje): píldora roja con conteo animado',
+    aspects: AMBOS, aplicaRegla3s: true, implementada: true,
+    params: {
+      type: 'object', additionalProperties: false, required: ['valor'],
+      properties: {
+        valor: { type: 'integer', minimum: 0, maximum: 999999999 },
+        prefijo: { type: 'string', maxLength: 4 }, sufijo: { type: 'string', maxLength: 12 },
+        agrupar: { type: 'boolean' }, conteo: { type: 'boolean' },
+        ancla: { enum: ['arriba', 'centro', 'abajo'] },
+      },
+    },
+    defaults: { ancla: 'arriba', agrupar: true, conteo: true },
+    aplicar({ shot, params, tInicio }) {
+      const t0 = tInicio + Math.min(0.15, shot.duracion * 0.1);
+      return { zoom: { direccion: 'in', pct: 8 }, overlays: [{ componente: 'cifra_pildora', datos: params, t0, t1: tInicio + shot.duracion }], avisos: [] };
+    },
+  },
+
+  sello_animado: {
+    id: 'sello_animado',
+    cuando: 'toma cuya certeza es rumor o dato sin confirmar: sello rojo que cae con impacto',
+    aspects: AMBOS, aplicaRegla3s: true, implementada: true,
+    params: {
+      type: 'object', additionalProperties: false,
+      properties: { texto: { type: 'string', minLength: 1, maxLength: 30 }, ancla: { enum: ['arriba', 'centro', 'abajo'] } },
+    },
+    defaults: { texto: 'Rumor sin confirmar', ancla: 'centro' },
+    aplicar({ shot, params, tInicio }) {
+      const t0 = tInicio + Math.min(0.15, shot.duracion * 0.1);
+      return { zoom: { direccion: 'out', pct: 8 }, overlays: [{ componente: 'sello_animado', datos: params, t0, t1: tInicio + shot.duracion }], avisos: [] };
+    },
+  },
+
+  tarjeta_dato: {
+    id: 'tarjeta_dato',
+    cuando: 'toma que presenta un dato concreto (fecha, lugar, cargo, título): tarjeta blanca con etiqueta, titular y detalle',
+    aspects: AMBOS, aplicaRegla3s: true, implementada: true,
+    params: {
+      type: 'object', additionalProperties: false, required: ['titulo'],
+      properties: {
+        etiqueta: { type: 'string', maxLength: 16 }, titulo: { type: 'string', minLength: 1, maxLength: 60 },
+        detalle: { type: 'string', maxLength: 80 }, ancla: { enum: ['arriba', 'centro', 'abajo'] },
+      },
+    },
+    defaults: { ancla: 'abajo' },
+    aplicar({ shot, params, tInicio }) {
+      const t0 = tInicio + Math.min(0.15, shot.duracion * 0.1);
+      return { zoom: { direccion: 'in', pct: 6 }, overlays: [{ componente: 'tarjeta_dato', datos: params, t0, t1: tInicio + shot.duracion }], avisos: [] };
+    },
+  },
+
   // Reservada (sin render propio todavía): existe en el catálogo para que la EDL de ejemplo valide.
   split_compare: {
     id: 'split_compare', cuando: 'comparación lado a lado de dos shots (pendiente: render propio)', aspects: AMBOS,

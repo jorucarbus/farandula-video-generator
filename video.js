@@ -648,8 +648,10 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
   // PNG en disco o tienen una ventana inválida se descartan con aviso; el video sale igual.
   const overlaysValidos = [];
   for (const o of (efectos.overlays || [])) {
-    if (o && o.path && fs.existsSync(o.path) && Number.isFinite(o.t0) && Number.isFinite(o.t1) && o.t1 > o.t0 && o.t0 >= 0) {
-      overlaysValidos.push({ path: o.path, t0: o.t0, t1: o.t1, x: Number.isFinite(o.x) ? o.x : 0, y: Number.isFinite(o.y) ? o.y : 0 });
+    // Overlay ANIMADO: { secuencia:{patron,fps}, t0, t1, x, y } — fotogramas PNG con alfa (overlay/animacion.js).
+    const rutaPrueba = o && (o.secuencia ? String(o.secuencia.patron).replace('%03d', '000') : o.path);
+    if (o && rutaPrueba && fs.existsSync(rutaPrueba) && Number.isFinite(o.t0) && Number.isFinite(o.t1) && o.t1 > o.t0 && o.t0 >= 0) {
+      overlaysValidos.push({ path: o.path, secuencia: o.secuencia || null, t0: o.t0, t1: o.t1, x: Number.isFinite(o.x) ? o.x : 0, y: Number.isFinite(o.y) ? o.y : 0 });
     } else {
       console.warn(`  ⚠️ [${jobId}] Overlay descartado (PNG ausente o ventana inválida): ${o && o.path}`);
     }
@@ -691,9 +693,16 @@ async function montarVideoPlan(plan, archivos, audioPath, jobId, efectos = {}, a
       const partes = [`[0:v]${filtroV}[vbase]`];
       if (conCartel) { partes.push(`[${ultimo}][${idxCartel}:v]overlay=0:0:enable='lt(n,1)'[vcartel]`); ultimo = 'vcartel'; }
       overlaysValidos.forEach((o, n) => {
-        entradas.push('-i', o.path);
         const salida = n === overlaysValidos.length - 1 ? 'vout' : `vov${n}`;
-        partes.push(`[${ultimo}][${idx}:v]overlay=${o.x}:${o.y}:enable='between(t,${o.t0.toFixed(3)},${o.t1.toFixed(3)})'[${salida}]`);
+        if (o.secuencia) {
+          // Los fotogramas arrancan en t0 y el último se sostiene hasta t1 (eof_action=repeat).
+          entradas.push('-framerate', String(o.secuencia.fps), '-i', o.secuencia.patron);
+          partes.push(`[${idx}:v]format=rgba,setpts=PTS-STARTPTS+${o.t0.toFixed(3)}/TB[ova${n}]`);
+          partes.push(`[${ultimo}][ova${n}]overlay=${o.x}:${o.y}:eof_action=repeat:enable='between(t,${o.t0.toFixed(3)},${o.t1.toFixed(3)})'[${salida}]`);
+        } else {
+          entradas.push('-i', o.path);
+          partes.push(`[${ultimo}][${idx}:v]overlay=${o.x}:${o.y}:enable='between(t,${o.t0.toFixed(3)},${o.t1.toFixed(3)})'[${salida}]`);
+        }
         ultimo = salida; idx++;
       });
       cadenaV = partes.join(';');
