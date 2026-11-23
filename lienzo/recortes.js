@@ -74,9 +74,9 @@ function borrar(ctx, fuente, x, y, rx, ry, _dx, _dy, color = '#d9a37f') {
     img = createCanvas(W, Hh); const tx = img.getContext('2d'), id = tx.createImageData(W, Hh), d = id.data;
     let muestras = [];
     if (fuente) {
-      const { cab, hw, hh } = fuente, cx = cab.getContext('2d');
+      const { cab } = fuente, cx = cab.getContext('2d'); // el origen (x, y) es el centro del lienzo de la cabeza
       for (let k = 0; k < 24; k++) {
-        const an = (k / 24) * Math.PI * 2, px = Math.round(x + hw / 2 + Math.cos(an) * rx * 1.18), py = Math.round(y + hh / 2 + Math.sin(an) * ry * 1.25);
+        const an = (k / 24) * Math.PI * 2, px = Math.round(x + cab.width / 2 + Math.cos(an) * rx * 1.18), py = Math.round(y + cab.height / 2 + Math.sin(an) * ry * 1.25);
         if (px < 1 || py < 1 || px >= cab.width - 1 || py >= cab.height - 1) continue;
         const p = cx.getImageData(px - 1, py - 1, 3, 3).data; let r = 0, g = 0, bl = 0, al = 0;
         for (let i = 0; i < 36; i += 4) { r += p[i]; g += p[i + 1]; bl += p[i + 2]; al += p[i + 3]; }
@@ -182,7 +182,18 @@ function dibujarExpresion(ctx, { emocion, t, w, h, piel, anclas: an, ap, tAbs = 
   ctx.restore();
 }
 
-// Elemento del lienzo. cabeza: foto (Buffer|ruta) + recorte (óvalo). Todo lo temporal en segundos ABSOLUTOS del video.
+// Cabeza LIBRE: recorte con pelo y cuello (sin óvalo). recorte.libre = { caja:{cx,cy,w,h} (cara: de la línea del pelo a la barbilla, fracciones
+// de la imagen), tope (fracción del alto desde el pelo hasta la barbilla) }. Se escala para que pelo→barbilla mida `hh`, y el lienzo se rellena
+// arriba con transparencia para que su CENTRO sea el centro de la cara (así las expresiones y el borrado de piel usan el mismo origen).
+async function cabezaLibre(foto, libre, hh) {
+  const img = await loadImage(Buffer.isBuffer(foto) ? foto : fs.readFileSync(foto)), s = hh / (libre.tope * img.height), { caja } = libre;
+  const cw = Math.round(img.width * s), ch = Math.round(2 * Math.max(caja.cy, 1 - caja.cy) * img.height * s), c = createCanvas(cw, ch);
+  c.getContext('2d').drawImage(img, 0, ch / 2 - caja.cy * img.height * s, cw, img.height * s);
+  c.caja = { w: caja.w * img.width * s, h: caja.h * img.height * s }; c.hhCabeza = hh; // alto de la cabeza completa (para accesorios)
+  return c;
+}
+
+// Elemento del lienzo. cabeza: foto (Buffer|ruta) + recorte (óvalo, o recorte.libre). Todo lo temporal en segundos ABSOLUTOS del video.
 function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}, cx = 0.5, base = 0.9, alto = 0.5, proporcion = 0.30, escalaExpr = 1, t0, t1,
   saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], voz = null }) {
   // Anclas de la cabeza de relleno de mujer (fracciones del óvalo): posición y tamaño REAL de ojos, cejas y boca.
@@ -199,14 +210,15 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
       for (const n of nombres) { if (!existePieza(n)) throw new Error(`pieza del kit desconocida: ${n}`); imgs[n] = await piezaKit(n); }
       for (const n of new Set([cuerpo, ...poses.map(p => p.pieza)])) { ejes[n] = ejeCuello(imgs[n]); cuellos[n] = cuelloY(imgs[n], ejes[n]); }
       const H = h * alto, hh = Math.round(H * proporcion), hw = Math.round(hh * 0.92);
-      cab = await cabezaDesdeFoto(cabeza, recorte, hw, hh);
-      const muestra = fx => { const d = cab.getContext('2d').getImageData(Math.round(hw * fx) - 3, Math.round(hh * (0.5 + A.ojoY + 0.15)) - 3, 6, 6).data; return `rgb(${d[0]},${d[1]},${d[2]})`; };
+      cab = recorte.libre ? await cabezaLibre(cabeza, recorte.libre, hh) : await cabezaDesdeFoto(cabeza, recorte, hw, hh);
+      const bx = cab.caja || { w: cab.width, h: cab.height };
+      const muestra = fx => { const d = cab.getContext('2d').getImageData(Math.round(cab.width / 2 + (fx - 0.5) * bx.w) - 3, Math.round(cab.height / 2 + (A.ojoY + 0.15) * bx.h) - 3, 6, 6).data; return `rgb(${d[0]},${d[1]},${d[2]})`; };
       piel = [muestra(0.5 - A.ojoDx), muestra(0.5 + A.ojoDx)]; // piel justo bajo cada ojo: el tono que rodea al párpado
     },
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       if (!estado || tAbs < estado.ult) estado = nuevoEstado();
       const dt = estado.ult === null ? 0 : Math.min(0.1, tAbs - estado.ult); estado.ult = tAbs;
-      const H = h * alto, X = w * cx, Y = h * base, hh = cab.height, hw = cab.width;
+      const H = h * alto, X = w * cx, Y = h * base, hw = cab.width, hh = cab.height, caja = cab.caja, hAcc = cab.hhCabeza ? cab.hhCabeza * 1.12 : hh;
       // pose y emoción vigentes
       const pose = [...cambios].reverse().find(c => c.t <= tAbs) || cambios[0], poseIni = pose.t;
       const emo = [...lista].reverse().find(e => e.t <= tAbs) || { t: t0, e: 'normal' };
@@ -225,13 +237,15 @@ function muneco({ cuerpo = 'cuerpo-bastonera', cabeza, recorte = {}, anclas = {}
       ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / 0.05 + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx, sy);
       B.sombraDeCapa(ctx, u, 0.35, 0.28); ctx.drawImage(img, -eje, -bodyH, bodyW, bodyH); B.sinSombra(ctx);
       // cabeza (centrada sobre el cuello, con la barbilla un poco sobre el cuello del traje)
-      ctx.save(); ctx.translate(hDx * H, -bodyH + cuellos[pose.pieza] * e - hh * 0.34 + hDy * H); ctx.rotate(hAng);
+      // cabeza libre: el borde inferior del recorte (cuello) entra 12 % de la cara dentro del cuerpo, así no se ve el corte
+      const yCab = caja ? -bodyH + cuellos[pose.pieza] * e + caja.h * 0.12 - hh / 2 : -bodyH + cuellos[pose.pieza] * e - hh * 0.34;
+      ctx.save(); ctx.translate(hDx * H, yCab + hDy * H); ctx.rotate(hAng);
       B.sombraDeCapa(ctx, u, 0.3, 0.25); ctx.drawImage(cab, -hw / 2, -hh / 2); B.sinSombra(ctx);
-      dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: hw, h: hh, piel, anclas: A, ap, tAbs, fase: 0.9, cab, escala: escalaExpr });
+      dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: caja ? caja.w : hw, h: caja ? caja.h : hh, piel, anclas: A, ap, tAbs, fase: 0.9, cab, escala: escalaExpr });
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], im = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;
-        const aw = hw * ac.ancho, ah = aw * im.height / im.width, caidaY = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * hh * 1.1 : 0, rebote = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * hh * 0.04 : 0;
-        ctx.save(); ctx.translate(0, hh * ac.dy + caidaY + rebote); ctx.rotate(tt < 0.45 ? tt * 3 : Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 18) * 0.12);
+        const aw = (caja ? caja.w * 1.5 : hw) * ac.ancho, ah = aw * im.height / im.width, caidaY = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * hAcc * 1.1 : 0, rebote = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * hAcc * 0.04 : 0;
+        ctx.save(); ctx.translate(0, hAcc * ac.dy + caidaY + rebote); ctx.rotate(tt < 0.45 ? tt * 3 : Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 18) * 0.12);
         B.sombraDeCapa(ctx, u, 0.4, 0.3); ctx.drawImage(im, -aw / 2, -ah * 0.85, aw, ah); B.sinSombra(ctx); ctx.restore();
       }
       ctx.restore(); ctx.restore();

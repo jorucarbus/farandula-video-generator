@@ -1,0 +1,5 @@
+{
+  "descripcion": "Cabeza de Leidy en plastilina (generada con Gemini a partir de un fotograma de 2024), con pelo y cuello, sin fondo ni hombros. Coordenadas = fracciones de la imagen. Se obtuvo con: node scripts/cabeza-recortar.js estilo-plastilina.png salida.png --corte 0.52 --fundido 0.14",
+  "libre": { "caja": { "cx": 0.5, "cy": 0.5, "w": 0.36, "h": 0.787 }, "tope": 0.893 },
+  "anclas": { "ojoY": -0.083, "ojoDx": 0.25, "ojoR": 0.07, "bocaY": 0.265, "bocaAncho": 0.18, "cejaY": -0.121 }
+}

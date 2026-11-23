@@ -89,3 +89,17 @@ test('ensamblar: el marcador del mapa cae en el nombre del lugar y un lugar desc
   const lista = { beat: 2, principal: 'lista', lista: { titulo: 'Datos', items: [{ texto: '12 aspirantes', ancla: '12' }, { texto: 'Chone', ancla: 'Chone' }] }, extras: [] };
   assert.equal(ensamblar([lista], beats, V, palabras, cfg).elementos.length, 1);
 });
+
+test('ensamblar: los huecos sin pieza principal se llenan con clips de relleno y ninguno pasa de 3 s en total', () => {
+  const relleno = { ids: ['a', 'b'], info: id => ({ ruta: id + '.mp4', rostro: { t: 1, cx: 0.5, cy: 0.3, r: 0.2 }, duracion: 8 }) };
+  const solo1 = [{ beat: 1, principal: 'cifra', cifra: { valor: 12, sufijo: 'aspirantes', ancla: '12' }, extras: [] }];
+  const sin = ensamblar(solo1, beats, V, palabras, cfg), con = ensamblar(solo1, beats, V, palabras, { ...cfg, relleno });
+  const ventanas = con.elementos.slice(sin.elementos.length); // el relleno se agrega al final
+  assert.ok(ventanas.length >= 1, 'se agregó al menos un clip de relleno');
+  for (const v of ventanas) assert.ok(v.t1 - v.t0 <= 3.0001, 'cada aparición ≤ 3 s');
+  assert.ok(ventanas.reduce((s, v) => s + v.t1 - v.t0, 0) <= 6.0001, 'dos clips disponibles: 3 s cada uno como máximo');
+  assert.equal(sin.elementos.length + ventanas.length, con.elementos.length);
+  const agotado = ensamblar(solo1, beats, V, palabras, { ...cfg, relleno: { ids: ['a'], info: relleno.info } });
+  assert.ok(agotado.elementos.slice(sin.elementos.length).reduce((s, v) => s + v.t1 - v.t0, 0) <= 3.0001, 'un solo clip no pasa de 3 s en total');
+  assert.ok(agotado.avisos.some(a => /sin clips de relleno/.test(a)), 'si se agotan los clips lo avisa en vez de repetir uno pasando de 3 s');
+});

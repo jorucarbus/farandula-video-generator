@@ -28,6 +28,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
   const elementos = [], claves = new Set(), avisos = [], uso = new Map(), finClip = new Map(); // finClip: beat → segundo en que termina su clip real
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
+  const cubre = []; // intervalos [t0, t1] con una pieza PRINCIPAL en pantalla (muñeco, mapa, cifra, lista, escenario, clip); fuera de ellos hay hueco
 
   // 1) piezas principales y extras, frase por frase
   const porBeat = new Map(escenas.map(e => [e.beat - 1, e]));
@@ -45,13 +46,14 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
         marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + k }); marca(k, m.ancla);
       } else if (m) avisos.push('frase ' + (k + 1) + ': sin coordenadas del rostro; el clip va sin círculo');
-      elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas }));
+      elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
     }
-    if (e.principal === 'escenario') { elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: 0.90, ancho: 0.56, t0: Math.max(0, tPal(k, e.escenario.ancla) - 0.2), t1 })); marca(k, e.escenario.ancla); }
-    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: 0.56, t0, t1 })); marca(k, e.mapa.ancla); }
-    if (e.principal === 'cifra') { elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: 0.42, t0: Math.max(0, tPal(k, e.cifra.ancla) - 0.1), t1 })); marca(k, e.cifra.ancla); }
-    if (e.principal === 'lista') {
-      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: 0.40, t0: t0 + 0.2, t1, items: e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })) }));
+    if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: 0.90, ancho: 0.56, t0: ta, t1 })); cubre.push([ta, t1]); marca(k, e.escenario.ancla); }
+    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: 0.56, t0, t1 })); cubre.push([t0, t1]); marca(k, e.mapa.ancla); }
+    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: 0.42, t0: ta, t1 })); cubre.push([ta, t1]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
+      const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
+      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); cubre.push([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
   }
@@ -74,6 +76,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       }
     }
     const lado = primero.principal === 'escenario';
+    cubre.push([finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, fin(tr[tr.length - 1])]);
     elementos.push(muneco({
       cuerpo: nombreDePieza(m0.traje, 'reposo'), cabeza: cfg.foto, recorte: cfg.recorte, anclas: cfg.anclas, proporcion: cfg.proporcion ?? 0.30, voz: cfg.voz || null,
       cx: lado ? 0.26 : 0.30, base: 0.93, alto: lado ? 0.56 : 0.60, t0: finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1: fin(tr[tr.length - 1]),
@@ -88,6 +91,26 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     for (const x of e.extras || []) {
       if (x.tipo === 'insignia') { const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
+    }
+  }
+  // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
+  // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }
+  if (cfg.relleno && cfg.relleno.ids && cfg.relleno.ids.length) {
+    const fa = fin(beats.length - 1), ord = cubre.filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]), huecos = []; let cur = V[0].t0;
+    for (const [a, b] of ord) { if (a - cur > 0.5) huecos.push([cur, a]); cur = Math.max(cur, b); }
+    if (fa - cur > 0.5) huecos.push([cur, fa]);
+    const pool = [...cfg.relleno.ids];
+    for (const [ha, hb] of huecos) {
+      let a = ha;
+      while (hb - a > 0.5) {
+        const id = pool.find(i => USO_MAX_S - (uso.get(i) || 0) >= 0.5);
+        if (!id) { avisos.push('hueco de ' + ha.toFixed(1) + ' a ' + hb.toFixed(1) + ' s sin clips de relleno disponibles'); break; }
+        const info = cfg.relleno.info(id), dur = Math.min(USO_MAX_S - (uso.get(id) || 0), hb - a, USO_MAX_S);
+        const ss = Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur)));
+        uso.set(id, (uso.get(id) || 0) + dur);
+        elementos.push(E.ventanaClip({ clip: info.ruta, ss, cy: 0.58, t0: a, t1: a + dur, marcas: [] }));
+        a += dur;
+      }
     }
   }
   return { elementos, claves, avisos };
