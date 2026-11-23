@@ -28,13 +28,16 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
   const elementos = [], claves = new Set(), avisos = [], uso = new Map(), finClip = new Map(); // finClip: beat → segundo en que termina su clip real
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
-  const cubre = []; // intervalos [t0, t1] con una pieza PRINCIPAL en pantalla (muñeco, mapa, cifra, lista, escenario, clip); fuera de ellos hay hueco
+  const cubre = [], tarjetas = [], pedidos = []; // cubre: intervalos con una pieza PRINCIPAL en pantalla; tarjetas: solo las que van sobre el montaje; pedidos: clips que el director pidió para una frase
+  const card = iv => { cubre.push(iv); tarjetas.push(iv); };
+  const M = cfg.montaje && cfg.montaje.ids && cfg.montaje.ids.length ? cfg.montaje : null; // con montaje, el video es el fondo de todo el tiempo
 
   // 1) piezas principales y extras, frase por frase
   const porBeat = new Map(escenas.map(e => [e.beat - 1, e]));
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
     const t0 = V[k].t0, t1 = fin(k);
+    if (e.principal === 'clip' && M) { pedidos.push({ k, id: e.clip.id, ss: e.clip.ss, marca: e.clip.marca }); continue; } // el clip pedido será una toma del montaje
     if (e.principal === 'clip') {
       const info = (cfg.clips || {})[e.clip.id];
       if (!info) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' no está disponible; se omite'); continue; }
@@ -48,12 +51,12 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       } else if (m) avisos.push('frase ' + (k + 1) + ': sin coordenadas del rostro; el clip va sin círculo');
       elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
     }
-    if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: 0.90, ancho: 0.56, t0: ta, t1 })); cubre.push([ta, t1]); marca(k, e.escenario.ancla); }
-    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: 0.56, t0, t1 })); cubre.push([t0, t1]); marca(k, e.mapa.ancla); }
-    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: 0.42, t0: ta, t1 })); cubre.push([ta, t1]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
+    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: 0.56, t0, t1 })); card([t0, t1]); marca(k, e.mapa.ancla); }
+    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
-      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); cubre.push([Math.min(ta, items[0].t - 0.1), t1]);
+      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
   }
@@ -95,7 +98,37 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   }
   // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
   // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }
-  if (cfg.relleno && cfg.relleno.ids && cfg.relleno.ids.length) {
+  if (M) {
+    // 4b) MONTAJE de fondo: tomas de ~2 s cortadas en una palabra, cada una de un clip distinto (nunca se repite). Primero van las tomas que
+    // el director pidió para una frase (con su círculo rojo); el resto sale de la lista de candidatos en orden. Cada toma ≤ USO_MAX_S − TRANS
+    // porque la transición la deja correr TRANS s más: así ningún clip pasa de 3 s en pantalla.
+    const MAXC = USO_MAX_S - E.TRANS - 0.1, fa = fin(beats.length - 1), usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id));
+    const pidos = pedidos.sort((a, b) => V[a.k].t0 - V[b.k].t0), cortes = []; let cur = 0, ri = 0;
+    const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
+    while (fa - cur > 0.5) {
+      const r = pidos[ri]; let id, ss, dur, marcas = [], pedido = null;
+      if (r && V[r.k].t0 - cur < 1.0) { // llegó el momento del clip pedido (o falta menos de 1 s: empieza un poco antes, no queda una toma diminuta)
+        pedido = r; ri++; id = r.id; dur = Math.min(MAXC, Math.max(1.2, fin(r.k) - cur));
+      } else {
+        const tope = r ? V[r.k].t0 : fa; dur = alPalabra(cur + 1.6 + 0.8 * ((cortes.length * 3) % 5) / 4, cur + 1.2, Math.min(cur + MAXC, tope)) - cur;
+        if (!(dur >= 1.0)) dur = Math.min(MAXC, tope - cur);
+        id = pool.shift(); if (!id) { avisos.push('el montaje se queda sin clips distintos a los ' + cur.toFixed(1) + ' s'); break; }
+      }
+      const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
+      ss = pedido ? pedido.ss : Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS)));
+      if (pedido && pedido.marca) {
+        const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
+        if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
+        else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');
+      }
+      cortes.push({ clip: info.ruta, ss, t0: cur, t1: cur + dur, marcas }); cur += dur;
+    }
+    if (cortes.length && fa - cortes[cortes.length - 1].t1 < 0.5 && fa - cortes[cortes.length - 1].t1 > 0) cortes[cortes.length - 1].t1 = Math.min(fa, cortes[cortes.length - 1].t0 + MAXC); // cierra un resto mínimo
+    if (cortes.length) {
+      const fin_ = cortes[cortes.length - 1].t1, merge = []; for (const [a, b] of tarjetas.sort((p, q) => p[0] - q[0])) { const u = merge[merge.length - 1]; if (u && a <= u.t1 + 0.2) u.t1 = Math.max(u.t1, b); else merge.push({ t0: a, t1: b }); }
+      elementos.unshift(E.montaje({ cortes, t0: 0, t1: fin_ + E.TRANS, atenuar: merge })); // primero: queda DEBAJO de todo lo demás
+    }
+  } else if (cfg.relleno && cfg.relleno.ids && cfg.relleno.ids.length) {
     const fa = fin(beats.length - 1), ord = cubre.filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]), huecos = []; let cur = V[0].t0;
     for (const [a, b] of ord) { if (a - cur > 0.5) huecos.push([cur, a]); cur = Math.max(cur, b); }
     if (fa - cur > 0.5) huecos.push([cur, fa]);

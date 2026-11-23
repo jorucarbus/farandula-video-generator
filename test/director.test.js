@@ -103,3 +103,19 @@ test('ensamblar: los huecos sin pieza principal se llenan con clips de relleno y
   assert.ok(agotado.elementos.slice(sin.elementos.length).reduce((s, v) => s + v.t1 - v.t0, 0) <= 3.0001, 'un solo clip no pasa de 3 s en total');
   assert.ok(agotado.avisos.some(a => /sin clips de relleno/.test(a)), 'si se agotan los clips lo avisa en vez de repetir uno pasando de 3 s');
 });
+
+test('ensamblar con montaje: tomas distintas sin repetir clip, ≤ 3 s con la transición, pegadas entre sí y debajo de todo', () => {
+  const E = require('../lienzo/elementos');
+  const ids = Array.from({ length: 30 }, (_, i) => 'c' + i), montaje = { ids, info: id => ({ ruta: id + '.mp4', rostro: { t: 1, cx: 0.5, cy: 0.3, r: 0.2 }, duracion: 8 }) };
+  const esc = [{ beat: 1, principal: 'clip', clip: { id: 'c7', ss: 2, marca: { tipo: 'circulo', ancla: 'bastonera' } }, muneco: E1().muneco, extras: [] }, E2(), E3()];
+  const r = ensamblar(esc, beats, V, palabras, { ...cfg, clips: { c7: { ruta: 'c7.mp4', ancho: 720, alto: 1280, rostro: { t: 1, cx: 0.5, cy: 0.4, r: 0.1 }, duracion: 8 } }, montaje });
+  const m = r.elementos[0]; assert.ok(m.cortes && m.cortes.length >= 2, 'el montaje va primero (queda debajo) y tiene varias tomas');
+  const clips = m.cortes.map(c => c.clip); assert.equal(new Set(clips).size, clips.length, 'ningún clip se repite');
+  assert.ok(clips.includes('c7.mp4'), 'el clip que pidió el director entra en el montaje');
+  for (const c of m.cortes) assert.ok(c.t1 - c.t0 + E.TRANS <= 3.0001, 'toma + transición ≤ 3 s: ' + (c.t1 - c.t0));
+  for (let i = 1; i < m.cortes.length; i++) assert.ok(Math.abs(m.cortes[i].t0 - m.cortes[i - 1].t1) < 1e-6, 'sin huecos entre tomas');
+  assert.ok(m.cortes[0].marcas.length === 1 || m.cortes.some(c => c.marcas.length === 1), 'el círculo rojo va en la toma pedida');
+  assert.equal(r.elementos.filter(e => e.cortes).length, 1, 'un solo montaje');
+  const sin = ensamblar(esc, beats, V, palabras, { ...cfg, clips: { c7: { ruta: 'c7.mp4', ancho: 720, alto: 1280, rostro: null } } });
+  assert.ok(!sin.elementos.some(e => e.cortes), 'sin montaje conserva el diseño anterior');
+});

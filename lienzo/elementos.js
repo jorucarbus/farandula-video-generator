@@ -168,4 +168,56 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.56, t0, t
   };
 }
 
-module.exports = { retrato, cifra, listaNumerada, mapa, ventanaClip };
+// ── MONTAJE: el video como "carta de fondo". Un recuadro vertical grande con un picado de tomas cortas que acompaña el ritmo del
+// discurso (cada toma, un clip distinto), unidas por transiciones. Los datos van ENCIMA como tarjetas independientes; donde hay tarjeta
+// el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
+// Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
+const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
+function montaje({ cortes, t0, t1, cy = 0.615, ancho = 0.74, atenuar = [], base = 0.08, fuerte = 0.30 }) {
+  let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
+  const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
+  const velo = tAbs => { let a = base; for (const v of atenuar) { const k = acotar((tAbs - v.t0) / 0.3) * acotar((v.t1 - tAbs) / 0.3); a = Math.max(a, lerp(base, fuerte, k)); } return a; };
+  const cuadro = async (ci, tAbs) => {
+    const c = cola[ci], idx = Math.min(cuadros[ci], Math.max(1, Math.floor((tAbs - c.t0) * fpsM) + 1)), arch = path.join(dir, `c${ci}_${String(idx).padStart(4, '0')}.jpg`);
+    if (!memo.has(arch)) { if (memo.size > 8) memo.delete(memo.keys().next().value); memo.set(arch, fs.existsSync(arch) ? loadImage(fs.readFileSync(arch)) : Promise.resolve(null)); }
+    return memo.get(arch);
+  };
+  return {
+    t0, t1, flota: false, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => ({ t: c.t0, sonido: 'clic', db: -10 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
+    async preparar({ w, h, fps }) {
+      fpsM = fps; WW = Math.round(w * ancho); HH = Math.round(WW * 16 / 9); dir = fs.mkdtempSync(path.join(os.tmpdir(), 'montaje-'));
+      const ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static');
+      const hacer = (c, ci) => new Promise((res, rej) => {
+        const dur = c.t1 - c.t0 + TRANS + 0.1; cuadros[ci] = Math.ceil((dur - 0.1) * fps);
+        execFile(ffmpeg, ['-y', '-loglevel', 'error', '-ss', String(c.ss || 0), '-t', String(dur), '-i', c.clip, '-an', '-vf', `fps=${fps},scale=${WW}:${HH}:force_original_aspect_ratio=increase,crop=${WW}:${HH}`, '-q:v', '5', path.join(dir, `c${ci}_%04d.jpg`)], { timeout: 120000 }, e => (e ? rej(e) : res()));
+      });
+      let i = 0; await Promise.all(Array.from({ length: 4 }, async () => { while (i < cola.length) { const ci = i++; await hacer(cola[ci], ci); } })); // 4 extracciones a la vez
+    },
+    async dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
+      let i = 0; for (let k = 0; k < cola.length; k++) if (cola[k].t0 <= tAbs) i = k;
+      const X = (w - WW) / 2, Y = h * cy - HH / 2, e = pop(t, 0.34), c = cola[i], tt = tAbs - c.t0;
+      const imgA = await cuadro(i, tAbs);
+      const enTrans = i > 0 && tt < TRANS, imgP = enTrans ? await cuadro(i - 1, tAbs) : null, p = enTrans ? easeOutCubic(tt / TRANS) : 1;
+      ctx.save(); ctx.globalAlpha = acotar(t / 0.12) * acotar((t1 - tAbs) / 0.2); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
+      B.sombraDeCapa(ctx, u, 1.0, 0.42); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 10, Y - 10, WW + 20, HH + 20, u * 0.06); ctx.fill(); B.sinSombra(ctx);
+      ctx.save(); B.rectRedondo(ctx, X, Y, WW, HH, u * 0.05); ctx.clip();
+      const pon = (img, dx, dy, s = 1, a = 1) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy); ctx.scale(s, s); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); };
+      if (!enTrans) pon(imgA, 0, 0);
+      else if (c.trans === 'empuja') { pon(imgP, -p * WW, 0); pon(imgA, (1 - p) * WW, 0); }
+      else if (c.trans === 'abajo') { pon(imgP, 0, p * HH); pon(imgA, 0, -(1 - p) * HH); }
+      else if (c.trans === 'zoom') { pon(imgP, 0, 0); pon(imgA, 0, 0, lerp(1.28, 1, p), p); }
+      else { pon(imgP, 0, 0); pon(imgA, 0, 0, 1, p); }
+      ctx.fillStyle = `rgba(20,16,12,${(velo(tAbs) || 0).toFixed(3)})`; ctx.fillRect(X, Y, WW, HH); // velo: más oscuro donde hay tarjetas
+      ctx.restore();
+      for (const m of c.marcas || []) {
+        const pr = easeOutCubic((tAbs - m.t) / (m.dur || 0.7)); if (pr <= 0 || tAbs > c.t1 + TRANS) continue;
+        const pts = m.tipo === 'circulo' ? B.puntosDeOvalo(X + m.cx * WW, Y + m.cy * HH, m.rx * WW, m.ry * HH, m.semilla || 11) : B.puntosDeSubrayado(X + m.x0 * WW, Y + m.y0 * HH, X + m.x1 * WW, Y + m.y1 * HH, m.semilla || 5);
+        B.trazar(ctx, pts, pr, { color: estilo.colores.rojo, ancho: Math.max(6, u * 0.011), u });
+      }
+      ctx.restore();
+    },
+    limpiar() { if (dir) try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} },
+  };
+}
+
+module.exports = { retrato, cifra, listaNumerada, mapa, ventanaClip, montaje, TRANS };

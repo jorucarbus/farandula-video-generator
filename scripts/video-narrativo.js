@@ -31,7 +31,9 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   const protagonista = arg('--protagonista', carpeta.replace(/_/g, ' '));
   const infoClip = id => { const t = etiquetas[id]; return { ruta: rutaDe[id], ...dimensiones(rutaDe[id]), rostro: t.rostro, duracion: t.duracion }; };
   if (!process.argv.includes('--sin-clips') && fs.existsSync(rEtiq) && fs.existsSync(rClips)) {
-    etiquetas = JSON.parse(fs.readFileSync(rEtiq, 'utf8')); rutaDe = Object.fromEntries(JSON.parse(fs.readFileSync(rClips, 'utf8')).map(c => [c.id, c.ruta]));
+    etiquetas = JSON.parse(fs.readFileSync(rEtiq, 'utf8'));
+    const nac = arg('--nacimiento', null); // YYYY-MM-DD: solo clips de cuando ya era mayor de edad (no se muestra a la persona siendo menor)
+    if (nac) { const mayor = String(Number(nac.slice(0, 4)) + 18) + nac.slice(4), antes = Object.keys(etiquetas).length; etiquetas = Object.fromEntries(Object.entries(etiquetas).filter(([, t]) => t.fecha >= mayor)); console.log('MAYOR DE EDAD desde ' + mayor + ': ' + Object.keys(etiquetas).length + ' de ' + antes + ' clips'); } rutaDe = Object.fromEntries(JSON.parse(fs.readFileSync(rClips, 'utf8')).map(c => [c.id, c.ruta]));
     const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones;
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
@@ -42,14 +44,16 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
   const escenas = dir.escenas.filter(e => V[e.beat - 1].t0 < hasta);
-  // relleno de huecos: clips de la protagonista con rostro (primero los de acción, luego por tamaño del rostro); nunca pantalla vacía
-  const relleno = etiquetas ? { ids: Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id]))
-    .sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id), info: infoClip } : null;
+  // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
+  // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
+  const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
+  const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
+  const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
   // cabeza: la de plastilina (con pelo y cuello) si existe; --cabeza relleno usa la foto ficticia de antes
   const plast = path.join(KIT, 'cabeza-leidy-plastilina'), usaPlast = arg('--cabeza', 'plastilina') === 'plastilina' && fs.existsSync(plast + '.png');
   const cab = usaPlast ? { foto: fs.readFileSync(plast + '.png'), ...(({ libre, anclas }) => ({ recorte: { libre }, anclas }))(JSON.parse(fs.readFileSync(plast + '.json', 'utf8'))) }
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno });
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));
