@@ -3417,3 +3417,9 @@ consecuencias:
 - Probados 96/130/170 sobre un fotograma del render real: 96 chico, 170 grande. Defaults 16:9: tamaño 128, margen 90 (antes 96/80 provisionales).
 - Descartada la "ficha de publicación": la pestaña Publicar de la app ya tiene título y descripción+hashtags con botón de copiar. Metricool: el usuario carga a mano (ver memoria); `paqueteMetricool.js` queda dormido.
 - Pendiente: prueba de 5 estilos animados para que el usuario elija, `split_compare`, libx264/Railway, integración con test-persistencia (solo cuando el usuario decida).
+
+## Día 29 (cont.) — guion narrativo (estilo capitolinsiders)
+- `edl/guionNarrativo.js`: hechos -> beats {frase, rol, hechos[]}. Validador (sin inventar nombres/cifras, ≤26 palabras/frase, sin valoración ni moraleja, no confirmado exige fuente, largo según los hechos, un hecho no se repite >2 veces) + generador con LLM inyectable, 2 reintentos y respaldo determinista. `gemini.TAREAS.guionNarrativo` (cadena creativa).
+- Prueba real (crónica Reina de Manabí, 9 hechos): Gemini flash rellenaba (225 palabras sobre 131 de hechos) y repetía datos; se acotó el largo a los hechos y se avisó en el prompt. Resultado válido pero seco: con hechos secos sale lista de datos. Límite conocido: el validador no detecta paráfrasis inventadas sin nombres/cifras.
+- Scripts: `scripts/probar-guion-real.js` (Gemini), `scripts/guion-claude-ciego.js` (versión de Claude, mismo validador).
+- Pendiente: paso previo "extraer hechos" desde la crónica/fuentes, conectar a la interfaz como motor alterno, roles -> recetas visuales.

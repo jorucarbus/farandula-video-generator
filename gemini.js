@@ -54,6 +54,8 @@ const TAREAS = {
   // Elegir los dos puntos de entrada a la noticia: decide de qué va cada video, así que va por la
   // cadena creativa igual que el guion.
   encuadres:     { nombre: 'encuadres',     cadena: CADENAS.creativo },
+  // Guion narrativo (noticia contada): redacta solo con los hechos dados; creativo porque decide el gancho y el orden.
+  guionNarrativo: { nombre: 'guion narrativo', cadena: CADENAS.creativo },
 };
 
 // Prompts maestros
