@@ -1620,7 +1620,7 @@ module.exports = {
   escribirGuion, escribirGuionEnDosTiempos, MOTORES_GUION, variarMetadatos,
   promptGuion,   // el prompt maestro con el largo del canal ya puesto
   limpiarGuion,   // guarda: el guion sale sin el razonamiento del modelo pegado
-  bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, PROMPTS,
+  bloqueDeCitas, bloqueDeEvitar, callGemini, llamarJSON, parsearJsonRobusto, PROMPTS,
   procesarLectura,
   extraerActa,
   sintetizarCronica,
