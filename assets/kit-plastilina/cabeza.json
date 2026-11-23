@@ -3,20 +3,20 @@
   "libre": {
     "caja": {
       "cx": 0.5,
-      "cy": 0.47,
-      "w": 0.38,
-      "h": 0.7
+      "cy": 0.4715,
+      "w": 0.42,
+      "h": 0.691
     },
-    "tope": 0.82,
+    "tope": 0.817,
     "limpia": true,
     "cuelloK": -0.05
   },
   "anclas": {
-    "ojoY": -0.1,
-    "ojoDx": 0.24,
-    "ojoR": 0.062,
-    "bocaY": 0.243,
-    "bocaAncho": 0.2,
-    "cejaY": -0.13
+    "ojoY": -0.06,
+    "ojoDx": 0.3,
+    "ojoR": 0.065,
+    "bocaY": 0.316,
+    "bocaAncho": 0.15,
+    "cejaY": -0.12
   }
 }
