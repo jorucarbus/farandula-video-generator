@@ -49,9 +49,9 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
   const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
-  // cabeza: la de plastilina (con pelo y cuello) si existe; --cabeza relleno usa la foto ficticia de antes
-  const plast = path.join(KIT, 'cabeza-leidy-plastilina'), usaPlast = arg('--cabeza', 'plastilina') === 'plastilina' && fs.existsSync(plast + '.png');
-  const cab = usaPlast ? { foto: fs.readFileSync(plast + '.png'), ...(({ libre, anclas }) => ({ recorte: { libre }, anclas }))(JSON.parse(fs.readFileSync(plast + '.json', 'utf8'))) }
+  // cabeza y kit: plastilina (cabeza SIN cara, cuerpos sin cabeza, expresiones modeladas) por defecto; --cabeza fotos usa el kit de fotos con la cabeza ficticia
+  const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina'), usaPlast = arg('--cabeza', 'plastilina') === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png'));
+  const cab = usaPlast ? { kit: 'plastilina', foto: fs.readFileSync(path.join(KP, 'cabeza.png')), ...(({ libre, anclas }) => ({ recorte: { libre }, anclas }))(JSON.parse(fs.readFileSync(path.join(KP, 'cabeza.json'), 'utf8'))) }
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
   const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));

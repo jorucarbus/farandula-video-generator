@@ -37,7 +37,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
     const t0 = V[k].t0, t1 = fin(k);
-    if (e.principal === 'clip' && M) { pedidos.push({ k, id: e.clip.id, ss: e.clip.ss, marca: e.clip.marca }); continue; } // el clip pedido será una toma del montaje
+    if (e.principal === 'clip' && M) { pedidos.push({ k, id: e.clip.id, ss: e.clip.ss, marca: e.clip.marca }); finClip.set(k, t0 + Math.min(USO_MAX_S - E.TRANS - 0.1, Math.max(1.2, fin(k) - t0))); continue; } // el clip pedido será una toma del montaje
     if (e.principal === 'clip') {
       const info = (cfg.clips || {})[e.clip.id];
       if (!info) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' no está disponible; se omite'); continue; }
@@ -81,7 +81,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     const lado = primero.principal === 'escenario';
     cubre.push([finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, fin(tr[tr.length - 1])]);
     elementos.push(muneco({
-      cuerpo: nombreDePieza(m0.traje, 'reposo'), cabeza: cfg.foto, recorte: cfg.recorte, anclas: cfg.anclas, proporcion: cfg.proporcion ?? 0.30, voz: cfg.voz || null,
+      cuerpo: nombreDePieza(m0.traje, 'reposo'), cabeza: cfg.foto, recorte: cfg.recorte, anclas: cfg.anclas, proporcion: cfg.proporcion ?? 0.30, voz: cfg.voz || null, kit: cfg.kit || 'fotos',
       cx: lado ? 0.26 : 0.30, base: 0.93, alto: lado ? 0.56 : 0.60, t0: finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1: fin(tr[tr.length - 1]),
       poses: poses.sort((a, b) => a.t - b.t), emociones: emociones.sort((a, b) => a.t - b.t), accesorios, pegatinas, saltos,
     }));
@@ -99,34 +99,42 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
   // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }
   if (M) {
-    // 4b) MONTAJE de fondo: tomas de ~2 s cortadas en una palabra, cada una de un clip distinto (nunca se repite). Primero van las tomas que
-    // el director pidió para una frase (con su círculo rojo); el resto sale de la lista de candidatos en orden. Cada toma ≤ USO_MAX_S − TRANS
-    // porque la transición la deja correr TRANS s más: así ningún clip pasa de 3 s en pantalla.
-    const MAXC = USO_MAX_S - E.TRANS - 0.1, fa = fin(beats.length - 1), usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id));
-    const pidos = pedidos.sort((a, b) => V[a.k].t0 - V[b.k].t0), cortes = []; let cur = 0, ri = 0;
+    // 4b) MONTAJE de fondo, SOLO donde el dato es chico (cifra, lista) o donde el director pidió un clip: con el muñeco, el mapa o el escenario el
+    // centro es la pieza, sin video. Dentro de cada tramo: tomas de ~2 s cortadas en una palabra, cada una de un clip distinto (nunca se repite).
+    // Cada toma ≤ USO_MAX_S − TRANS − 0.1 porque la transición la deja correr TRANS s más: así ningún clip pasa de 3 s en pantalla.
+    const MAXC = USO_MAX_S - E.TRANS - 0.1, usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id)), tramos4 = [];
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
-    while (fa - cur > 0.5) {
-      const r = pidos[ri]; let id, ss, dur, marcas = [], pedido = null;
-      if (r && V[r.k].t0 - cur < 1.0) { // llegó el momento del clip pedido (o falta menos de 1 s: empieza un poco antes, no queda una toma diminuta)
-        pedido = r; ri++; id = r.id; dur = Math.min(MAXC, Math.max(1.2, fin(r.k) - cur));
-      } else {
-        const tope = r ? V[r.k].t0 : fa; dur = alPalabra(cur + 1.6 + 0.8 * ((cortes.length * 3) % 5) / 4, cur + 1.2, Math.min(cur + MAXC, tope)) - cur;
-        if (!(dur >= 1.0)) dur = Math.min(MAXC, tope - cur);
-        id = pool.shift(); if (!id) { avisos.push('el montaje se queda sin clips distintos a los ' + cur.toFixed(1) + ' s'); break; }
-      }
-      const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
-      ss = pedido ? pedido.ss : Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS)));
-      if (pedido && pedido.marca) {
-        const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
-        if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
-        else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');
-      }
-      cortes.push({ clip: info.ruta, ss, t0: cur, t1: cur + dur, marcas }); cur += dur;
+    for (let k = 0; k < beats.length; k++) {
+      const e = porBeat.get(k); if (!e) continue;
+      let iv = null, dato = false; if (e.principal === 'cifra' || e.principal === 'lista') { iv = [V[k].t0, fin(k)]; dato = true; } else if (e.principal === 'clip' && finClip.has(k)) iv = [V[k].t0, finClip.get(k)];
+      if (!iv) continue; const u = tramos4[tramos4.length - 1];
+      if (u && u.dato && dato && iv[0] <= u.b + 0.2) u.b = Math.max(u.b, iv[1]); else tramos4.push({ a: iv[0], b: iv[1], dato }); // solo se juntan datos seguidos; el tramo de un clip pedido termina cuando entra el muñeco
     }
-    if (cortes.length && fa - cortes[cortes.length - 1].t1 < 0.5 && fa - cortes[cortes.length - 1].t1 > 0) cortes[cortes.length - 1].t1 = Math.min(fa, cortes[cortes.length - 1].t0 + MAXC); // cierra un resto mínimo
-    if (cortes.length) {
-      const fin_ = cortes[cortes.length - 1].t1, merge = []; for (const [a, b] of tarjetas.sort((p, q) => p[0] - q[0])) { const u = merge[merge.length - 1]; if (u && a <= u.t1 + 0.2) u.t1 = Math.max(u.t1, b); else merge.push({ t0: a, t1: b }); }
-      elementos.unshift(E.montaje({ cortes, t0: 0, t1: fin_ + E.TRANS, atenuar: merge })); // primero: queda DEBAJO de todo lo demás
+    const pendientes = [...pedidos].sort((p, q) => V[p.k].t0 - V[q.k].t0); let ri = 0;
+    for (const tr of tramos4) {
+      const cortes = []; let cur = tr.a;
+      while (tr.b - cur > 0.5) {
+        const r = pendientes[ri]; let id, dur, pedido = null;
+        if (r && V[r.k].t0 >= tr.a - 0.01 && V[r.k].t0 < tr.b && V[r.k].t0 - cur < 1.0) { pedido = r; ri++; id = r.id; dur = Math.min(MAXC, Math.max(1.2, Math.min(tr.b, fin(r.k)) - cur)); }
+        else {
+          const tope = r && V[r.k].t0 < tr.b ? V[r.k].t0 : tr.b; dur = alPalabra(cur + 1.6 + 0.8 * ((cortes.length * 3) % 5) / 4, cur + 1.2, Math.min(cur + MAXC, tope)) - cur;
+          if (!(dur >= 1.0)) dur = Math.min(MAXC, tope - cur);
+          id = pool.shift(); if (!id) { avisos.push('el montaje se queda sin clips distintos a los ' + cur.toFixed(1) + ' s'); break; }
+        }
+        const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
+        const ss = pedido ? pedido.ss : Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = [];
+        if (pedido && pedido.marca) {
+          const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
+          if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
+          else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');
+        }
+        cortes.push({ clip: info.ruta, ss, t0: cur, t1: cur + dur, marcas }); cur += dur;
+      }
+      if (cortes.length) { // un resto mínimo se absorbe en la última toma; el montaje de este tramo termina donde termina el dato
+        const ult = cortes[cortes.length - 1]; if (tr.b - ult.t1 > 0 && tr.b - ult.t1 < 0.5) ult.t1 = Math.min(tr.b, ult.t0 + MAXC);
+        const merge = []; for (const [a, b] of [...tarjetas].sort((p, q) => p[0] - q[0])) { const u = merge[merge.length - 1]; if (u && a <= u.t1 + 0.2) u.t1 = Math.max(u.t1, b); else merge.push({ t0: a, t1: b }); }
+        elementos.unshift(E.montaje({ cortes, t0: tr.a, t1: ult.t1, atenuar: merge })); // primero: queda DEBAJO de todo lo demás
+      }
     }
   } else if (cfg.relleno && cfg.relleno.ids && cfg.relleno.ids.length) {
     const fa = fin(beats.length - 1), ord = cubre.filter(([a, b]) => b > a).sort((p, q) => p[0] - q[0]), huecos = []; let cur = V[0].t0;

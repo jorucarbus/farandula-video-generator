@@ -1,0 +1,22 @@
+{
+  "descripcion": "Cabeza de plastilina SIN CARA (ojos, cejas y boca se modelan encima como piezas de arcilla), con pelo y cuello. Se dibuja detrás del cuerpo: el cuello entra por el cuello del traje.",
+  "libre": {
+    "caja": {
+      "cx": 0.5,
+      "cy": 0.47,
+      "w": 0.38,
+      "h": 0.7
+    },
+    "tope": 0.82,
+    "limpia": true,
+    "cuelloK": -0.05
+  },
+  "anclas": {
+    "ojoY": -0.1,
+    "ojoDx": 0.24,
+    "ojoR": 0.062,
+    "bocaY": 0.243,
+    "bocaAncho": 0.2,
+    "cejaY": -0.13
+  }
+}
