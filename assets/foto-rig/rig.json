@@ -1,0 +1,25 @@
+{
+  "descripcion": "Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.",
+  "cuerpo": {
+    "W": 441,
+    "H": 900
+  },
+  "cabeza": {
+    "cw": 276,
+    "ch": 379,
+    "pivoteY": 0.7007915567282322,
+    "chinY": 235.20000000000002,
+    "neckY": 265.6,
+    "cara": {
+      "cx": 138.24,
+      "cy": 130.56,
+      "w": 195.20000000000002,
+      "h": 212.16
+    }
+  },
+  "CX": 221,
+  "EJE_BRAZO": 98,
+  "Y_HOMBRO": 96,
+  "Y_MANO": 470,
+  "Y_CADERA": 458
+}

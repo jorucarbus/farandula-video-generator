@@ -27,6 +27,14 @@ const TRAJES_RIG = {
     hombro: { x: 100, y: 52 }, cadera: { x: 36, y: 300 }, pies: 634, alto: 862,
   },
 };
+// Traje de FOTOS (cuerpo y cabeza ficticios, scripts/kit-foto-rig.js): sin falda aparte, las dos piernas en una sola pieza, la cabeza se dibuja antes que el torso
+// (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
+const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
+try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
+  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'brazo-abierto', 'piernas'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: 0 }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: { sup: 191, ant: 150 }, codoSuave: true, caraFoto: m.cabeza.cara };
+  TRAJES_RIG['bastonera-foto'].hombro.y = m.Y_HOMBRO - 8; } catch { /* sin piezas de foto: el traje no existe */ }
+const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
 // Caja de la cara (píxeles de la pieza «cabeza») y anclas de ojos, cejas y boca relativas a ella
 const CARA = { cx: 109, cy: 159, w: 150, h: 222 };
@@ -70,11 +78,11 @@ function ik(S, T, L1, L2) {
 // Elemento del lienzo. Misma interfaz que recortes.muneco para que el ensamblador lo use igual; kit: 'plastilina'.
 // poses: [{ t, pieza }] con piezas 'cuerpo-bastonera[-celebrar|-senalar]'; gestos: [{ id, t }] (t absoluto, en la palabra ancla).
 function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, escalaExpr = 1.1, t0, t1, saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], gestos = [], voz = null, anclas = {} }) {
-  const A = { ...ANCLAS, ...anclas }, R = TRAJES_RIG[traje] || TRAJES_RIG.bastonera;
+  const A = { ...ANCLAS, ...anclas }, R = TRAJES_RIG[traje] || TRAJES_RIG.bastonera, LG = R.long || LONG, DIR = R.dir || RIG;
   const nombrePose = p => (/celebrar/.test(p) ? 'celebrar' : /senalar/.test(p) ? 'senalar' : 'reposo');
   const lineaPoses = [{ t: t0, pose: 'reposo' }, ...poses.map(p => ({ t: p.t, pose: nombrePose(p.pieza) }))].sort((a, b) => a.t - b.t);
   const lista = [...emociones].sort((a, b) => a.t - b.t), gs = [...gestos].sort((a, b) => a.t - b.t);
-  let img = {}, imgs = {}, piel = 'rgb(230,190,165)', estado = null;
+  let cabCara = null, img = {}, imgs = {}, piel = 'rgb(230,190,165)', estado = null;
   const eventos = [{ t: t0 + 0.5, sonido: 'golpe' }, ...poses.map(p => ({ t: p.t, sonido: 'clic' })), ...saltos.map(t => ({ t, sonido: 'clic', db: -3 })), ...gs.map(g => ({ t: g.t, sonido: 'pop', db: -6 })),
     ...accesorios.map(a => ({ t: a.t + 0.45, sonido: 'ding' })), ...pegatinas.map(p => ({ t: p.t0, sonido: 'pop' })), ...lista.filter(e => e.t > t0).map(e => ({ t: e.t, sonido: 'trazo', db: -5 }))];
   const nuevoEstado = () => ({ ult: null, j: {}, pelo: new Resorte(60, 6), cab: new Resorte(140, 12), sw: new Resorte(90, 10), subir: new Resorte(120, 12), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
@@ -82,10 +90,15 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
   return {
     t0, t1, flota: false, eventos, gestosUsados: gs,
     async preparar() {
-      for (const n of R.piezas) img[n] = await loadImage(fs.readFileSync(path.join(RIG, n + '.png')));
+      for (const n of R.piezas) img[n] = await loadImage(fs.readFileSync(path.join(DIR, n + '.png')));
       for (const n of new Set([...accesorios.map(a => ACCESORIOS[a.id].archivo), ...pegatinas.map(p => p.id)])) imgs[n] = await piezaKit(n, 'plastilina');
-      const c = img.cabeza, cv = require('@napi-rs/canvas').createCanvas(8, 8), x = cv.getContext('2d'); x.drawImage(c, CARA.cx + CARA.w * 0.3, CARA.cy + CARA.h * 0.1, 8, 8, 0, 0, 8, 8);
-      const d = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } if (n) piel = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
+      if (R.caraFoto) { // cara de FOTO: se borran ojos y boca reales y se dibujan expresiones y habla encima (recortes.dibujarExpresion con la cabeza como fuente del tono de piel)
+        const k = R.caraFoto, im = img.cabeza, cw = Math.ceil(2 * Math.max(k.cx, im.width - k.cx)), chh = Math.ceil(2 * Math.max(k.cy, im.height - k.cy)), cc = require('@napi-rs/canvas').createCanvas(cw, chh);
+        cc.getContext('2d').drawImage(im, cw / 2 - k.cx, chh / 2 - k.cy); cabCara = cc;
+        const muestra = (x0, y0) => { const d = im.getContext ? null : null; const t = require('@napi-rs/canvas').createCanvas(6, 6), tx = t.getContext('2d'); tx.drawImage(im, x0, y0, 6, 6, 0, 0, 6, 6); const dd = tx.getImageData(0, 0, 6, 6).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < dd.length; i += 4) if (dd[i + 3] > 200) { r += dd[i]; g += dd[i + 1]; b += dd[i + 2]; n++; } return n ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})` : 'rgb(230,190,165)'; };
+        piel = [muestra(k.cx - k.w * 0.3, k.cy + k.h * 0.05), muestra(k.cx + k.w * 0.25, k.cy + k.h * 0.05)];
+      } else if (!R.sinExpr) { const c = img.cabeza, cv = require('@napi-rs/canvas').createCanvas(8, 8), x = cv.getContext('2d'); x.drawImage(c, CARA.cx + CARA.w * 0.3, CARA.cy + CARA.h * 0.1, 8, 8, 0, 0, 8, 8);
+      const d = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } if (n) piel = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`; }
     },
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       if (!estado || tAbs < estado.ult) estado = nuevoEstado();
@@ -95,7 +108,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       // gesto activo (con entrada y salida suaves)
       const g = gs.filter(q => q.t <= tAbs).pop(), G = g && GESTOS[g.id] && tAbs < g.t + GESTOS[g.id].dur ? GESTOS[g.id] : null, tau = g ? tAbs - g.t : 0;
       const peso = G ? acotar(tau / 0.28) * acotar((G.dur - tau) / 0.28) : 0, obj = G ? G.j(tau) : {};
-      for (const L of ['I', 'D']) if (obj[L] && obj[L].mx !== undefined && !obj[L].s) Object.assign(obj[L], ik({ x: R.hombro.x, y: R.hombro.y - (obj.subir || 0) }, { x: obj[L].mx, y: obj[L].my }, LONG.sup, LONG.ant));
+      for (const L of ['I', 'D']) if (obj[L] && obj[L].mx !== undefined && !obj[L].s) Object.assign(obj[L], ik({ x: R.hombro.x, y: R.hombro.y - (obj.subir || 0) }, { x: obj[L].mx, y: obj[L].my }, LG.sup, LG.ant));
       const lado = L => ({ s: lerp(pose[L].s, obj[L] ? obj[L].s : pose[L].s, peso), c: lerp(pose[L].c, obj[L] ? obj[L].c : pose[L].c, peso) });
       const aI = lado('I'), aD = lado('D'), manoI = peso > 0.5 && obj.I && obj.I.mano ? obj.I.mano : 'abierto', manoD = peso > 0.5 && obj.D && obj.D.mano ? obj.D.mano : 'abierto';
       const sI = spr(0, 'sI', aI.s, dt), cI = spr(0, 'cI', aI.c, dt), sD = spr(0, 'sD', aD.s, dt), cD = spr(0, 'cD', aD.c, dt);
@@ -116,14 +129,20 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       // 1) pelo (detrás de todo, cuelga con resorte)
       dib(img.pelo, R.pelo.x, R.pelo.y - subir * 0.3, R.pelo.px, R.pelo.py, pelo, false, 0.3);
       // 2) piernas y falda
-      if (R.piernas) for (const lado of [-1, 1]) dib(img.pierna, lado * R.cadera.x, R.cadera.y, 0.5, 0.04, -lado * (pose.salta ? 0.12 : 0.02), lado < 0);
-      dib(img[R.falda], R.faldaPos.x, R.faldaPos.y, R.faldaPos.px, R.faldaPos.py, Math.sin(tAbs * 2.4) * 0.02 - giro, false);
+      if (R.piernasJuntas) dib(img.piernas, 0, R.cadera.y, 0.5, 0, 0, false); else if (R.piernas) for (const lado of [-1, 1]) dib(img.pierna, lado * R.cadera.x, R.cadera.y, 0.5, 0.04, -lado * (pose.salta ? 0.12 : 0.02), lado < 0);
+      if (R.falda) dib(img[R.falda], R.faldaPos.x, R.faldaPos.y, R.faldaPos.px, R.faldaPos.py, Math.sin(tAbs * 2.4) * 0.02 - giro, false);
       // 3) torso y brazos (en reposo los brazos van delante del torso; en gestos de cara, también delante de la cabeza)
       const brazo = (lado, s, c, mano) => { // lado -1 = izquierda de la pantalla; s, c en grados (+ hacia afuera / + doblar hacia el cuerpo)
         const im = img[mano === 'puno' ? R.brazos[1] : R.brazos[0]], wB = im.width, hB = im.height, cod = hB * 0.5;
         ctx.save(); ctx.translate(lado * R.hombro.x, R.hombro.y - subir); if (lado > 0) ctx.scale(-1, 1); // espejo para el derecho: mismas convenciones
         ctx.rotate(s * GRAD);
         B.sombraDeCapa(ctx, u / e, 0.35, 0);
+        if (R.codoSuave) { // codo suave: el brazo se dibuja en rebanadas finas y el giro del codo se reparte en una zona, sin corte recto
+          const ZB = hB * 0.13, y0 = cod - ZB, y1 = cod + ZB, paso = 1; ctx.translate(-wB / 2, -hB * 0.03); ctx.rotate(0);
+          for (let y = 0; y < hB; y += paso) { const sh = Math.min(paso, hB - y), w1 = y >= y0 && y < y1 ? paso / (y1 - y0) : 0;
+            ctx.drawImage(im, 0, y, wB, Math.min(sh + 2, hB - y), 0, 0, wB, Math.min(sh + 2, hB - y)); ctx.translate(wB / 2, sh); ctx.rotate(-c * GRAD * w1); ctx.translate(-wB / 2, 0); }
+          B.sinSombra(ctx); ctx.restore(); return;
+        }
         // brazo superior (mitad de arriba) y antebrazo con mano (mitad de abajo, un poco solapadas), girando en el codo
         ctx.save(); ctx.beginPath(); ctx.rect(-wB, -hB * 0.03, wB * 2, cod + hB * 0.03); ctx.clip(); ctx.drawImage(im, -wB / 2, -hB * 0.03); ctx.restore();
         ctx.translate(0, cod); ctx.rotate(-c * GRAD);
@@ -132,14 +151,17 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       };
       // el torso se dibuja entre los brazos y la cabeza: primero brazos que van detrás del torso, luego torso, luego (opcional) brazos delante
       const delante = Boolean(G && G.delante && peso > 0.01);
+      if (R.cabezaAntes) cabezaF();
       dib(img[R.torso], 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false);
       if (!delante) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
-      // 4) cabeza con expresión modelada y accesorios
+      // 4) cabeza con expresión modelada y accesorios (con cabezaAntes se dibuja antes del torso: el cuello queda detrás del cuello del traje)
+      function cabezaF() {
       const hy = R.cabeza.y - subir * 0.8, im = img.cabeza;
       ctx.save(); ctx.translate(R.cabeza.x, hy); ctx.rotate(cabAng);
       B.sombraDeCapa(ctx, u / e, 0.3, 0); ctx.drawImage(im, -im.width * R.cabeza.px, -im.height * R.cabeza.py); B.sinSombra(ctx);
       ctx.save(); ctx.translate(CARA.cx - im.width * R.cabeza.px, CARA.cy - im.height * R.cabeza.py);
-      dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: CARA.w, h: CARA.h, piel, anclas: A, ap, tAbs, fase: 0.9, cab: null, escala: escalaExpr, limpia: true }); ctx.restore();
+      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
+      else if (!R.sinExpr) dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: CARA.w, h: CARA.h, piel, anclas: A, ap, tAbs, fase: 0.9, cab: null, escala: escalaExpr, limpia: true }); ctx.restore();
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], ia = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;
         const aw = im.width * 0.72, ah = aw * ia.height / ia.width, cai = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * im.height * 1.1 : 0, reb = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * im.height * 0.04 : 0;
@@ -147,6 +169,8 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
         B.sombraDeCapa(ctx, u / e, 0.4, 0); ctx.drawImage(ia, -aw / 2, -ah * 0.85, aw, ah); B.sinSombra(ctx); ctx.restore();
       }
       ctx.restore();
+      }
+      if (!R.cabezaAntes) cabezaF();
       if (delante) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
       ctx.restore();
       // pegatinas flotantes (bastón…) con resortes y giro opcional
