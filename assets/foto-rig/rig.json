@@ -19,12 +19,14 @@
   },
   "CX": 221,
   "EJE_BRAZO": 104,
-  "Y_HOMBRO": 50,
-  "PIV_Y": 16,
+  "Y_HOMBRO": 22,
+  "PIV_Y": 40,
+  "Y_CODO": 280,
   "Y_MANO": 470,
   "Y_CADERA": 458,
+  "codoFrac": 0.5707964601769911,
   "largo": {
-    "sup": 196,
-    "ant": 178
+    "sup": 218,
+    "ant": 160
   }
 }
