@@ -24,7 +24,7 @@ test('el catálogo de gestos del rig y el del director coinciden, y cada gesto d
   assert.deepEqual(Object.keys(GESTOS).sort(), [...GESTOS_DIRECTOR].sort());
   for (const [id, g] of Object.entries(GESTOS)) {
     assert.ok(g.dur > 0.5 && g.dur < 3, id + ': duración razonable');
-    for (const t of [0, g.dur / 2]) { const o = g.j(t); assert.ok(['I', 'D'].some(L => o[L] && Number.isFinite(o[L].mx) && Number.isFinite(o[L].my)), id + ': da el punto de al menos una mano'); }
+    for (const t of [0, g.dur / 2]) { const o = g.j(t); assert.ok(['I', 'D'].some(L => o[L] && Number.isFinite(o[L].mx) && Number.isFinite(o[L].my)) || Number.isFinite(o.cabeza), id + ': da el punto de al menos una mano (o mueve la cabeza)'); }
   }
 });
 

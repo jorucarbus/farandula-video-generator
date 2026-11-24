@@ -32,8 +32,8 @@ const TRAJES_RIG = {
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 function registrarTrajeFoto(nombre, dir) { // un traje por persona: 'bastonera-foto' (cabeza genérica) y 'bastonera-foto@<slug>' (assets/foto-rig-<slug>)
   try { const m = JSON.parse(fs.readFileSync(path.join(dir, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG[nombre] = { dir, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, peloK: 0.2, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
+  TRAJES_RIG[nombre] = { dir, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v), ...(m.emociones ? m.emociones.lista.map(v => 'emo-' + v) : [])], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, cabezaK: m.cabeza.k || 1, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, emocionesFoto: m.emociones, peloK: 0.2, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 }
 registrarTrajeFoto('bastonera-foto', RIG_FOTO);
@@ -87,6 +87,10 @@ const GESTOS = {
   aplauso: { dur: 1.6, delante: true, j: t => ({ I: { mx: 14 + osc(t, 3.2, 14), my: 120, mano: 'abierto' }, D: { mx: 14 + osc(t, 3.2, 14), my: 120, mano: 'abierto' } }) }, // aplauso
   cintura: { dur: 1.8, j: () => ({ I: { mx: 100, my: 214, mano: 'puno' }, D: { mx: 100, my: 214, mano: 'puno' }, cabeza: 4 }) },                                  // manos en la cintura (reto)
   boca: { dur: 1.6, delante: true, j: () => ({ D: { mx: 30, my: -18, mano: 'abierto' }, cabeza: -3 }) },                                                       // mano a la boca (chisme)
+  senala_arriba: { dur: 1.8, j: t => ({ D: { mx: 150 + osc(t, 2.5, 6), my: -190, mano: 'senalar' }, cabeza: -4 }) },                                                        // señala el dato que está arriba
+  cabeza: { dur: 1.8, delante: true, j: t => ({ I: { mx: 98, my: -196, mano: 'abierto' }, D: { mx: 98, my: -196, mano: 'abierto' }, cabeza: osc(t, 2, 3), subir: 4 }) },                // manos a la cabeza (no puede ser / me duele)
+  menton: { dur: 2.0, delante: true, j: () => ({ D: { mx: 44, my: 6, mano: 'puno' }, cabeza: 6 }) },                                                                          // pensativa, mano en el mentón (duda)
+  asiente: { dur: 1.4, j: t => ({ cabeza: osc(t, 2.4, 7) }) },                                                                                                                 // asiente con la cabeza (de acuerdo)
   saludo: { dur: 1.8, j: t => ({ D: { mx: 175 + osc(t, 3, 22), my: -100, mano: 'abierto', muneca: osc(t, 3, 28) }, cabeza: 4 }) },                                                      // saludo con la mano
 };
 
@@ -107,7 +111,7 @@ function ik(S, T, L1, L2) {
 
 // Elemento del lienzo. Misma interfaz que recortes.muneco para que el ensamblador lo use igual; kit: 'plastilina'.
 // poses: [{ t, pieza }] con piezas 'cuerpo-bastonera[-celebrar|-senalar]'; gestos: [{ id, t }] (t absoluto, en la palabra ancla).
-function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, escalaExpr = 1.1, t0, t1, saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], gestos = [], voz = null, anclas = {} }) {
+function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, encuadres = [], entrada = 'caida', escalaExpr = 1.1, t0, t1, saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], gestos = [], voz = null, anclas = {} }) {
   const A = { ...ANCLAS, ...anclas }, R = TRAJES_RIG[traje] || TRAJES_RIG.bastonera, LG = R.long || LONG, DIR = R.dir || RIG;
   const nombrePose = p => (/celebrar/.test(p) ? 'celebrar' : /senalar/.test(p) ? 'senalar' : 'reposo');
   const lineaPoses = [{ t: t0, pose: 'reposo' }, ...poses.map(p => ({ t: p.t, pose: nombrePose(p.pieza) }))].sort((a, b) => a.t - b.t);
@@ -115,7 +119,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
   let pielP = null, cabCara = null, img = {}, imgs = {}, piel = 'rgb(230,190,165)', estado = null;
   const eventos = [{ t: t0 + 0.5, sonido: 'golpe' }, ...poses.map(p => ({ t: p.t, sonido: 'clic' })), ...saltos.map(t => ({ t, sonido: 'clic', db: -3 })), ...gs.map(g => ({ t: g.t, sonido: 'pop', db: -6 })),
     ...accesorios.map(a => ({ t: a.t + 0.45, sonido: 'ding' })), ...pegatinas.map(p => ({ t: p.t0, sonido: 'pop' })), ...lista.filter(e => e.t > t0).map(e => ({ t: e.t, sonido: 'trazo', db: -5 }))];
-  const nuevoEstado = () => ({ ult: null, j: {}, pelo: new Resorte(60, 6), cab: new Resorte(140, 12), sw: new Resorte(90, 10), subir: new Resorte(120, 12), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
+  const nuevoEstado = () => ({ ult: null, enc: { cx: new Resorte(60, 17), base: new Resorte(60, 17), alto: new Resorte(60, 17), listo: false }, j: {}, pelo: new Resorte(60, 6), cab: new Resorte(140, 12), sw: new Resorte(90, 10), subir: new Resorte(120, 12), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
   const spr = (k, nombre, objetivo, dt) => { const r = estado.j[nombre] || (estado.j[nombre] = new Resorte(170, 13)); if (r.listo !== true) { r.x = objetivo; r.listo = true; } return r.paso(objetivo, dt); };
   const el = {
     t0, t1, flota: false, eventos, gestosUsados: gs,
@@ -126,7 +130,8 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
         const dd = x2.getImageData(0, 0, im.width, 5).data; let r0 = 0, g0 = 0, b0 = 0, n0 = 0, mn = 1e9, mx = -1; for (let yy = 0; yy < 5; yy++) for (let xx = 0; xx < im.width; xx++) { const o = (yy * im.width + xx) * 4; if (dd[o + 3] > 250 && dd[o] > 190 && Math.abs(dd[o] - dd[o + 2]) < 16) { r0 += dd[o]; g0 += dd[o + 1]; b0 += dd[o + 2]; n0++; if (xx < mn) mn = xx; if (xx > mx) mx = xx; } }
         if (n0) R.codoInfo = { col: `rgb(${Math.round(r0 / n0)},${Math.round(g0 / n0)},${Math.round(b0 / n0)})`, r: (mx - mn) / 2 }; }
       if (R.caraFoto) { // cara de FOTO: se borran ojos y boca reales y se dibujan expresiones y habla encima (recortes.dibujarExpresion con la cabeza como fuente del tono de piel)
-        const k = R.caraFoto, im = img.cabeza, cw = Math.ceil(2 * Math.max(k.cx, im.width - k.cx)), chh = Math.ceil(2 * Math.max(k.cy, im.height - k.cy)), cc = require('@napi-rs/canvas').createCanvas(cw, chh);
+        const k = R.caraFoto, KK = R.cabezaK || 1, im = require('@napi-rs/canvas').createCanvas(img.cabeza.width / KK, img.cabeza.height / KK); im.getContext('2d').drawImage(img.cabeza, 0, 0, im.width, im.height); // copia a la resolución del rig (para el borrado de piel y las muestras)
+        const cw = Math.ceil(2 * Math.max(k.cx, im.width - k.cx)), chh = Math.ceil(2 * Math.max(k.cy, im.height - k.cy)), cc = require('@napi-rs/canvas').createCanvas(cw, chh);
         cc.getContext('2d').drawImage(im, cw / 2 - k.cx, chh / 2 - k.cy); cabCara = cc;
         const muestra = (x0, y0) => { const d = im.getContext ? null : null; const t = require('@napi-rs/canvas').createCanvas(6, 6), tx = t.getContext('2d'); tx.drawImage(im, x0, y0, 6, 6, 0, 0, 6, 6); const dd = tx.getImageData(0, 0, 6, 6).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < dd.length; i += 4) if (dd[i + 3] > 200) { r += dd[i]; g += dd[i + 1]; b += dd[i + 2]; n++; } return n ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})` : 'rgb(230,190,165)'; };
         piel = [muestra(k.cx - k.w * 0.3, k.cy + k.h * 0.05), muestra(k.cx + k.w * 0.25, k.cy + k.h * 0.05)];
@@ -137,7 +142,11 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       if (!estado || tAbs < estado.ult) estado = nuevoEstado();
       const dt = estado.ult === null ? 0 : Math.min(0.1, tAbs - estado.ult); estado.ult = tAbs;
-      const H = h * alto, X = w * cx, Y = h * base, e = H / R.alto;
+      // ENCUADRE: el muñeco puede cambiar de plano (cuerpo entero, medio, primer plano, acompañante abajo, al lado) con un movimiento suave de cámara
+      const objE = encuadres.length ? ([...encuadres].reverse().find(q => q.t <= tAbs) || encuadres[0]) : { cx, base, alto };
+      if (!estado.enc.listo) { estado.enc.cx.x = objE.cx; estado.enc.base.x = objE.base; estado.enc.alto.x = objE.alto; estado.enc.listo = true; }
+      const cxV = estado.enc.cx.paso(objE.cx, dt), baseV = estado.enc.base.paso(objE.base, dt), altoV = estado.enc.alto.paso(objE.alto, dt);
+      const H = h * altoV, X = w * cxV, Y = h * baseV, e = H / R.alto;
       const pose = POSES[[...lineaPoses].reverse().find(p => p.t <= tAbs).pose], emo = [...lista].reverse().find(v => v.t <= tAbs) || { t: t0, e: 'normal' };
       // gesto activo (con entrada y salida suaves)
       const g = gs.filter(q => q.t <= tAbs).pop(), G = g && GESTOS[g.id] && tAbs < g.t + GESTOS[g.id].dur ? GESTOS[g.id] : null, tau = g ? tAbs - g.t : 0;
@@ -148,7 +157,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const munI = spr(0, 'mI', peso && obj.I && obj.I.muneca ? obj.I.muneca * peso : 0, dt), munD = spr(0, 'mD', peso && obj.D && obj.D.muneca ? obj.D.muneca * peso : 0, dt);
       const sI = spr(0, 'sI', aI.s, dt), cI = spr(0, 'cI', aI.c, dt), sD = spr(0, 'sD', aD.s, dt), cD = spr(0, 'cD', aD.c, dt);
       // cuerpo: caída de entrada, saltos y respiración
-      const c = caida(tAbs - t0); let dy = c.dy, sy = c.sy;
+      const c = entrada === 'caida' ? caida(tAbs - t0) : { dy: 0, sy: 1 }; let dy = c.dy, sy = c.sy; // entrada: 'caida' (la primera vez que aparece) o 'fundido' (las demás: no vuelve a caer cada vez)
       for (const tj of saltos) { const s = salto(tAbs, tj); dy += s.dy; sy *= s.sy; }
       if (pose.salta) { const b = Math.abs(Math.sin(tAbs * 5.2)) * 0.035; dy += b; }
       sy *= 1 + 0.014 * Math.sin(tAbs * 2.1); const sx = 1 + (1 - sy) * 0.6, giro = Math.sin(tAbs * 1.3) * 0.02;
@@ -157,12 +166,12 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const cabAng = estado.cab.paso(cabObj, dt), pelo = estado.pelo.paso((-cabAng * 1.3 + giro * 2 + (dy > 0 ? -0.05 : 0)) * (R.peloK ?? 1), dt);
       const ap = voz ? (voz.abertura[Math.floor(tAbs * (voz.fps || 30))] ?? 0) : 0;
       B.sombraDeContacto(ctx, X, Y + H * 0.005, 240 * e * 0.62 * (1 - dy * 0.5), H * 0.03, 0.30 * acotar(t / 0.2) * (1 - Math.min(0.6, dy)));
-      ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / 0.05 + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx * e, sy * e); ctx.translate(0, -R.pies);
-      const dib = (im, x, y, px, py, ang = 0, espejo = false, sombra = 0.35) => { // dibuja una pieza girando alrededor de su pivote (px, py fracciones)
-        ctx.save(); ctx.translate(x, y); ctx.rotate(ang); if (espejo) ctx.scale(-1, 1); B.sombraDeCapa(ctx, u / e, sombra, 0.28 * 0); ctx.drawImage(im, -im.width * px, -im.height * py); B.sinSombra(ctx); ctx.restore();
+      ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / (entrada === 'fundido' ? 0.35 : 0.05) + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx * e, sy * e); ctx.translate(0, -R.pies);
+      const dib = (im, x, y, px, py, ang = 0, espejo = false, sombra = 0.35, kk = 1) => { // dibuja una pieza girando alrededor de su pivote (px, py fracciones)
+        ctx.save(); ctx.translate(x, y); ctx.rotate(ang); if (espejo) ctx.scale(-1, 1); B.sombraDeCapa(ctx, u / e, sombra, 0.28 * 0); ctx.drawImage(im, -im.width / kk * px, -im.height / kk * py, im.width / kk, im.height / kk); B.sinSombra(ctx); ctx.restore();
       };
       // 1) pelo (detrás de todo, cuelga con resorte)
-      dib(img.pelo, R.pelo.x, R.pelo.y - subir * 0.3, R.pelo.px, R.pelo.py, pelo, false, 0.3);
+      dib(img.pelo, R.pelo.x, R.pelo.y - subir * 0.3, R.pelo.px, R.pelo.py, pelo, false, 0.3, R.cabezaK || 1);
       // 2) piernas y falda
       if (R.piernasJuntas) dib(img.piernas, 0, R.cadera.y, 0.5, 0, 0, false); else if (R.piernas) for (const lado of [-1, 1]) dib(img.pierna, lado * R.cadera.x, R.cadera.y, 0.5, 0.04, -lado * (pose.salta ? 0.12 : 0.02), lado < 0);
       if (R.falda) dib(img[R.falda], R.faldaPos.x, R.faldaPos.y, R.faldaPos.px, R.faldaPos.py, Math.sin(tAbs * 2.4) * 0.02 - giro, false);
@@ -198,20 +207,28 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       if (R.hombros) dib(img.hombros, 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false); // el hombro del torso va encima del brazo: ahí está la unión
       // 4) cabeza con expresión modelada y accesorios (con cabezaAntes se dibuja antes del torso: el cuello queda detrás del cuello del traje)
       function cabezaF() {
-      const hy = R.cabeza.y - subir * 0.8, im = img.cabeza;
+      const hy = R.cabeza.y - subir * 0.8, im = img.cabeza, KK = R.cabezaK || 1, iw = im.width / KK, ih = im.height / KK;
       ctx.save(); ctx.translate(R.cabeza.x, hy); ctx.rotate(cabAng);
-      B.sombraDeCapa(ctx, u / e, 0.3, 0); ctx.drawImage(im, -im.width * R.cabeza.px, -im.height * R.cabeza.py); B.sinSombra(ctx);
-      ctx.save(); ctx.translate(CARA.cx - im.width * R.cabeza.px, CARA.cy - im.height * R.cabeza.py);
-      if (R.bocasFoto && emo.e === 'normal') { // boca FOTOGRÁFICA según lo que se dice (visema); en silencio queda la boca de la foto
-        const vz = visemaAhora(voz, ap, tAbs), b = R.bocasFoto; ctx.restore(); if (vz && img['boca-' + vz]) ctx.drawImage(img['boca-' + vz], b.x - im.width * R.cabeza.px, b.y - im.height * R.cabeza.py); ctx.save();
+      B.sombraDeCapa(ctx, u / e, 0.3, 0); ctx.drawImage(im, -iw * R.cabeza.px, -ih * R.cabeza.py, iw, ih); B.sinSombra(ctx);
+      ctx.save(); ctx.translate(CARA.cx - iw * R.cabeza.px, CARA.cy - ih * R.cabeza.py);
+      // EMOCIÓN FOTOGRÁFICA (cejas, ojos y boca de la misma cara): entra y sale con un fundido corto; mientras dura no hay visemas ni parpadeo
+      const EF = R.emocionesFoto ? R.emocionesFoto.lista : [], emoFoto = EF.includes(emo.e), emoDib = ['feliz', 'sorpresa', 'enojo', 'triste'].includes(emo.e) ? emo.e : 'normal', emoN = !emoFoto && emoDib === 'normal';
+      if (EF.length) {
+        const E = R.emocionesFoto, ix = lista.indexOf(emo), prev = ix > 0 ? lista[ix - 1] : null, a = Math.min(1, Math.max(0, (tAbs - emo.t) / 0.22)); ctx.restore();
+        if (prev && EF.includes(prev.e) && a < 1) { ctx.globalAlpha *= 1 - a; ctx.drawImage(img['emo-' + prev.e], E.x - iw * R.cabeza.px, E.y - ih * R.cabeza.py, E.w, E.h); ctx.globalAlpha /= (1 - a) || 1; }
+        if (emoFoto) { const g0 = ctx.globalAlpha; ctx.globalAlpha = g0 * a; ctx.drawImage(img['emo-' + emo.e], E.x - iw * R.cabeza.px, E.y - ih * R.cabeza.py, E.w, E.h); ctx.globalAlpha = g0; }
+        ctx.save();
       }
-      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); if (emo.e === 'normal' && R.bocasFoto) parpadeoFoto(ctx, k, tAbs, pielP || piel); // con la boca fotográfica el parpadeo también es de foto (párpado de piel + línea de pestañas)
-        else dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap: R.bocasFoto && emo.e === 'normal' ? 0 : ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
+      if (R.bocasFoto && emoN) { // boca FOTOGRÁFICA según lo que se dice (visema); en silencio queda la boca de la foto
+        const vz = visemaAhora(voz, ap, tAbs), b = R.bocasFoto; ctx.restore(); if (vz && img['boca-' + vz]) ctx.drawImage(img['boca-' + vz], b.x - iw * R.cabeza.px, b.y - ih * R.cabeza.py, b.w, b.h); ctx.save();
+      }
+      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - iw * R.cabeza.px, k.cy - ih * R.cabeza.py); if (emoFoto) { /* la emoción ya trae sus ojos */ } else if (emoN && R.bocasFoto) parpadeoFoto(ctx, k, tAbs, pielP || piel); // con la boca fotográfica el parpadeo también es de foto (párpado de piel + línea de pestañas)
+        else dibujarExpresion(ctx, { emocion: emoDib, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap: R.bocasFoto && emoDib === 'normal' ? 0 : ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
       else if (!R.sinExpr) dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: CARA.w, h: CARA.h, piel, anclas: A, ap, tAbs, fase: 0.9, cab: null, escala: escalaExpr, limpia: true }); ctx.restore();
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], ia = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;
-        const aw = im.width * 0.72, ah = aw * ia.height / ia.width, cai = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * im.height * 1.1 : 0, reb = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * im.height * 0.04 : 0;
-        ctx.save(); ctx.translate(CARA.cx - im.width * R.cabeza.px, -im.height * R.cabeza.py + im.height * 0.07 + cai + reb); ctx.rotate(tt < 0.45 ? tt * 3 : Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 18) * 0.12);
+        const aw = iw * 0.72, ah = aw * ia.height / ia.width, cai = tt < 0.45 ? -(1 - (tt / 0.45) ** 2) * ih * 1.1 : 0, reb = tt >= 0.45 ? Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 22) * ih * 0.04 : 0;
+        ctx.save(); ctx.translate(CARA.cx - iw * R.cabeza.px, -ih * R.cabeza.py + ih * 0.07 + cai + reb); ctx.rotate(tt < 0.45 ? tt * 3 : Math.exp(-(tt - 0.45) * 7) * Math.sin((tt - 0.45) * 18) * 0.12);
         B.sombraDeCapa(ctx, u / e, 0.4, 0); ctx.drawImage(ia, -aw / 2, -ah * 0.85, aw, ah); B.sinSombra(ctx); ctx.restore();
       }
       ctx.restore();

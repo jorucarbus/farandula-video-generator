@@ -7,7 +7,7 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const { PERSONAS } = require('./personas-foto');
 const argv = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
 const PERSONA = argv('--persona', 'generica'), P = PERSONAS[PERSONA]; if (!P) { console.error('Persona desconocida: ' + PERSONA + ' (opciones: ' + Object.keys(PERSONAS).join(', ') + ')'); process.exit(1); }
-const KIT = path.join(__dirname, '..', 'assets', 'kit'), SAL = P.salida, G = P.geo;
+const KIT = path.join(__dirname, '..', 'assets', 'kit'), SAL = P.salida, G = P.geo, K = 3; // K: la cabeza, el pelo y las bocas se guardan a K veces la resolución del rig (para los primeros planos); el rig las dibuja a 1/K
 const interp = (pts, y) => { if (y <= pts[0][0]) return pts[0][1]; for (let i = 1; i < pts.length; i++) if (y <= pts[i][0]) { const [y0, v0] = pts[i - 1], [y1, v1] = pts[i]; return v0 + (v1 - v0) * (y - y0) / (y1 - y0); } return pts[pts.length - 1][1]; };
 // borde interior del brazo izquierdo (el que da al torso) por fila; el derecho es el espejo respecto al eje x = CX
 const CX = 221, BORDE = [[40, 160], [88, 140], [150, 139], [220, 136], [290, 128], [320, 116], [398, 112], [402, 82], [470, 82]], Y_PIV = 66, R_HOMBRO = 38, Y_HOMBRO = Y_PIV - R_HOMBRO, PIV_Y = R_HOMBRO, Y_CORE = 96, Y_CODO = 280, Y_MUN = 395, Y_MANO = 470, Y_CADERA = 458;
@@ -52,21 +52,21 @@ async function cuerpo() {
 // Bocas FOTOGRÁFICAS (visemas): cada una es la zona de la boca de la misma cara con otra posición de labios (scripts/bocas-generar.js → assets/kit/bocas/<visema>.png).
 // Se iguala el color a la cara base, se pega con borde suave y se limita a la silueta de la cabeza. El rig las cambia según lo que se dice.
 const BOCA = G.boca, VISEMAS = ['Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh', 'R'];
-async function bocas() {
+async function parches(BOCA, dirImgs, VIS, pref) { // parches de la cara (bocas o emociones): se igualan al color de la cara base, con borde suave y recortados a la silueta de la cabeza
   const S = 0.32, { BX, BY, BW, BH } = BOCA, base = await loadImage(fs.readFileSync(P.cabeza)), cab = await loadImage(path.join(SAL, 'cabeza.png'));
   const bb = createCanvas(BW, BH), bbx = bb.getContext('2d'); bbx.drawImage(base, BX, BY, BW, BH, 0, 0, BW, BH); const bd = bbx.getImageData(0, 0, BW, BH).data, cx0 = BOCA.cx - BX, cy0 = BOCA.cy - BY, RX = BOCA.rx, RY = BOCA.ry, pw = Math.round(BW * S), ph = Math.round(BH * S);
   const salida = {};
-  for (const v of VISEMAS) {
-    const img = await loadImage(fs.readFileSync(path.join(P.bocas, v + '.png'))), c = createCanvas(BW, BH), x = c.getContext('2d'); x.drawImage(img, 0, 0); const id = x.getImageData(0, 0, BW, BH), d = id.data;
+  for (const v of VIS) {
+    const img = await loadImage(fs.readFileSync(path.join(dirImgs, v + '.png'))), c = createCanvas(BW, BH), x = c.getContext('2d'); x.drawImage(img, 0, 0); const id = x.getImageData(0, 0, BW, BH), d = id.data;
     // ganancia de color por canal en un anillo exterior (piel alrededor de la boca): iguala la luz y el tono de la imagen generada a los de la cara base
     let sg = [0, 0, 0], sb = [0, 0, 0], n = 0; for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY); if (r > 0.95 && r < 1.2) { const i = (y * BW + xx) * 4; for (let k = 0; k < 3; k++) { sg[k] += d[i + k]; sb[k] += bd[i + k]; } n++; } }
     const gan = sg.map((v, k) => (sg[k] ? sb[k] / sg[k] : 1));
     for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const i = (y * BW + xx) * 4, r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY), a = Math.max(0, Math.min(1, (1 - r) / 0.35)); for (let k = 0; k < 3; k++) d[i + k] = Math.min(255, d[i + k] * gan[k]); d[i + 3] = Math.round(255 * a * a * (3 - 2 * a)); }
     x.putImageData(id, 0, 0);
-    const pc = createCanvas(pw, ph), px = pc.getContext('2d'); px.imageSmoothingQuality = 'high'; px.drawImage(c, 0, 0, pw, ph); px.globalCompositeOperation = 'destination-in'; px.drawImage(cab, Math.round(BX * S), Math.round(BY * S), pw, ph, 0, 0, pw, ph);
-    fs.writeFileSync(path.join(SAL, 'boca-' + v + '.png'), pc.toBuffer('image/png')); salida[v] = true;
+    const pc = createCanvas(pw * K, ph * K), px = pc.getContext('2d'); px.imageSmoothingQuality = 'high'; px.drawImage(c, 0, 0, pw * K, ph * K); px.globalCompositeOperation = 'destination-in'; px.drawImage(cab, Math.round(BX * S * K), Math.round(BY * S * K), pw * K, ph * K, 0, 0, pw * K, ph * K);
+    fs.writeFileSync(path.join(SAL, pref + v + '.png'), pc.toBuffer('image/png')); salida[v] = true;
   }
-  return { x: Math.round(BX * S), y: Math.round(BY * S), w: pw, h: ph, lista: VISEMAS };
+  return { x: Math.round(BX * S), y: Math.round(BY * S), w: pw, h: ph, k: K, lista: VIS };
 }
 async function cabeza() {
   const img = await loadImage(fs.readFileSync(P.cabeza)), W = img.width, H = img.height, { id } = pixeles(img), d = id.data;
@@ -84,15 +84,17 @@ async function cabeza() {
   const S = 0.32, cw = Math.round(W * S), ch = Math.round(H * S), NECK_Y = G.neckY, CHIN_Y = G.chinY;
   const hacer = (filtro) => { const c = createCanvas(W, H), x = c.getContext('2d'), o = x.createImageData(W, H);
     for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) { const i = y * W + xx, a = bl[i] * filtro(xx, y, d[i * 4], d[i * 4 + 1], d[i * 4 + 2]); if (a <= 0) continue; o.data[i * 4] = d[i * 4]; o.data[i * 4 + 1] = d[i * 4 + 1]; o.data[i * 4 + 2] = d[i * 4 + 2]; o.data[i * 4 + 3] = Math.round(a * 255); }
-    x.putImageData(o, 0, 0); const r = createCanvas(cw, ch); r.getContext('2d').drawImage(c, 0, 0, cw, ch); return r; };
+    x.putImageData(o, 0, 0); const r = createCanvas(cw * K, ch * K), rx = r.getContext('2d'); rx.imageSmoothingQuality = 'high'; rx.drawImage(c, 0, 0, cw * K, ch * K); return r; };
   // cabeza: todo hasta la barbilla; entre la barbilla y la base del cuello, solo la columna de piel central (no el suéter ni el pelo)
   const lum = (r, g, b) => 0.3 * r + 0.59 * g + 0.11 * b;
   const [f0, f1] = G.fade, cab = hacer((x, y) => y <= f0 ? 1 : y <= f1 ? (x > G.faceX[0] && x < G.faceX[1] ? 1 : (f1 - y) / (f1 - f0)) : y <= NECK_Y && x > G.neckX[0] && x < G.neckX[1] ? 1 : 0); // el pelo de los lados se desvanece: sigue en la capa de pelo de atrás
   // pelo (detrás de la espalda): toda la foto, pero por debajo de la barbilla solo lo oscuro (sin suéter ni piel)
-  const CORTE = NECK_Y + (50 - 26) / S, enCara = (x, y) => ((x - G.elipse.cx) / G.elipse.rx) ** 2 + ((y - G.elipse.cy) / G.elipse.ry) ** 2 < 1, // la cara NO va en la capa de pelo: si no, al moverse el pelo se vería una segunda cabeza detrás de la primera
-    pel = hacer((x, y, r, g, b) => (y < G.hairTop || enCara(x, y) ? 0 : y <= G.peloFinCara ? 1 : G.peloModo === 'todo' ? (x > G.neckX[0] - 8 && x < G.neckX[1] + 8 ? 0 : 1) : lum(r, g, b) < 105 ? 1 : 0) * Math.min(1, (y - G.hairTop) / 90) * (y <= CORTE - 60 ? 1 : y >= CORTE ? 0 : (CORTE - y) / 60)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
+  const CORTE = NECK_Y + (50 - 26) / S,
+    // el pelo de atrás NO termina en una línea recta (se notaría el corte): cada mechón acaba en PUNTA (triángulo) hacia abajo, con la punta a ~300 px del centro y el borde subiendo 0.8 px por px
+    puntaPelo = (x, y) => { const d = Math.min(Math.abs(x - (G.cara.cx - 300)), Math.abs(x - (G.cara.cx + 300))), lim = CORTE - 0.8 * Math.min(d, 180); return y <= lim - 50 ? 1 : y >= lim ? 0 : (lim - y) / 50; }, enCara = (x, y) => ((x - G.elipse.cx) / G.elipse.rx) ** 2 + ((y - G.elipse.cy) / G.elipse.ry) ** 2 < 1, // la cara NO va en la capa de pelo: si no, al moverse el pelo se vería una segunda cabeza detrás de la primera
+    pel = hacer((x, y, r, g, b) => (y < G.hairTop || enCara(x, y) ? 0 : y <= G.peloFinCara ? 1 : G.peloModo === 'todo' ? (x > G.neckX[0] - 8 && x < G.neckX[1] + 8 ? 0 : 1) : lum(r, g, b) < 105 ? 1 : 0) * Math.min(1, (y - G.hairTop) / 90) * puntaPelo(x, y)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
   guardar(cab, 'cabeza'); guardar(pel, 'pelo');
-  return { cw, ch, pivoteY: NECK_Y * S / ch, chinY: CHIN_Y * S, neckY: NECK_Y * S, cara: { cx: G.cara.cx * S, cy: G.cara.cy * S, w: G.cara.w * S, h: G.cara.h * S } }; // caja de la cara medida sobre esta foto
+  return { cw, ch, k: K, pivoteY: NECK_Y * S / ch, chinY: CHIN_Y * S, neckY: NECK_Y * S, cara: { cx: G.cara.cx * S, cy: G.cara.cy * S, w: G.cara.w * S, h: G.cara.h * S } }; // caja de la cara medida sobre esta foto
 }
 let MUNECA = null, MANOS = {};
 // Manos como piezas aparte, de PIEL: fotos generadas con scripts/manos-generar.js (elegidas a ojo, en assets/kit/manos/), con la muñeca arriba y los dedos abajo.
@@ -117,7 +119,7 @@ async function manos(arm) {
 }
 (async () => {
   fs.mkdirSync(SAL, { recursive: true });
-  const c = await cuerpo(), h = await cabeza(); await manos(); const bc = await bocas();
-  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, bocas: bc, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MUN - Y_HOMBRO + 2), largo: { sup: Y_CODO - Y_PIV, ant: Y_MUN + 50 - Y_CODO }, muneca: MUNECA, manos: MANOS }, null, 2));
+  const c = await cuerpo(), h = await cabeza(); await manos(); const bc = await parches(G.boca, P.bocas, VISEMAS, 'boca-'), em = P.emociones && G.emo ? await parches(G.emo, P.emociones, Object.keys(P.emocionesElegidas), 'emo-') : null;
+  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, bocas: bc, emociones: em, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MUN - Y_HOMBRO + 2), largo: { sup: Y_CODO - Y_PIV, ant: Y_MUN + 50 - Y_CODO }, muneca: MUNECA, manos: MANOS }, null, 2));
   console.log('listo', SAL, JSON.stringify(h));
 })().catch(e => { console.error('FALLO', e); process.exit(1); });

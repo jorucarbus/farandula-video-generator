@@ -7,6 +7,7 @@
   "cabeza": {
     "cw": 276,
     "ch": 379,
+    "k": 3,
     "pivoteY": 0.7598944591029023,
     "chinY": 253.12,
     "neckY": 288,
@@ -29,6 +30,7 @@
     "y": 154,
     "w": 144,
     "h": 115,
+    "k": 3,
     "lista": [
       "Aa",
       "Ee",
@@ -40,6 +42,24 @@
       "S",
       "Uh",
       "R"
+    ]
+  },
+  "emociones": {
+    "x": 42,
+    "y": 102,
+    "w": 186,
+    "h": 179,
+    "k": 3,
+    "lista": [
+      "feliz",
+      "sorpresa",
+      "triste",
+      "enojo",
+      "duda",
+      "orgullo",
+      "asco",
+      "preocupacion",
+      "amor"
     ]
   },
   "codoFrac": 0.6829268292682927,

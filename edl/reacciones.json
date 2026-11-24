@@ -1,0 +1,226 @@
+{
+  "descripcion": "PLANTILLAS DE REACCIÓN de la protagonista (editable). La protagonista no habla: reacciona a lo que escucha. Cada plantilla dice qué la alegra (gusta), qué le duele o la molesta (duele) y qué la deja pensando o asombrada (neutro). disparadores = palabras SIN tildes y en minúscula que aparecen en la frase; el orden de la lista es la prioridad. intensidad alta = puede llevar primer plano de la cara. emocion debe existir en el catálogo de emociones; gesto en el catálogo de gestos del rig; pose opcional (celebrar salta con los brazos arriba). protagonista.alias = palabras que nombran a la protagonista (si la frase habla de OTRA persona con nombre propio y el logro es suyo, no es motivo de celebración sino de inquietud: plantilla rival).",
+  "plantillas": [
+    {
+      "id": "triunfo",
+      "sentimiento": "gusta",
+      "intensidad": "alta",
+      "disparadores": [
+        "gano",
+        "gana",
+        "corona",
+        "coronada",
+        "campeona",
+        "reina",
+        "triunfo",
+        "victoria",
+        "titulo",
+        "premio",
+        "logro",
+        "elegida",
+        "virreina"
+      ],
+      "emocion": "feliz",
+      "gesto": "aplauso",
+      "pose": "celebrar"
+    },
+    {
+      "id": "orgullo",
+      "sentimiento": "gusta",
+      "intensidad": "media",
+      "disparadores": [
+        "supero",
+        "vencio",
+        "derroto",
+        "mejor",
+        "destaco",
+        "brillo"
+      ],
+      "emocion": "orgullo",
+      "gesto": "cintura"
+    },
+    {
+      "id": "agradecimiento",
+      "sentimiento": "gusta",
+      "intensidad": "media",
+      "disparadores": [
+        "agradecio",
+        "agradece",
+        "gracias",
+        "respaldo",
+        "apoyo",
+        "carino",
+        "familia"
+      ],
+      "emocion": "amor",
+      "gesto": "pecho"
+    },
+    {
+      "id": "fiesta",
+      "sentimiento": "gusta",
+      "intensidad": "media",
+      "disparadores": [
+        "fiesta",
+        "celebro",
+        "celebracion",
+        "festejo",
+        "aplausos",
+        "ovacion"
+      ],
+      "emocion": "feliz",
+      "gesto": "aplauso"
+    },
+    {
+      "id": "decepcion",
+      "sentimiento": "duele",
+      "intensidad": "alta",
+      "disparadores": [
+        "segunda",
+        "tercera",
+        "perdio",
+        "derrota",
+        "descalificada",
+        "eliminada",
+        "fracaso",
+        "finalista",
+        "cuarta",
+        "quinta"
+      ],
+      "emocion": "triste",
+      "gesto": "cabeza"
+    },
+    {
+      "id": "polemica",
+      "sentimiento": "duele",
+      "intensidad": "alta",
+      "disparadores": [
+        "polemica",
+        "escandalo",
+        "critica",
+        "criticas",
+        "criticaron",
+        "denuncia",
+        "burla",
+        "insulto",
+        "acusacion",
+        "acusaron",
+        "fraude",
+        "trampa",
+        "indignacion"
+      ],
+      "emocion": "enojo",
+      "gesto": "cabeza"
+    },
+    {
+      "id": "rechazo",
+      "sentimiento": "duele",
+      "intensidad": "media",
+      "disparadores": [
+        "rechazo",
+        "desprecio",
+        "verguenza",
+        "bochorno",
+        "pelea",
+        "insultos"
+      ],
+      "emocion": "asco",
+      "gesto": "encoger"
+    },
+    {
+      "id": "preocupacion",
+      "sentimiento": "duele",
+      "intensidad": "media",
+      "disparadores": [
+        "problema",
+        "lesion",
+        "enfermedad",
+        "hospital",
+        "accidente",
+        "crisis",
+        "deuda",
+        "demanda"
+      ],
+      "emocion": "preocupacion",
+      "gesto": "cabeza"
+    },
+    {
+      "id": "duda",
+      "sentimiento": "neutro",
+      "intensidad": "media",
+      "disparadores": [
+        "segun",
+        "medios",
+        "prensa",
+        "asegura",
+        "aseguran",
+        "supuestamente",
+        "rumor",
+        "rumores",
+        "versiones",
+        "trascendio"
+      ],
+      "emocion": "duda",
+      "gesto": "menton"
+    },
+    {
+      "id": "asombro",
+      "sentimiento": "neutro",
+      "intensidad": "alta",
+      "disparadores": [
+        "sorprendio",
+        "sorpresa",
+        "inesperado",
+        "nadie",
+        "increible",
+        "record",
+        "impacto",
+        "asombro",
+        "impresiono"
+      ],
+      "emocion": "sorpresa",
+      "gesto": "mejillas"
+    },
+    {
+      "id": "chisme",
+      "sentimiento": "neutro",
+      "intensidad": "baja",
+      "disparadores": [
+        "secreto",
+        "confidencial",
+        "reservado",
+        "tambien",
+        "ademas"
+      ],
+      "emocion": "duda",
+      "gesto": "boca"
+    }
+  ],
+  "escucha": [
+    "asiente",
+    "boca",
+    "menton",
+    "cintura",
+    "asiente"
+  ],
+  "protagonista": {
+    "alias": [
+      "leidy",
+      "alvarez",
+      "ella",
+      "su",
+      "sus",
+      "chonera",
+      "bonita",
+      "joven",
+      "reina",
+      "conocida"
+    ]
+  },
+  "rival": {
+    "id": "rival",
+    "sentimiento": "duele",
+    "intensidad": "media",
+    "emocion": "preocupacion",
+    "gesto": "menton"
+  }
+}

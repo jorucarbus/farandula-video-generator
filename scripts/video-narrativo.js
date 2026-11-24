@@ -7,7 +7,7 @@ require('dotenv').config();
 const fs = require('fs'), path = require('path');
 const estilo = require('../estilos/capitol');
 const { alinearPalabras, ventanasDeFrases } = require('../edl/tiemposPalabras');
-const { dirigir, directorPorReglas, validarDireccion } = require('../edl/director');
+const { dirigir, directorPorReglas, validarDireccion, EMOCIONES, GESTOS } = require('../edl/director');
 const { elegirClips, dimensiones, RAIZ } = require('../edl/biblioteca');
 const { crearSubtitulos } = require('../lienzo/subtitulos');
 const { ensamblar } = require('../lienzo/ensamblador');
@@ -15,6 +15,7 @@ const { renderizar } = require('../lienzo/render');
 const { envolventeDeVoz } = require('../lienzo/voz');
 const { visemasDesdePalabras } = require('../lienzo/titere-rig');
 const { ventanasDeCitas, vozSoloEnCitas } = require('../lienzo/citas');
+const { planificar, storyboardMarkdown } = require('../edl/storyboard');
 
 const DM = path.join(__dirname, '..', 'data-motor'), KIT = path.join(__dirname, '..', 'assets', 'kit');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -23,6 +24,13 @@ const w = JSON.parse(fs.readFileSync(path.join(DM, 'narrativo-voz', 'palabras-wh
 const AUDIO = path.join(DM, 'audios', '2026-11-23 Narrativo con voz.mp3');
 const hasta = Number(arg('--hasta', Math.min(w.duracion, 74)));
 const carpeta = arg('--carpeta', 'Leidy_Alvarez');
+
+// Si el clip empieza en negro (fundido de entrada), se corre el inicio de la toma hasta el primer cuadro con imagen.
+function sinNegro(ruta, ss) {
+  const FFM = process.env.FFMPEG_BIN || require('ffmpeg-static');
+  for (let i = 0; i < 8; i++) { try { const b = require('child_process').execFileSync(FFM, ['-v', 'error', '-ss', String(ss), '-i', ruta, '-frames:v', '1', '-vf', 'scale=16:16,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 20 }); if (!b.length || b.reduce((s, x) => s + x, 0) / b.length > 18) return ss; } catch { return ss; } ss += 0.4; }
+  return ss;
+}
 
 (async () => {
   const palabras = alinearPalabras(g.script, w.palabras, { duracion: w.duracion });
@@ -46,7 +54,9 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
-  const escenas = dir.escenas.filter(e => V[e.beat - 1].t0 < hasta);
+  // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos de cámara, nunca parado)
+  const sb = process.argv.includes('--sin-storyboard') ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS });
+  const escenas = sb.escenas.filter(e => V[e.beat - 1].t0 < hasta);
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
   const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
@@ -55,7 +65,8 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   // cabeza y kit (--cabeza): rig-foto (por defecto: muñeco articulado de piezas de foto, assets/foto-rig) | plastilina | fotos (muñeco de foto de una pieza)
   const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), KF = path.join(__dirname, '..', 'assets', 'foto-rig'), modoCab = arg('--cabeza', fs.existsSync(path.join(KF, 'rig.json')) ? 'rig-foto' : 'plastilina');
   const usaPlast = modoCab === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png')), usaRigFoto = modoCab === 'rig-foto' && fs.existsSync(path.join(KF, 'rig.json'));
-  const persona = arg('--persona', ''), cab = usaRigFoto ? { kit: 'rig-foto', trajeFoto: persona ? 'bastonera-foto@' + persona : undefined } // --persona leidy: cabeza y bocas de la protagonista (assets/foto-rig-leidy) // muñeco articulado de piezas de FOTO (assets/foto-rig): manos de piel, bocas fotográficas por visema
+  const slug = carpeta.split('_')[0].toLowerCase(), persona = arg('--persona', fs.existsSync(path.join(KF + '-' + slug, 'rig.json')) ? slug : ''), // por defecto el muñeco de la protagonista si existe (Leidy_Alvarez → assets/foto-rig-leidy)
+     cab = usaRigFoto ? { kit: 'rig-foto', trajeFoto: persona ? 'bastonera-foto@' + persona : undefined } // --persona leidy: cabeza y bocas de la protagonista (assets/foto-rig-leidy) // muñeco articulado de piezas de FOTO (assets/foto-rig): manos de piel, bocas fotográficas por visema
     : usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
   // voz del muñeco: abertura/energía del audio y VISEMAS sacados del texto y los tiempos de cada palabra (sincronía labial)
@@ -63,10 +74,11 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   // REGLA: la protagonista no habla con la voz del narrador, solo reacciona; su boca solo se sincroniza donde el guion la CITA (comillas o beat.cita). --lipsync-total solo para pruebas.
   const citas = ventanasDeCitas(g.beats, palabras, V), voz = process.argv.includes('--lipsync-total') ? vozTotal : vozSoloEnCitas(vozTotal, citas, FPS);
   console.log(citas.length ? `CITAS (la protagonista habla): ${citas.map(c => c.t0.toFixed(1) + '-' + c.t1.toFixed(1) + 's').join(', ')}` : 'Sin citas: la protagonista solo reacciona (no hay sincronía labial).');
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz });
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));
+  if (sb.storyboard.length) { const md = salida.replace(/.mp4$/i, '') + '.storyboard.md'; fs.mkdirSync(path.dirname(salida), { recursive: true }); fs.writeFileSync(md, storyboardMarkdown(sb.storyboard, 'Storyboard · ' + path.basename(salida))); console.log('Storyboard:', md); }
   fs.mkdirSync(path.dirname(salida), { recursive: true });
   const ini = Date.now();
   await renderizar({ duracion: hasta, audio: AUDIO, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
