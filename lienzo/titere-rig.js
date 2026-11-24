@@ -31,7 +31,7 @@ const TRAJES_RIG = {
 // (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-abierto', 'mano-pulgar', 'mano-senalar'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierto', 'mano-puno', 'mano-senalar'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
     cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
@@ -113,7 +113,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const peso = G ? acotar(tau / 0.28) * acotar((G.dur - tau) / 0.28) : 0, obj = G ? G.j(tau) : {};
       for (const L of ['I', 'D']) if (obj[L] && obj[L].mx !== undefined && !obj[L].s) Object.assign(obj[L], ik({ x: R.hombro.x, y: R.hombro.y - (obj.subir || 0) }, { x: obj[L].mx, y: obj[L].my }, LG.sup, LG.ant));
       const lado = L => ({ s: lerp(pose[L].s, obj[L] ? obj[L].s : pose[L].s, peso), c: lerp(pose[L].c, obj[L] ? obj[L].c : pose[L].c, peso) });
-      const aI = lado('I'), aD = lado('D'), manoI = peso > 0.5 && obj.I && obj.I.mano ? obj.I.mano : (pose.mano && pose.mano.I) || 'abierto', manoD = peso > 0.5 && obj.D && obj.D.mano ? obj.D.mano : (pose.mano && pose.mano.D) || 'abierto';
+      const aI = lado('I'), aD = lado('D'), manoI = peso > 0.5 && obj.I && obj.I.mano ? obj.I.mano : (pose.mano && pose.mano.I) || 'relajada', manoD = peso > 0.5 && obj.D && obj.D.mano ? obj.D.mano : (pose.mano && pose.mano.D) || 'relajada';
       const munI = spr(0, 'mI', peso && obj.I && obj.I.muneca ? obj.I.muneca * peso : 0, dt), munD = spr(0, 'mD', peso && obj.D && obj.D.muneca ? obj.D.muneca * peso : 0, dt);
       const sI = spr(0, 'sI', aI.s, dt), cI = spr(0, 'cI', aI.c, dt), sD = spr(0, 'sD', aD.s, dt), cD = spr(0, 'cD', aD.c, dt);
       // cuerpo: caída de entrada, saltos y respiración
@@ -148,7 +148,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
           ctx.save(); ctx.beginPath(); ctx.rect(0, 0, wB, cod + 2); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); // brazo superior (con todo el hombro)
           ctx.save(); ctx.translate(wB / 2, cod); ctx.rotate(-c * GRAD); ctx.translate(-wB / 2, -cod);
           if (R.manoFotos) { // la mano es una pieza aparte: queda DETRÁS de la manga (la muñeca se esconde bajo el puño del uniforme) y gira en la muñeca
-            const nm = mano === 'puno' ? 'pulgar' : (R.manoFotos[mano] ? mano : 'abierto'), mi = img['mano-' + nm], mf = R.manoFotos[nm];
+            const nm = R.manoFotos[mano] ? mano : 'relajada', mi = img['mano-' + nm], mf = R.manoFotos[nm];
             ctx.save(); ctx.translate(R.muneca.x, R.muneca.y - 10); ctx.rotate(mun * GRAD); ctx.drawImage(mi, -mf.ax, 0); ctx.restore(); }
           ctx.save(); ctx.beginPath(); ctx.rect(0, cod - 2, wB, hB - cod + 4); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); ctx.restore(); // antebrazo (manga) por delante de la mano
           B.sinSombra(ctx); ctx.restore(); return;

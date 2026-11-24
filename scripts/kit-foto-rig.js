@@ -72,17 +72,61 @@ async function cabeza() {
   return { cw, ch, pivoteY: NECK_Y * S / ch, chinY: CHIN_Y * S, neckY: NECK_Y * S, cara: { cx: 432 * S, cy: 408 * S, w: 610 * S, h: 663 * S } }; // caja de la cara medida sobre esta foto
 }
 let MUNECA = null, MANOS = {};
-// Manos como piezas aparte: guantes del kit (assets/kit/guante-*.png) girados para que los dedos apunten hacia abajo y la muñeca quede arriba, al centro.
+// Manos como piezas aparte, de PIEL, sacadas de las mismas fotos del kit (mismo tono que el cuerpo): se aísla la piel (sin el puño rojo ni la manga), se tapan los
+// huecos que dejó el recorte, se gira para que la muñeca quede ARRIBA y los dedos abajo, y se escala a un tamaño común. La muñeca se esconde bajo el puño al armar el rig.
+const esPiel = (r, g, b, a) => { if (a < 128) return false; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = (mx - mn) / (mx || 1); return r > 150 && g > 100 && b > 70 && r >= g && g >= b * 0.95 && r - b > 18 && sat > 0.1 && sat < 0.5; };
+// fuente: { archivo, región, punto de la muñeca (en la foto), ángulo (grados: gira la mano para que apunte hacia abajo), recorte de antebrazo (px), alto final }
+async function mano({ arch, reg, wr, ang, saltar = 0, alto = 100 }) {
+  const img = await loadImage(fs.readFileSync(arch)), { id } = pixeles(img), d = id.data, W = img.width, H = img.height, { x0, y0, x1, y1 } = reg;
+  const dentro = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  const sk = new Uint8Array(W * H), re = new Uint8Array(W * H);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = (y * W + x) * 4; if (esPiel(d[i], d[i + 1], d[i + 2], d[i + 3])) sk[y * W + x] = 1; }
+  // cierre morfológico: localiza los huecos del recorte dentro de la mano para rellenarlos con el tono de la piel de alrededor
+  const dil = (a, rad) => { const o = new Uint8Array(W * H); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { let v = 0; for (let j = -rad; j <= rad && !v; j++) for (let i2 = -rad; i2 <= rad; i2++) { if (dentro(x + i2, y + j) && a[(y + j) * W + x + i2]) { v = 1; break; } } o[y * W + x] = v; } return o; };
+  const ero = (a, rad) => { const o = new Uint8Array(W * H); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { let v = 1; for (let j = -rad; j <= rad && v; j++) for (let i2 = -rad; i2 <= rad; i2++) { if (!dentro(x + i2, y + j) || !a[(y + j) * W + x + i2]) { v = 0; break; } } o[y * W + x] = v; } return o; };
+  const cerrado = ero(dil(sk, 5), 5), col = new Float32Array(W * H * 3);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (sk[y * W + x]) { const i = (y * W + x) * 4, o = (y * W + x) * 3; col[o] = d[i]; col[o + 1] = d[i + 1]; col[o + 2] = d[i + 2]; re[y * W + x] = 1; }
+  for (let pasada = 0; pasada < 4; pasada++) {
+    const nuevo = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (cerrado[y * W + x] && !re[y * W + x]) {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let j = -3; j <= 3; j++) for (let i2 = -3; i2 <= 3; i2++) if (dentro(x + i2, y + j) && re[(y + j) * W + x + i2]) { const o = ((y + j) * W + x + i2) * 3; r += col[o]; g += col[o + 1]; b += col[o + 2]; n++; }
+      if (n) nuevo.push([x, y, r / n, g / n, b / n]);
+    }
+    for (const [x, y, r, g, b] of nuevo) { re[y * W + x] = 1; const o = (y * W + x) * 3; col[o] = r; col[o + 1] = g; col[o + 2] = b; }
+  }
+  const t = createCanvas(W, H), tx = t.getContext('2d'), td = tx.createImageData(W, H);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (re[y * W + x]) { const i = (y * W + x) * 4, o = (y * W + x) * 3; td.data[i] = col[o]; td.data[i + 1] = col[o + 1]; td.data[i + 2] = col[o + 2]; td.data[i + 3] = 255; }
+  tx.putImageData(td, 0, 0);
+  const G = 420, r = createCanvas(G, G), rx = r.getContext('2d'); rx.translate(G / 2, -saltar); rx.rotate(ang * Math.PI / 180); rx.translate(-wr.x, -wr.y); rx.drawImage(t, 0, 0);
+  const dd = rx.getImageData(0, 0, G, G).data; let a0 = G, a1 = 0, b0 = G, b1 = 0;
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) if (dd[(y * G + x) * 4 + 3] > 40) { if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; }
+  const k = alto / (b1 - b0 + 1); let m0 = G, m1 = 0;
+  for (let y = b0; y < b0 + 3; y++) for (let x = a0; x <= a1; x++) if (dd[(y * G + x) * 4 + 3] > 40) { if (x < m0) m0 = x; if (x > m1) m1 = x; }
+  const ax = ((m0 + m1) / 2 - a0) * k, w = (a1 - a0 + 1) * k, h = (b1 - b0 + 1) * k, W2 = Math.ceil(2 * Math.max(ax, w - ax)), c = createCanvas(W2, Math.ceil(h)), cx = c.getContext('2d');
+  cx.drawImage(r, a0, b0, a1 - a0 + 1, b1 - b0 + 1, W2 / 2 - ax, 0, w, h);
+  return { c, w: W2, h: Math.ceil(h), muneca: (m1 - m0) * k };
+}
 async function manos(arm) {
-  const ARM = { abierto: ['guante-abierto', 180], pulgar: ['guante-pulgar', 90], senalar: ['guante-senalar', 90] }, ANCHO = 46;
-  for (const [nombre, [arch, rot]] of Object.entries(ARM)) {
-    const img = await loadImage(fs.readFileSync(path.join(KIT, arch + '.png'))), D = Math.ceil(Math.hypot(img.width, img.height)), r = createCanvas(D, D), rx = r.getContext('2d');
-    rx.translate(D / 2, D / 2); rx.rotate(rot * Math.PI / 180); rx.drawImage(img, -img.width / 2, -img.height / 2);
-    const dd = rx.getImageData(0, 0, D, D).data; let x0 = D, x1 = 0, y0 = D, y1 = 0; for (let y = 0; y < D; y++) for (let x = 0; x < D; x++) if (dd[(y * D + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    // ancho de la muñeca: extensión horizontal de las primeras filas opacas
-    let m0 = D, m1 = 0; for (let y = y0; y < y0 + Math.max(4, (y1 - y0) * 0.05); y++) for (let x = x0; x <= x1; x++) if (dd[(y * D + x) * 4 + 3] > 40) { if (x < m0) m0 = x; if (x > m1) m1 = x; }
-    const k = ANCHO / (m1 - m0), ax = ((m0 + m1) / 2 - x0) * k, w = (x1 - x0 + 1) * k, h = (y1 - y0 + 1) * k, W2 = Math.ceil(2 * Math.max(ax, w - ax)), c = createCanvas(W2, Math.ceil(h)), cx = c.getContext('2d');
-    cx.drawImage(r, x0, y0, x1 - x0 + 1, y1 - y0 + 1, W2 / 2 - ax, 0, w, h); guardar(c, 'mano-' + nombre); MANOS[nombre] = { w: W2, h: Math.ceil(h), ax: W2 / 2 };
+  const kit = n => path.join(KIT, n + '.png');
+  const fuentes = {
+    relajada: { arch: kit('cuerpo-bastonera'), reg: { x0: 0, y0: 394, x1: 98, y1: 478 }, wr: { x: 70, y: 397 }, ang: -47, alto: 96 },                       // mano en reposo (la del cuerpo base)
+    abierto: { arch: kit('cuerpo-bastonera-celebrar'), reg: { x0: 0, y0: 0, x1: 118, y1: 90 }, wr: { x: 100, y: 82 }, ang: -130, saltar: 28, alto: 104 },  // mano abierta, dedos separados
+    senalar: { arch: kit('cuerpo-bastonera-senalar'), reg: { x0: 0, y0: 38, x1: 119, y1: 100 }, wr: { x: 117, y: 60 }, ang: -84, saltar: 0, alto: 112 },    // mano señalando
+  };
+  for (const [nombre, f] of Object.entries(fuentes)) { const a = await mano(f); guardar(a.c, 'mano-' + nombre); MANOS[nombre] = { w: a.w, h: a.h, ax: a.w / 2 }; console.log('mano', nombre, a.w + 'x' + a.h, 'muneca', a.muneca.toFixed(0)); }
+  // puño: foto del kit (data-motor/kit/png/mano-puno.png), antebrazo hacia abajo; se gira 180° (muñeca arriba) y se iguala el tono al de las otras manos
+  {
+    const img = await loadImage(fs.readFileSync(path.join(__dirname, '..', 'data-motor', 'kit', 'png', 'mano-puno.png'))), W = img.width, H = Math.round(img.height * 0.62), t = createCanvas(W, H), tx = t.getContext('2d');
+    tx.translate(W / 2, H / 2); tx.rotate(Math.PI); tx.drawImage(img, 0, 0, W, H, -W / 2, -H / 2, W, H); // se descarta el borde roto de abajo; el antebrazo queda arriba
+    const k = 100 / H, w = W * k, h = H * k, W2 = Math.ceil(w), c = createCanvas(W2, Math.ceil(h)), cx = c.getContext('2d'); cx.drawImage(t, 0, 0, W, H, 0, 0, w, h);
+    const ref = await loadImage(path.join(SAL, 'mano-senalar.png')), rc = createCanvas(ref.width, ref.height), rcx = rc.getContext('2d'); rcx.drawImage(ref, 0, 0);
+    const rd = rcx.getImageData(0, 0, ref.width, ref.height).data, md = { r: 0, g: 0, b: 0, n: 0 }, pd = cx.getImageData(0, 0, W2, Math.ceil(h)), pp = pd.data, mp = { r: 0, g: 0, b: 0, n: 0 };
+    for (let i = 0; i < rd.length; i += 4) if (rd[i + 3] > 200) { md.r += rd[i]; md.g += rd[i + 1]; md.b += rd[i + 2]; md.n++; }
+    for (let i = 0; i < pp.length; i += 4) if (pp[i + 3] > 200) { mp.r += pp[i]; mp.g += pp[i + 1]; mp.b += pp[i + 2]; mp.n++; }
+    const gr = (md.r / md.n) / (mp.r / mp.n), gg = (md.g / md.n) / (mp.g / mp.n), gb = (md.b / md.n) / (mp.b / mp.n);
+    for (let i = 0; i < pp.length; i += 4) { pp[i] = Math.min(255, pp[i] * gr); pp[i + 1] = Math.min(255, pp[i + 1] * gg); pp[i + 2] = Math.min(255, pp[i + 2] * gb); }
+    cx.putImageData(pd, 0, 0); guardar(c, 'mano-puno'); MANOS.puno = { w: W2, h: Math.ceil(h), ax: W2 / 2 };
   }
   // centro de la manga en la muñeca (en el lienzo del brazo)
   const bcv = await loadImage(path.join(SAL, 'brazo-abierto.png')), t = createCanvas(bcv.width, bcv.height), tx = t.getContext('2d'); tx.drawImage(bcv, 0, 0); const row = bcv.height - 6, bd = tx.getImageData(0, row, bcv.width, 1).data; let a0 = 1e9, a1 = -1; for (let x = 0; x < bcv.width; x++) if (bd[x * 4 + 3] > 200) { if (x < a0) a0 = x; if (x > a1) a1 = x; }
