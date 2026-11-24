@@ -1,0 +1,77 @@
+{
+  "descripcion": "Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.",
+  "cuerpo": {
+    "W": 441,
+    "H": 900
+  },
+  "cabeza": {
+    "cw": 276,
+    "ch": 379,
+    "pivoteY": 0.7598944591029023,
+    "chinY": 253.12,
+    "neckY": 288,
+    "cara": {
+      "cx": 133.44,
+      "cy": 138.24,
+      "w": 193.92000000000002,
+      "h": 227.84
+    }
+  },
+  "CX": 221,
+  "EJE_BRAZO": 108,
+  "Y_HOMBRO": 28,
+  "PIV_Y": 38,
+  "Y_CODO": 280,
+  "Y_MANO": 470,
+  "Y_CADERA": 458,
+  "bocas": {
+    "x": 62,
+    "y": 154,
+    "w": 144,
+    "h": 115,
+    "lista": [
+      "Aa",
+      "Ee",
+      "Oh",
+      "Woo",
+      "M",
+      "F",
+      "D",
+      "S",
+      "Uh",
+      "R"
+    ]
+  },
+  "codoFrac": 0.6829268292682927,
+  "largo": {
+    "sup": 214,
+    "ant": 165
+  },
+  "muneca": {
+    "x": 88,
+    "y": 367,
+    "ancho": 58
+  },
+  "manos": {
+    "relajada": {
+      "w": 69,
+      "h": 142,
+      "ax": 34.5
+    },
+    "abierta": {
+      "w": 120,
+      "h": 133,
+      "ax": 60
+    },
+    "puno": {
+      "w": 75,
+      "h": 90,
+      "ax": 37.5
+    },
+    "senalar": {
+      "w": 76,
+      "h": 121,
+      "ax": 38
+    }
+  }
+}

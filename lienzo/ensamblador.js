@@ -87,7 +87,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       poses: poses.sort((a, b) => a.t - b.t), emociones: emociones.sort((a, b) => a.t - b.t), accesorios, pegatinas, saltos };
     // kit de plastilina: muñeco ARTICULADO de piezas (titere-rig); kit de fotos: el de recortes de antes
     elementos.push(cfg.kit === 'plastilina' ? titereRig({ ...comun, gestos, traje: m0.traje })
-      : cfg.kit === 'rig-foto' ? titereRig({ ...comun, gestos, traje: 'bastonera-foto' }) // rig articulado con piezas de foto (solo hay un traje: la bastonera)
+      : cfg.kit === 'rig-foto' ? titereRig({ ...comun, gestos, traje: cfg.trajeFoto || 'bastonera-foto' }) // rig articulado con piezas de foto (solo hay un traje: la bastonera)
       : muneco({ ...comun, cuerpo: nombreDePieza(m0.traje, 'reposo'), cabeza: cfg.foto, recorte: cfg.recorte, anclas: cfg.anclas, proporcion: cfg.proporcion ?? 0.30, kit: cfg.kit || 'fotos' }));
   }
 

@@ -3,7 +3,9 @@
 require('dotenv').config();
 const fs = require('fs'), path = require('path');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
-const N = Number(arg('--n', 2)), SALIDA = path.join(__dirname, '..', 'data-motor', 'kit', 'bocas-crudo'), REF = path.join(__dirname, '..', 'assets', 'kit', 'cabeza-relleno-mujer.png');
+const N = Number(arg('--n', 2)), PERSONA = arg('--persona', ''), // --persona leidy usa assets/kit/personas/leidy/cabeza.png como base y guarda en data-motor/kit/personas/leidy/bocas-crudo
+  SALIDA = PERSONA ? path.join(__dirname, '..', 'data-motor', 'kit', 'personas', PERSONA, 'bocas-crudo') : path.join(__dirname, '..', 'data-motor', 'kit', 'bocas-crudo'),
+  REF = PERSONA ? path.join(__dirname, '..', 'assets', 'kit', 'personas', PERSONA, 'cabeza.png') : path.join(__dirname, '..', 'assets', 'kit', 'cabeza-relleno-mujer.png');
 const BASE = 'Edit this exact photograph: keep the SAME woman, the same hair, the same skin, the same lighting, the same background, the same head position, the same framing and the same eyes and eyebrows, pixel-for-pixel identical. Change ONLY the mouth (lips, teeth, tongue) and the jaw as described. The result must look like a real unretouched photograph of the same moment, a natural expression, no exaggeration.';
 const V = {
   Aa: 'Her mouth is wide open as if saying the sound "ahh": jaw dropped, upper teeth visible, a bit of tongue visible.',

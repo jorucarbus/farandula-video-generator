@@ -55,7 +55,7 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   // cabeza y kit (--cabeza): rig-foto (por defecto: muñeco articulado de piezas de foto, assets/foto-rig) | plastilina | fotos (muñeco de foto de una pieza)
   const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), KF = path.join(__dirname, '..', 'assets', 'foto-rig'), modoCab = arg('--cabeza', fs.existsSync(path.join(KF, 'rig.json')) ? 'rig-foto' : 'plastilina');
   const usaPlast = modoCab === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png')), usaRigFoto = modoCab === 'rig-foto' && fs.existsSync(path.join(KF, 'rig.json'));
-  const cab = usaRigFoto ? { kit: 'rig-foto' } // muñeco articulado de piezas de FOTO (assets/foto-rig): manos de piel, bocas fotográficas por visema
+  const persona = arg('--persona', ''), cab = usaRigFoto ? { kit: 'rig-foto', trajeFoto: persona ? 'bastonera-foto@' + persona : undefined } // --persona leidy: cabeza y bocas de la protagonista (assets/foto-rig-leidy) // muñeco articulado de piezas de FOTO (assets/foto-rig): manos de piel, bocas fotográficas por visema
     : usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
   // voz del muñeco: abertura/energía del audio y VISEMAS sacados del texto y los tiempos de cada palabra (sincronía labial)

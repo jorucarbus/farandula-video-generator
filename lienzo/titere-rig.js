@@ -30,10 +30,14 @@ const TRAJES_RIG = {
 // Traje de FOTOS (cuerpo y cabeza ficticios, scripts/kit-foto-rig.js): sin falda aparte, las dos piernas en una sola pieza, la cabeza se dibuja antes que el torso
 // (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
-try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+function registrarTrajeFoto(nombre, dir) { // un traje por persona: 'bastonera-foto' (cabeza genérica) y 'bastonera-foto@<slug>' (assets/foto-rig-<slug>)
+  try { const m = JSON.parse(fs.readFileSync(path.join(dir, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
+  TRAJES_RIG[nombre] = { dir, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
     cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, peloK: 0.2, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
+}
+registrarTrajeFoto('bastonera-foto', RIG_FOTO);
+for (const d of fs.readdirSync(path.join(__dirname, '..', 'assets'))) { const mm = /^foto-rig-(.+)$/.exec(d); if (mm) registrarTrajeFoto('bastonera-foto@' + mm[1], path.join(__dirname, '..', 'assets', d)); }
 // ── Visemas (formas de la boca al hablar). Si la voz trae `visemas` (un nombre por cuadro; 'N' = boca en reposo) se usa tal cual; si no, se elige por la abertura. ──
 const VISEMA_POR_ABERTURA = [[0.08, null], [0.22, 'Uh'], [0.40, 'D'], [0.58, 'Oh'], [0.76, 'Ee'], [2, 'Aa']];
 function visemaAhora(voz, ap, tAbs) {
