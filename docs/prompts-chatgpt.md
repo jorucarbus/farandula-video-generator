@@ -122,3 +122,16 @@ Sheet 5 — EFFECT STICKERS. 4 columns x 3 rows, same style. In reading order: 1
 1. Haz el juego compartido (sección 2) UNA vez y pásamelo: lo pruebo en la cabeza de Leidy y lo ajustamos.
 2. Luego generas las cabezas (sección 1) de los artistas que más usas, de a uno.
 3. Con 20 artistas son unas 20-60 imágenes de cabeza; el resto sale del juego compartido.
+
+---
+
+## 3. Prueba: todas las emociones de UNA persona en una sola imagen (hoja de contacto)
+
+Sirve si prefieres fotos reales (no dibujadas) para un artista concreto. En el mismo chat donde generaste su cabeza (con la cabeza aprobada adjunta), pega:
+
+```
+Using the attached approved portrait as the identity, create ONE contact sheet: a 3x3 grid of the SAME woman/man, each cell the SAME framing as the portrait (head and neck centered, same scale, same lighting, same plain light-gray background, same hair), head perfectly frontal and in exactly the same position in every cell. Only the facial expression changes (eyebrows, eyes, cheeks, mouth). In reading order: 1 overjoyed open-mouth smile; 2 shocked, eyes wide, mouth a round "o"; 3 sad and hurt; 4 angry and indignant; 5 doubtful, one eyebrow raised, lips pursed to one side; 6 proud confident closed smirk; 7 disgusted, nose wrinkled; 8 worried and anxious; 9 tender soft warm smile. Realistic unretouched photographs, natural convincing expressions, identical identity in every cell, thin gaps between cells, no text, no labels. Landscape image, as high resolution as possible.
+```
+
+Para las bocas del habla (solo si el artista va a "hablar" una cita), una hoja igual de 4x3 con las 11 formas. Yo recorto cada celda, la alineo con la cabeza base y la integro.
+Límite a vigilar: una hoja de 9 caras da celdas de ~500 px; para primeros planos grandes se nota la baja resolución. Si pasa, se divide en 2 hojas (4+5).
