@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const X = '/assets3d/_extraido/', L = new GLTFLoader(), load = u => L.loadAsync(X + u);
+const C = [
+  { n: 'KayKit Mannequin_Medium', m: 'kaykit/Mannequin_Medium.glb', a: 'kaykit/Rig_Medium_MovementBasic.glb', walk: /^Walking_A$/, alt: ['kaykit/Rig_Medium_Simulation.glb', /Cheering/] },
+  { n: 'KayKit Mannequin_Large', m: 'kaykit/Mannequin_Large.glb', a: 'kaykit/Rig_Large_MovementBasic.glb', walk: /^Walking_A$/, alt: ['kaykit/Rig_Large_Simulation.glb', /Flexing/] },
+  { n: 'Quaternius Mannequin_F (clip UAL1)', m: 'quaternius/Mannequin_F.glb', a: 'quaternius/UAL1_Standard.glb', walk: /^Walk_Formal_Loop$/, alt: ['quaternius/UAL2_Standard.glb', /Idle_TalkingPhone_Loop/] },
+  { n: 'Quaternius UAL1 (modelo propio)', m: 'quaternius/UAL1_Standard.glb', a: 'quaternius/UAL1_Standard.glb', walk: /^Walk_Formal_Loop$/, alt: ['quaternius/UAL1_Standard.glb', /Dance_Loop/] },
+  { n: 'Kenney female-a', m: 'kenney/character-female-a.glb', a: 'kenney/character-female-a.glb', walk: /^walk$/, alt: ['kenney/character-female-a.glb', /^sprint$/] },
+  { n: 'Kenney male-a', m: 'kenney/character-male-a.glb', a: 'kenney/character-male-a.glb', walk: /^walk$/, alt: ['kenney/character-male-a.glb', /^sit$/] },
+];
+const W = 300, H = 520, ROWS = 3, R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+R.setPixelRatio(1); R.setSize(W * C.length, H * ROWS); R.setScissorTest(true); R.setClearColor(0xf2ebdd); document.body.appendChild(R.domElement);
+const warns = []; const ow = console.warn; console.warn = (...a) => { warns.push(String(a[0]).slice(0, 120)); ow(...a); };
+const cells = [], info = [];
+for (const c of C) {
+  const gm = await load(c.m), ga = c.a === c.m ? gm : await load(c.a), galt = c.alt[0] === c.a ? ga : (c.alt[0] === c.m ? gm : await load(c.alt[0]));
+  const clipW = ga.animations.find(x => c.walk.test(x.name)), clipA = galt.animations.find(x => c.alt[1].test(x.name));
+  const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc4ae, 1.4)); const dl = new THREE.DirectionalLight(0xffffff, 2.2); dl.position.set(2, 4, 3); scene.add(dl);
+  const grp = new THREE.Group(); grp.add(gm.scene); scene.add(grp);
+  let meshes = 0, bones = 0; gm.scene.traverse(n => { if (n.isSkinnedMesh) meshes++; if (n.isBone) bones++; });
+  info.push({ nombre: c.n, mallas_con_esqueleto: meshes, huesos: bones, clip_caminar: clipW ? clipW.name + ' ' + clipW.duration.toFixed(2) + 's' : 'NO ENCONTRADO', clip_alterno: clipA ? clipA.name : 'NO ENCONTRADO', pistas_caminar: clipW ? clipW.tracks.length : 0 });
+  cells.push({ n: c.n, gm, grp, scene, clipW, clipA });
+}
+const cam = new THREE.PerspectiveCamera(30, W / H, 0.1, 100);
+function draw(col, row, tNorm, which) {
+  const c = cells[col], clip = which === 'w' ? c.clipW : c.clipA; if (!clip) return;
+  const mx = new THREE.AnimationMixer(c.gm.scene); const act = mx.clipAction(clip); act.play(); mx.setTime(clip.duration * tNorm); c.gm.scene.updateMatrixWorld(true);
+  c.grp.scale.setScalar(1); c.grp.position.set(0, 0, 0); const b = new THREE.Box3().setFromObject(c.gm.scene), h = b.max.y - b.min.y, s = 1.75 / (h || 1); c.grp.scale.setScalar(s); c.grp.position.y = -b.min.y * s; c.grp.position.x = -((b.min.x + b.max.x) / 2) * s;
+  cam.position.set(0, 1.0, 5.2); cam.lookAt(0, 0.9, 0); R.setViewport(col * W, (ROWS - 1 - row) * H, W, H); R.setScissor(col * W, (ROWS - 1 - row) * H, W, H); R.render(c.scene, cam);
+  mx.stopAllAction(); mx.uncacheRoot(c.gm.scene);
+}
+for (let i = 0; i < C.length; i++) { draw(i, 0, 0.2, 'w'); draw(i, 1, 0.65, 'w'); draw(i, 2, 0.4, 'a'); }
+window.info = info; window.warns = [...new Set(warns)].slice(0, 8); window.ready = true;
+</script></body></html>

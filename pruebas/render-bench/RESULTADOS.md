@@ -40,3 +40,21 @@ Maniquí MPFB (CC0) sin descargas: `herramientas/blender/maniqui_caminata.py` cr
 **Lo que NO salió bien (problema del asset, no de three.js):** el maniquí que generé a mano con MPFB tiene la malla deformada con la caminata (piernas fundidas como falda, brazos largos) y la cara alisada aún deja ver nariz y cuencas, así que no es "sin rostro". No logré arreglarlo con poses por direcciones ni calibrando ejes. Un asset ya riggeado y animado de verdad (Mixamo, Quaternius, Kenney) probablemente evita esto, pero requiere descargarlo (permiso del usuario, y verificar su licencia).
 
 **Alternativa sin assets:** construir el maniquí en código con piezas articuladas (torso ovoide, cabeza esférica sin rasgos, cápsulas en brazos y piernas), como el héroe de la primera prueba, con una biblioteca de animaciones procedurales (caminar, aplaudir, señalar, caer). Estilo arcilla/juguete, cero riesgo de licencias, el género se distingue por silueta (cadera/hombros/cabello) y cuesta pocos tokens.
+
+## Tercera prueba: maniquíes descargados (CC0), 2026-11-24
+Hoja comparativa: `muestras/maniquies-comparacion.png` (3 filas: caminar a dos tiempos y un clip alterno). Script: `bench_maniquies.js`.
+
+| Modelo | ¿Sin rostro? | Deformación | Clips | Veredicto |
+|---|---|---|---|---|
+| **Quaternius `Mannequin_F` (UAL2) y modelo de UAL1 (masculino)** | **Sí**, cabeza lisa | Limpia, articulaciones marcadas | 42 clips de UAL1 + 42 de UAL2, rig universal de 65 huesos; **un clip de UAL1 anima el maniquí de UAL2 sin avisos** | **Elegido** |
+| KayKit Mannequin_Medium / Large | No: cara sonriente dibujada, robot de juguete | Limpia | ~170 clips (Rig_Medium/Large) | Útil como personaje estilizado, no como maniquí sin rostro |
+| Kenney Mini Characters | Sin texturas al cargar el GLB suelto (salen blancos); cuerpo cuadrado | Aceptable | Solo 7 huesos, clips idle/walk/sprint/sit | Descartado para esto |
+
+Rendimiento con los maniquíes de Quaternius (65 huesos, 2 mallas con esqueleto), 1080x1920, RTX 3070, sombras activas:
+| Maniquíes en pantalla | Render por cuadro | Captura PNG con alfa |
+|---|---|---|
+| 12 | 2 ms | 20 ms |
+| 40 | 5 ms | 24 ms |
+
+Comprobado: clips de un GLB aplican a otro modelo del mismo rig por nombre de hueso; género por silueta (F/M); multitud de 40 con animaciones desfasadas; fondo transparente. Avisos de three.js: solo `handslotr/handslotl` (huesos de KayKit que el maniquí no tiene; irrelevantes).
+Limitaciones: el maniquí femenino lleva marcas de ropa interior en dos tonos (diseño del modelo); falta probar otros clips (caída, sentarse, hablar) con calidad, y colorear/vestir con materiales propios.
