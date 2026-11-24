@@ -58,3 +58,8 @@ Rendimiento con los maniquíes de Quaternius (65 huesos, 2 mallas con esqueleto)
 
 Comprobado: clips de un GLB aplican a otro modelo del mismo rig por nombre de hueso; género por silueta (F/M); multitud de 40 con animaciones desfasadas; fondo transparente. Avisos de three.js: solo `handslotr/handslotl` (huesos de KayKit que el maniquí no tiene; irrelevantes).
 Limitaciones: el maniquí femenino lleva marcas de ropa interior en dos tonos (diseño del modelo); falta probar otros clips (caída, sentarse, hablar) con calidad, y colorear/vestir con materiales propios.
+
+## Cuarta prueba: escena de pasarela de punta a punta (2026-11-24)
+`pasarela.html` + `pasarela.js`: three.js (pasarela, pantalla LED, 4 focos, flashes de cámaras, público de 78 maniquíes Quaternius desfasados, protagonista dorada con `Walk_Formal_Loop`, dolly de cámara) + capa HTML/CSS (etiqueta "Recreación ilustrativa", tarjeta de nombre, subtítulos con una palabra resaltada, caja segura x 120-900 / y 288-1260) → capturas de página → ffmpeg con la voz.
+Resultado: 10 s, 1080x1920, 24 fps, 240 cuadros renderizados y codificados en **13 s** (3,1 MB). Hoja de cuadros: `muestras/pasarela-hoja.png`.
+Pendientes vistos: pasarela sobreexpuesta en primer plano; subtítulos cortados a mitad de frase; público oscuro y estático; sin sincronía con el resto del guion (solo las 2 primeras frases); la tarjeta y los textos son HTML a mano, aún no son recetas parametrizadas.
