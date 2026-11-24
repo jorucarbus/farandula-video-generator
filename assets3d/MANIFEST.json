@@ -100,6 +100,46 @@
    "licencia_leida": "CC0 (quaternius.com: 'Free to use in personal, educational and commercial projects. (CC0 License)')",
    "nota": "version Standard (parte gratis; 17 MB segun itch)",
    "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kenney/kenney_car-kit.zip",
+   "bytes": 4814237,
+   "sha256": "fac7dacac5c7874348cf19729af3ef205f3d366493edaf0a827d93f4fdf3d0c4",
+   "md5_verificado": false,
+   "fuente": "https://kenney.nl/assets/car-kit",
+   "licencia_leida": "CC0 (License.txt dentro del ZIP; kenney.nl/support: atribucion no requerida)",
+   "nota": "descargado desde el navegador",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kenney/kenney_city-kit-commercial_2.1.zip",
+   "bytes": 4096974,
+   "sha256": "f8b09b081c2bb88bcc126e2dec1cb40fd0dad7e7e591b6c26aaefe96fb35276b",
+   "md5_verificado": false,
+   "fuente": "https://kenney.nl/assets/city-kit-commercial",
+   "licencia_leida": "CC0 (License.txt dentro del ZIP; kenney.nl/support: atribucion no requerida)",
+   "nota": "descargado desde el navegador",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kenney/kenney_city-kit-roads.zip",
+   "bytes": 2852289,
+   "sha256": "374a4552115cbd11b4ec5c930ee31a533562dc78a09af249a655d03f7ea3b959",
+   "md5_verificado": false,
+   "fuente": "https://kenney.nl/assets/city-kit-roads",
+   "licencia_leida": "CC0 (License.txt dentro del ZIP; kenney.nl/support: atribucion no requerida)",
+   "nota": "descargado desde el navegador",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kenney/kenney_mini-characters_2.0.zip",
+   "bytes": 4024187,
+   "sha256": "add348e98ab9e23d9973c4740ef2c5cceb229c742106aca2d56b30a8f1241bb7",
+   "md5_verificado": false,
+   "fuente": "https://kenney.nl/assets/mini-characters",
+   "licencia_leida": "CC0 (License.txt dentro del ZIP; kenney.nl/support: atribucion no requerida)",
+   "nota": "llegó como .tmp en Descargas (ZIP válido, 233 entradas); renombrado",
+   "descargado": "2026-11-24"
   }
  ]
 }
