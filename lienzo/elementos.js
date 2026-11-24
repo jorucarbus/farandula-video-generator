@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { geoMercator, geoPath, geoArea } = require('d3-geo');
+const { geoMercator, geoPath, geoArea, geoBounds, geoCentroid } = require('d3-geo');
 const { feature } = require('topojson-client');
 const { lerp, acotar, easeOutCubic, easeOutBack } = require('../overlay/animacion');
 const { COMPONENTES } = require('../overlay/componentes');
@@ -97,17 +97,36 @@ function mundo() {
   return _mundo;
 }
 
-// lugar: { lon, lat, nombre }; tPin: segundo ABSOLUTO en que cae el marcador (la palabra del lugar).
-function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, alto = 0.40, t0, t1 }) {
-  const { paises } = mundo();
+// Todos los países del atlas (solo el continente de cada uno), para mapas de OTROS países (Puerto Rico, España, Estados Unidos...). Se carga solo si hace falta.
+let _todos = null;
+function mundoCompleto() {
+  if (_todos) return _todos;
+  const topo = require('world-atlas/countries-50m.json');
+  _todos = feature(topo, topo.objects.countries).features.filter(f => f.properties.name !== 'Antarctica').map(f => {
+    if (f.geometry.type !== 'MultiPolygon') return f;
+    const mayor = f.geometry.coordinates.map(c => ({ c, a: geoArea({ type: 'Polygon', coordinates: c }) })).sort((a, b) => b.a - a.a)[0].c;
+    return { ...f, geometry: { type: 'Polygon', coordinates: mayor } };
+  });
+  return _todos;
+}
+const CERCA = ['Ecuador', 'Colombia', 'Peru', 'Brazil', 'Venezuela', 'Bolivia', 'Chile', 'Panama', 'Costa Rica', 'Argentina', 'Guyana', 'Suriname', 'Paraguay'];
+
+// lugar: { lon, lat, nombre }; tPin: segundo ABSOLUTO en que cae el marcador (la palabra del lugar). pais: nombre del país en el atlas (inglés); nombrePais: cómo se dice en español (etiqueta del marcador).
+// Para un país fuera de Sudamérica el mapa parte de una vista amplia y acerca hasta el país, con marcador y nombre en su centro.
+function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40, t0, t1 }) {
+  const regional = !CERCA.includes(pais), paises = regional ? mundoCompleto() : mundo().paises;
   const destino = paises.find(f => f.properties.name === pais);
+  if (regional && destino && !lugar) { const c = geoCentroid(destino); lugar = { lon: c[0], lat: c[1], nombre: nombrePais || pais }; tPin = tPin ?? t0 + 1.0; }
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       const cw = Math.round(w * 0.86), ch = Math.round(h * alto), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
-      const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) };
       const ajuste = (col, pad) => { const p = geoMercator().fitExtent([[pad, pad], [cw - pad, ch - pad]], col); return { k: p.scale(), t: p.translate() }; };
-      const A = ajuste(ampl, cw * 0.06), Z = ajuste({ type: 'FeatureCollection', features: [destino] }, cw * 0.16);
+      let A, Z;
+      if (regional) { // vista amplia (≈70° de longitud) → acercamiento al país (≥ 2,4 veces su ancho, mínimo 10°)
+        const c = geoCentroid(destino), [[x0], [x1]] = geoBounds(destino), caja = span => { const hy = (span / 2) * (ch / cw); return { type: 'MultiPoint', coordinates: [[c[0] - span / 2, Math.max(-75, c[1] - hy)], [c[0] + span / 2, Math.min(75, c[1] + hy)]] }; };
+        const spanZ = Math.max(Math.abs(x1 - x0) * 2.4, 10); A = ajuste(caja(Math.max(70, spanZ * 4)), 0); Z = ajuste(caja(spanZ), 0);
+      } else { const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) }; A = ajuste(ampl, cw * 0.06); Z = ajuste({ type: 'FeatureCollection', features: [destino] }, cw * 0.16); }
       const z = easeOutCubic((t - 0.35) / 1.2);
       const proy = geoMercator().scale(lerp(A.k, Z.k, z)).translate([lerp(A.t[0], Z.t[0], z), lerp(A.t[1], Z.t[1], z)]);
       ctx.save(); ctx.globalAlpha = acotar(t / 0.12); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);

@@ -7,7 +7,7 @@ const P = require('./piezas');
 const { muneco } = require('./recortes');
 const { titereRig } = require('./titere-rig');
 const { escenario } = require('./escenarios');
-const { LUGARES, nombreDePieza, tokens } = require('../edl/director');
+const { LUGARES, PAISES, nombreDePieza, tokens } = require('../edl/director');
 const { rostroEnVentana, USO_MAX_S } = require('../edl/biblioteca');
 
 // Posiciones (fracciones del cuadro) de las piezas EXTRA según el principal de la escena.
@@ -65,7 +65,10 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     }
     if (e.principal === 'video') { cubre.push([t0, t1]); } // solo montaje de tomas (lo arma el paso 4b): el muñeco no aporta aquí
     if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: e.muneco && e.muneco.lado === 'der' ? 0.30 : 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
-    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: e.muneco ? 0.375 : M ? 0.52 : 0.56, alto: e.muneco ? 0.32 : 0.40, t0, t1 })); card([t0, t1]); marca(k, e.mapa.ancla); }
+    if (e.principal === 'mapa') { // sin muñeco y con tomas de fondo, el mapa se suma en la parte baja de la tarjeta del video (el video sigue debajo)
+      const l = e.mapa.lugar ? LUGARES[e.mapa.lugar] : null; if (e.mapa.lugar ? !l : !PAISES[e.mapa.pais]) throw new Error(`mapa: lugar o país fuera del catálogo (${e.mapa.lugar || e.mapa.pais})`);
+      const base = { cy: e.muneco ? 0.375 : M ? 0.63 : 0.56, alto: e.muneco ? 0.32 : M ? 0.33 : 0.40, tPin: tPal(k, e.mapa.ancla), t0, t1 };
+      elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0, t1]); marca(k, e.mapa.ancla); }
     if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.66 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
@@ -109,11 +112,16 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3) extras (insignias, sello) en sus posiciones
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
-    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && (e.principal === 'cifra' || e.principal === 'lista')) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
+    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && ['cifra', 'lista', 'mapa'].includes(e.principal)) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
     for (const x of e.extras || []) {
       if (x.tipo === 'insignia') { const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
     }
+  }
+  // 3b) círculos flotantes con la foto de las OTRAS personas cuando se las nombra (el lado ya se eligió para que miren hacia adentro del video)
+  for (let k = 0; k < beats.length; k++) {
+    const e = porBeat.get(k); if (!e || !e.personas) continue;
+    e.personas.forEach((pr) => { const ta = Math.max(0, tPal(k, pr.ancla) - 0.15); elementos.push(E.retrato({ foto: pr.foto, nombre: pr.nombre, cx: pr.lado === 'der' ? 0.84 : 0.16, cy: 0.27, r: 0.115, t0: ta, t1: Math.min(fin(k) + 0.6, ta + 3.4) })); });
   }
   // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
   // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }
@@ -121,18 +129,20 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     // 4b) MONTAJE de fondo, SOLO donde el dato es chico (cifra, lista) o donde el director pidió un clip: con el muñeco, el mapa o el escenario el
     // centro es la pieza, sin video. Dentro de cada tramo: tomas de ~2 s cortadas en una palabra, cada una de un clip distinto (nunca se repite).
     // Cada toma ≤ USO_MAX_S − TRANS − 0.1 porque la transición la deja correr TRANS s más: así ningún clip pasa de 3 s en pantalla.
-    const MAXC = USO_MAX_S - E.TRANS - 0.1, usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id)), tramos4 = [];
+    let ciclo = 0; const MAXC = USO_MAX_S - E.TRANS - 0.1, usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id)), tramos4 = [];
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
     for (let k = 0; k < beats.length; k++) {
       const e = porBeat.get(k); if (!e) continue;
       const ivs = []; // [inicio, fin, esDato]
-      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
+      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'mapa' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
       else if (e.principal === 'clip' && finClip.has(k)) { ivs.push([V[k].t0, finClip.get(k), false]); if (!e.muneco && fin(k) - finClip.get(k) > 0.5) ivs.push([finClip.get(k), fin(k), true]); } // sin muñeco, lo que queda de la frase tras el clip (≤ 3 s) se llena con otras tomas
       for (const [ia, ib, dato] of ivs) {
         const u = tramos4[tramos4.length - 1];
         if (u && u.dato && dato && ia <= u.b + 0.2) u.b = Math.max(u.b, ib); else tramos4.push({ a: ia, b: ib, dato }); // solo se juntan datos seguidos; el tramo de un clip pedido termina cuando entra el muñeco
       }
     }
+    // COLA tras la voz (mínimo de 60 s): solo tomas de video, sin repetir el dato de la última frase
+    if (cfg.cola && cfg.cola.t1 - cfg.cola.t0 > 0.5) { const u = tramos4[tramos4.length - 1]; if (u && u.dato && cfg.cola.t0 <= u.b + 0.2) u.b = Math.max(u.b, cfg.cola.t1); else tramos4.push({ a: cfg.cola.t0, b: cfg.cola.t1, dato: true }); }
     const pendientes = [...pedidos].sort((p, q) => V[p.k].t0 - V[q.k].t0); let ri = 0;
     for (const tr of tramos4) {
       const cortes = []; let cur = tr.a;
@@ -142,10 +152,10 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         else {
           const tope = r && V[r.k].t0 < tr.b ? V[r.k].t0 : tr.b; dur = alPalabra(cur + 1.6 + 0.8 * ((cortes.length * 3) % 5) / 4, cur + 1.2, Math.min(cur + MAXC, tope)) - cur;
           if (!(dur >= 1.0)) dur = Math.min(MAXC, tope - cur);
-          id = pool.shift(); if (!id) { avisos.push('el montaje se queda sin clips distintos a los ' + cur.toFixed(1) + ' s'); break; }
+          id = pool.shift(); if (!id) { if (!M.ids.length) { avisos.push('el montaje no tiene clips'); break; } ciclo++; pool.push(...M.ids); id = pool.shift(); if (ciclo === 1) avisos.push('el montaje reutiliza tomas (otro tramo del mismo clip) a los ' + cur.toFixed(1) + ' s'); }
         }
         const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
-        const ss = pedido ? pedido.ss : Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = [];
+        const ss = pedido ? pedido.ss : Math.max(0, Math.min(((info.rostro && info.rostro.t) || 0) + (ciclo ? ciclo * 1.1 : 0), Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = []; // al reutilizar un clip se toma otro tramo suyo
         if (pedido && pedido.marca && marcaConSentido(info, pedido.marca.ancla, cfg.alias)) {
           const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
           if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }

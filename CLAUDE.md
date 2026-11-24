@@ -50,3 +50,9 @@ Este clon (`feat/edl-motor`) es el motor de video narrativo. NUNCA tocar la carp
 ## Modo sin muñeco (decisión del usuario, 2026-11-24)
 `node scripts/video-narrativo.js ... --sin-muneco`: el director nunca pone muñeco; lo que iba al muñeco pasa a `video` (montaje de tomas reales). Sin storyboard del muñeco. Tras un clip pedido (≤ 3 s) el resto de la frase se llena con otras tomas, nunca pantalla vacía.
 Emparejado de tomas en 3 niveles: **exacta** (muestra lo que dice la frase) > **relacionada** (mismo tipo de situación) > **relleno con criterio** (cualquier toma donde sale ella: sola con rostro visible, o en pareja con su rostro grande; las demás solo cuando se acaban). Una cifra pequeña escrita con letras ("dos piezas") no es dato destacable.
+
+## Duración mínima, música, mapas y personas (2026-11-24)
+- **Mínimo 60 s** (62,4 s): si la voz es más corta se completa con silencio y la cola va solo con tomas + música (`--minimo` cambia el objetivo). No se alarga la voz ni se re-escalan los tiempos.
+- **Música de fondo** = la biblioteca de Drive de siempre (carpetas por tono, pistas con `[inicio]` y `[lufs]`, ganancia emparejada, sin ducking): `lienzo/musicaFondo.js`. `--tono`, `--semilla` (otra pista), `--sin-musica`.
+- **Mapa sobre la tarjeta del video**: sin muñeco, el mapa/cifra/lista se dibuja en la parte baja sobre el montaje (el video sigue de fondo). El mapa acepta ciudades de Ecuador (`lugar`) o un país del catálogo `PAISES` (`pais`: acerca desde una vista amplia, con marcador y nombre).
+- **Fotos de las otras personas** (`edl/personas.js`): se detectan en el guion, se bajan de Wikipedia/Wikimedia (o se usa `data-motor/personas/<nombre-apellido>.jpg` puesta a mano, que manda) y salen en un círculo flotante cuando se las nombra, del lado desde el que miran hacia adentro (si no, se espeja). Sin foto fiable no hay círculo. `--sin-personas` las quita.

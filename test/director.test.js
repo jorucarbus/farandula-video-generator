@@ -143,3 +143,12 @@ test('una cifra pequeña escrita con letras ("dos piezas") no es un dato destaca
   const errs = validarEscena({ beat: 1, principal: 'cifra', cifra: { valor: 2, sufijo: 'piezas', ancla: 'dos' }, extras: [] }, beats, []);
   assert.ok(errs.some(x => /pequeña/.test(x)), errs.join(' | '));
 });
+
+test('mapa de un PAÍS: el director por reglas lo detecta y el validador exige el país literal en la frase', () => {
+  const { directorPorReglas, validarEscena, PAISES } = require('../edl/director');
+  const beats = [{ frase: 'La final será en Puerto Rico.', hechos: [] }];
+  const e = directorPorReglas(beats, [], null, { sinMuneco: true })[0];
+  assert.equal(e.principal, 'mapa'); assert.equal(e.mapa.pais, 'Puerto Rico'); assert.ok(PAISES['Puerto Rico']);
+  assert.deepEqual(validarEscena(e, beats, []), []);
+  assert.ok(validarEscena({ beat: 1, principal: 'mapa', mapa: { pais: 'Francia', ancla: 'final' }, extras: [] }, beats, []).length > 0, 'un país que la frase no dice no pasa');
+});

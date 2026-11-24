@@ -22,7 +22,10 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? proce
 const g = JSON.parse(fs.readFileSync(arg('--guion', path.join(DM, 'guion-reina.json')), 'utf8'));
 const w = JSON.parse(fs.readFileSync(arg('--palabras', path.join(DM, 'narrativo-voz', 'palabras-whisper.json')), 'utf8'));
 const AUDIO = arg('--audio', path.join(DM, 'audios', '2026-11-23 Narrativo con voz.mp3'));
-const hasta = Number(arg('--hasta', Math.min(w.duracion, 74)));
+// MÍNIMO 60 s (los programas que pagan por vistas exigen más de un minuto): si la voz es más corta se completa con SILENCIO hasta 62,4 s y ahí sigue la música de fondo y las tomas (la voz queda intacta, sin reescalar tiempos).
+const OBJETIVO_MIN = Number(arg('--minimo', 62.4)), durVideo = Math.max(w.duracion, OBJETIVO_MIN), hasta = Number(arg('--hasta', Math.min(durVideo, 74)));
+let AUDIO_VIDEO = AUDIO;
+if (w.duracion < OBJETIVO_MIN) { const tmp = path.join(require('os').tmpdir(), `voz_${process.pid}.mp3`); require('child_process').execFileSync(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-loglevel', 'error', '-i', AUDIO, '-af', `apad=whole_dur=${OBJETIVO_MIN}`, '-c:a', 'libmp3lame', '-q:a', '2', tmp]); AUDIO_VIDEO = tmp; console.log(`MÍNIMO ${OBJETIVO_MIN} s: la voz dura ${w.duracion.toFixed(1)} s; se completa con ${(OBJETIVO_MIN - w.duracion).toFixed(1)} s de música/tomas`); }
 const carpeta = arg('--carpeta', 'Leidy_Alvarez');
 
 // Si el clip empieza en negro (fundido de entrada), se corre el inicio de la toma hasta el primer cuadro con imagen.
@@ -54,6 +57,14 @@ function sinNegro(ruta, ss) {
   const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: SIN_MUNECO }), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones, sinMuneco: SIN_MUNECO });
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
+  // fotos de las otras personas nombradas (círculos flotantes); --sin-personas las quita
+  if (!process.argv.includes('--sin-personas')) {
+    try {
+      const P2 = require('../edl/personas'), excluir = require('../edl/storyboard').REACCIONES.protagonista.alias.concat(protagonista.toLowerCase().split(' ')),
+        otras = await P2.prepararPersonas(g.beats, { excluir, log: m => console.log(m) });
+      P2.asignarPersonas(dir.escenas, g.beats, otras); console.log(`PERSONAS con foto: ${otras.map(p => p.nombre).join(', ') || 'ninguna'}`);
+    } catch (e) { console.log('sin fotos de personas:', e.message.slice(0, 140)); }
+  }
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
@@ -71,17 +82,19 @@ function sinNegro(ruta, ss) {
     : usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
   // voz del muñeco: abertura/energía del audio y VISEMAS sacados del texto y los tiempos de cada palabra (sincronía labial)
-  const FPS = 30, env = await envolventeDeVoz(AUDIO, { fps: FPS, duracion: hasta }), visemas = visemasDesdePalabras(palabras.map(p => ({ texto: p.palabra, t0: p.t0, t1: p.t1 })), FPS, Math.ceil(hasta * FPS) + 1), vozTotal = { ...env, visemas };
+  const FPS = 30, env = await envolventeDeVoz(AUDIO_VIDEO, { fps: FPS, duracion: hasta }), visemas = visemasDesdePalabras(palabras.map(p => ({ texto: p.palabra, t0: p.t0, t1: p.t1 })), FPS, Math.ceil(hasta * FPS) + 1), vozTotal = { ...env, visemas };
   // REGLA: la protagonista no habla con la voz del narrador, solo reacciona; su boca solo se sincroniza donde el guion la CITA (comillas o beat.cita). --lipsync-total solo para pruebas.
   const citas = ventanasDeCitas(g.beats, palabras, V), voz = process.argv.includes('--lipsync-total') ? vozTotal : vozSoloEnCitas(vozTotal, citas, FPS);
   console.log(citas.length ? `CITAS (la protagonista habla): ${citas.map(c => c.t0.toFixed(1) + '-' + c.t1.toFixed(1) + 's').join(', ')}` : 'Sin citas: la protagonista solo reacciona (no hay sincronía labial).');
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro, alias: require('../edl/storyboard').REACCIONES.protagonista.alias });
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, cola: hasta > V[V.length - 1].t1 + 0.9 ? { t0: V[V.length - 1].t1 + 0.4, t1: hasta } : null, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro, alias: require('../edl/storyboard').REACCIONES.protagonista.alias });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));
   if (sb.storyboard.length) { const md = salida.replace(/.mp4$/i, '') + '.storyboard.md'; fs.mkdirSync(path.dirname(salida), { recursive: true }); fs.writeFileSync(md, storyboardMarkdown(sb.storyboard, 'Storyboard · ' + path.basename(salida))); console.log('Storyboard:', md); }
   fs.mkdirSync(path.dirname(salida), { recursive: true });
   const ini = Date.now();
-  await renderizar({ duracion: hasta, audio: AUDIO, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
+  // música de fondo de la biblioteca de Drive (por tono); --sin-musica la quita, --tono fuerza el tono, --semilla cambia de pista
+  let fondo = null; if (!process.argv.includes('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'), tono = arg('--tono', mf.tonoDeGuion(g.script)); fondo = await mf.prepararFondo({ tono, duracion: hasta, jobId: 'motor' + process.pid, semilla: Number(arg('--semilla', 0)) }); console.log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { console.log('sin música de fondo:', e.message.slice(0, 160)); } }
+  await renderizar({ duracion: hasta, audio: AUDIO_VIDEO, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
   console.log(`\nLISTO ${salida} (${Math.round((Date.now() - ini) / 1000)} s, ${elementos.length} elementos)`);
 })().catch(e => { console.error('\nFALLO', e); process.exit(1); });
