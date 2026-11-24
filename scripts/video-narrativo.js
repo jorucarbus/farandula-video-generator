@@ -14,6 +14,7 @@ const { ensamblar } = require('../lienzo/ensamblador');
 const { renderizar } = require('../lienzo/render');
 const { envolventeDeVoz } = require('../lienzo/voz');
 const { visemasDesdePalabras } = require('../lienzo/titere-rig');
+const { ventanasDeCitas, vozSoloEnCitas } = require('../lienzo/citas');
 
 const DM = path.join(__dirname, '..', 'data-motor'), KIT = path.join(__dirname, '..', 'assets', 'kit');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -58,7 +59,10 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
     : usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
   // voz del muñeco: abertura/energía del audio y VISEMAS sacados del texto y los tiempos de cada palabra (sincronía labial)
-  const FPS = 30, env = await envolventeDeVoz(AUDIO, { fps: FPS, duracion: hasta }), visemas = visemasDesdePalabras(palabras.map(p => ({ texto: p.palabra, t0: p.t0, t1: p.t1 })), FPS, Math.ceil(hasta * FPS) + 1), voz = { ...env, visemas };
+  const FPS = 30, env = await envolventeDeVoz(AUDIO, { fps: FPS, duracion: hasta }), visemas = visemasDesdePalabras(palabras.map(p => ({ texto: p.palabra, t0: p.t0, t1: p.t1 })), FPS, Math.ceil(hasta * FPS) + 1), vozTotal = { ...env, visemas };
+  // REGLA: la protagonista no habla con la voz del narrador, solo reacciona; su boca solo se sincroniza donde el guion la CITA (comillas o beat.cita). --lipsync-total solo para pruebas.
+  const citas = ventanasDeCitas(g.beats, palabras, V), voz = process.argv.includes('--lipsync-total') ? vozTotal : vozSoloEnCitas(vozTotal, citas, FPS);
+  console.log(citas.length ? `CITAS (la protagonista habla): ${citas.map(c => c.t0.toFixed(1) + '-' + c.t1.toFixed(1) + 's').join(', ')}` : 'Sin citas: la protagonista solo reacciona (no hay sincronía labial).');
   const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });

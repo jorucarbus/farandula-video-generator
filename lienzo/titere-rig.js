@@ -4,7 +4,7 @@
 // Piezas: assets/kit-plastilina/rig/*.png (scripts/kit-piezas-armar.js). Las coordenadas del armado están en píxeles de esas piezas.
 const fs = require('fs');
 const path = require('path');
-const { loadImage } = require('@napi-rs/canvas');
+const { loadImage, createCanvas } = require('@napi-rs/canvas');
 const { lerp, acotar, easeOutBack } = require('../overlay/animacion');
 const B = require('./base');
 const { Resorte, salto, caida, dibujarExpresion, piezaKit, ACCESORIOS, parpadea } = require('./recortes');
@@ -32,7 +32,7 @@ const TRAJES_RIG = {
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
   TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, caraFoto: m.cabeza.cara };
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 // ── Visemas (formas de la boca al hablar). Si la voz trae `visemas` (un nombre por cuadro; 'N' = boca en reposo) se usa tal cual; si no, se elige por la abertura. ──
 const VISEMA_POR_ABERTURA = [[0.08, null], [0.22, 'Uh'], [0.40, 'D'], [0.58, 'Oh'], [0.76, 'Ee'], [2, 'Aa']];
@@ -113,7 +113,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
     ...accesorios.map(a => ({ t: a.t + 0.45, sonido: 'ding' })), ...pegatinas.map(p => ({ t: p.t0, sonido: 'pop' })), ...lista.filter(e => e.t > t0).map(e => ({ t: e.t, sonido: 'trazo', db: -5 }))];
   const nuevoEstado = () => ({ ult: null, j: {}, pelo: new Resorte(60, 6), cab: new Resorte(140, 12), sw: new Resorte(90, 10), subir: new Resorte(120, 12), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
   const spr = (k, nombre, objetivo, dt) => { const r = estado.j[nombre] || (estado.j[nombre] = new Resorte(170, 13)); if (r.listo !== true) { r.x = objetivo; r.listo = true; } return r.paso(objetivo, dt); };
-  return {
+  const el = {
     t0, t1, flota: false, eventos, gestosUsados: gs,
     async preparar() {
       for (const n of R.piezas) img[n] = await loadImage(fs.readFileSync(path.join(DIR, n + '.png')));
@@ -227,6 +227,21 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       });
     },
   };
+  // BORDE BLANCO tipo recorte/sticker (estilo de referencia): une las piezas en una sola silueta, tapa las costuras y despega al muñeco del fondo. Se dibuja el muñeco en un lienzo
+  // aparte, se saca su silueta blanca, se estampa desplazada en varias direcciones y encima va el muñeco.
+  if (R.borde) {
+    const interno = el.dibujar; let off = null, sil = null;
+    el.dibujar = (ctx, a) => {
+      const { w, h, u } = a; if (!off || off.width !== w || off.height !== h) { off = createCanvas(w, h); sil = createCanvas(w, h); }
+      const ox = off.getContext('2d'), sx = sil.getContext('2d'); ox.clearRect(0, 0, w, h); interno(ox, a);
+      sx.globalCompositeOperation = 'source-over'; sx.clearRect(0, 0, w, h); sx.drawImage(off, 0, 0); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = R.borde.color || '#ffffff'; sx.fillRect(0, 0, w, h);
+      const g = Math.max(3, (R.borde.grosor ?? 0.0055) * (u || w)), N = 14;
+      ctx.save(); ctx.shadowColor = 'rgba(40,30,20,0.32)'; ctx.shadowBlur = g * 2.2; ctx.shadowOffsetY = g * 0.9; ctx.drawImage(sil, 0, 0); ctx.restore(); // sombra suave bajo el borde: despega el recorte del fondo claro
+      for (let k = 0; k < N; k++) { const an = (k / N) * Math.PI * 2; ctx.drawImage(sil, Math.cos(an) * g, Math.sin(an) * g); }
+      ctx.drawImage(off, 0, 0);
+    };
+  }
+  return el;
 }
 
 module.exports = { visemasDesdePalabras, ik, titereRig, POSES, GESTOS, TRAJES_RIG, CARA, ANCLAS };

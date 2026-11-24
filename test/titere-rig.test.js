@@ -55,3 +55,16 @@ test('visemasDesdePalabras: vocales y consonantes del español a lo largo de la 
   assert.deepEqual(v.slice(6, 10), ['M', 'Aa', 'M', 'Aa']);   // m a m a
   assert.ok(v.every(x => ['N', 'Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh', 'R'].includes(x)));
 });
+
+test('citas: la protagonista solo habla donde el guion la cita (comillas o cita:true); fuera de eso la boca queda en reposo', () => {
+  const { ventanasDeCitas, vozSoloEnCitas } = require('../lienzo/citas');
+  const beats = [{ frase: 'Ella dijo «gracias a todos» ayer.' }, { frase: 'Nada que citar aquí.' }, { frase: 'Otra frase entera.', cita: true }];
+  const mk = (t0, t1, desde, hasta) => ({ t0, t1, desde, hasta });
+  const palabras = Array.from({ length: 12 }, (_, i) => ({ palabra: 'p' + i, t0: i, t1: i + 0.9 }));
+  const V = [mk(0, 5.9, 0, 6), mk(6, 8.9, 6, 9), mk(9, 11.9, 9, 12)];
+  const w = ventanasDeCitas(beats, palabras, V);
+  assert.deepEqual(w.map(x => [x.beat, x.t0, +x.t1.toFixed(1)]), [[0, 2, 4.9], [2, 9, 11.9]]);   // «gracias a todos» = palabras 2..4 del beat 0 + todo el beat 2
+  const voz = vozSoloEnCitas({ fps: 1, abertura: new Float32Array(12).fill(1), visemas: new Array(12).fill('Aa') }, w, 1);
+  assert.equal(voz.visemas[0], 'N'); assert.equal(voz.visemas[2], 'Aa'); assert.equal(voz.visemas[6], 'N'); assert.equal(voz.abertura[6], 0);
+  assert.equal(vozSoloEnCitas({ fps: 1, abertura: new Float32Array(3), visemas: ['Aa', 'Aa', 'Aa'] }, [], 1), null);   // sin citas: nunca habla
+});
