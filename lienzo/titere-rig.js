@@ -32,8 +32,8 @@ const TRAJES_RIG = {
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
   TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'brazo-abierto', 'piernas'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: 0 }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: { sup: 191, ant: 150 }, codoSuave: true, caraFoto: m.cabeza.cara };
-  TRAJES_RIG['bastonera-foto'].hombro.y = m.Y_HOMBRO - 8; } catch { /* sin piezas de foto: el traje no existe */ }
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoSuave: true, caraFoto: m.cabeza.cara };
+  } catch { /* sin piezas de foto: el traje no existe */ }
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
 // Caja de la cara (píxeles de la pieza «cabeza») y anclas de ojos, cejas y boca relativas a ella
@@ -138,7 +138,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
         ctx.rotate(s * GRAD);
         B.sombraDeCapa(ctx, u / e, 0.35, 0);
         if (R.codoSuave) { // codo suave: el brazo se dibuja en rebanadas finas y el giro del codo se reparte en una zona, sin corte recto
-          const ZB = hB * 0.13, y0 = cod - ZB, y1 = cod + ZB, paso = 1; ctx.translate(-wB / 2, -hB * 0.03); ctx.rotate(0);
+          const ZB = hB * 0.13, y0 = cod - ZB, y1 = cod + ZB, paso = 1; ctx.translate(-wB / 2, -(R.brazoPivY ?? hB * 0.03)); ctx.rotate(0);
           for (let y = 0; y < hB; y += paso) { const sh = Math.min(paso, hB - y), w1 = y >= y0 && y < y1 ? paso / (y1 - y0) : 0;
             ctx.drawImage(im, 0, y, wB, Math.min(sh + 2, hB - y), 0, 0, wB, Math.min(sh + 2, hB - y)); ctx.translate(wB / 2, sh); ctx.rotate(-c * GRAD * w1); ctx.translate(-wB / 2, 0); }
           B.sinSombra(ctx); ctx.restore(); return;

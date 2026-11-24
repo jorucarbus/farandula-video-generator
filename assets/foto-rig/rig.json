@@ -18,8 +18,13 @@
     }
   },
   "CX": 221,
-  "EJE_BRAZO": 98,
-  "Y_HOMBRO": 96,
+  "EJE_BRAZO": 104,
+  "Y_HOMBRO": 50,
+  "PIV_Y": 16,
   "Y_MANO": 470,
-  "Y_CADERA": 458
+  "Y_CADERA": 458,
+  "largo": {
+    "sup": 196,
+    "ant": 178
+  }
 }

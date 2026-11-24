@@ -7,8 +7,8 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const KIT = path.join(__dirname, '..', 'assets', 'kit'), SAL = path.join(__dirname, '..', 'assets', 'foto-rig');
 const interp = (pts, y) => { if (y <= pts[0][0]) return pts[0][1]; for (let i = 1; i < pts.length; i++) if (y <= pts[i][0]) { const [y0, v0] = pts[i - 1], [y1, v1] = pts[i]; return v0 + (v1 - v0) * (y - y0) / (y1 - y0); } return pts[pts.length - 1][1]; };
 // borde interior del brazo izquierdo (el que da al torso) por fila; el derecho es el espejo respecto al eje x = CX
-const CX = 221, BORDE = [[88, 140], [150, 139], [220, 136], [290, 128], [320, 116], [398, 112], [402, 82], [470, 82]], Y_HOMBRO = 96, Y_MANO = 470, Y_CADERA = 458;
-const EJE_BRAZO = 98; // x del eje del brazo (centro de la manga) en la foto
+const CX = 221, BORDE = [[50, 152], [88, 140], [150, 139], [220, 136], [290, 128], [320, 116], [398, 112], [402, 82], [470, 82]], Y_HOMBRO = 50, PIV_Y = 16, Y_MANO = 470, Y_CADERA = 458;
+const EJE_BRAZO = 104; // x del eje del brazo (centro de la manga) en la foto
 
 function pixeles(img) { const c = createCanvas(img.width, img.height), x = c.getContext('2d'); x.drawImage(img, 0, 0); return { c, x, id: x.getImageData(0, 0, img.width, img.height) }; }
 // suaviza el alfa (3x3) para que los cortes rectos no se vean dentados; no toca el color
@@ -58,13 +58,13 @@ async function cabeza() {
   const lum = (r, g, b) => 0.3 * r + 0.59 * g + 0.11 * b;
   const cab = hacer((x, y) => y <= 560 ? 1 : y <= 700 ? (x > 235 && x < 640 ? 1 : (700 - y) / 140) : y <= NECK_Y && x > 300 && x < 585 ? 1 : 0); // el pelo de los lados se desvanece: sigue en la capa de pelo de atrás
   // pelo (detrás de la espalda): toda la foto, pero por debajo de la barbilla solo lo oscuro (sin suéter ni piel)
-  const CORTE = NECK_Y + (95 - 26) / S, pel = hacer((x, y, r, g, b) => (y <= 640 ? 1 : lum(r, g, b) < 105 ? 1 : 0) * (y <= CORTE - 60 ? 1 : y >= CORTE ? 0 : (CORTE - y) / 60)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
+  const CORTE = NECK_Y + (50 - 26) / S, pel = hacer((x, y, r, g, b) => (y <= 640 ? 1 : lum(r, g, b) < 105 ? 1 : 0) * (y <= CORTE - 60 ? 1 : y >= CORTE ? 0 : (CORTE - y) / 60)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
   guardar(cab, 'cabeza'); guardar(pel, 'pelo');
   return { cw, ch, pivoteY: NECK_Y * S / ch, chinY: CHIN_Y * S, neckY: NECK_Y * S, cara: { cx: 432 * S, cy: 408 * S, w: 610 * S, h: 663 * S } }; // caja de la cara medida sobre esta foto
 }
 (async () => {
   fs.mkdirSync(SAL, { recursive: true });
   const c = await cuerpo(), h = await cabeza();
-  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, Y_MANO, Y_CADERA }, null, 2));
+  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_MANO, Y_CADERA, largo: { sup: Math.round((Y_MANO - Y_HOMBRO + 4) / 2 - PIV_Y), ant: Math.round(Y_MANO - 30 - (Y_HOMBRO + (Y_MANO - Y_HOMBRO + 4) / 2)) } }, null, 2));
   console.log('listo', SAL, JSON.stringify(h));
 })().catch(e => { console.error('FALLO', e); process.exit(1); });
