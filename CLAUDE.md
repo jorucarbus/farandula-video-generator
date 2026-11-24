@@ -46,3 +46,7 @@ Este clon (`feat/edl-motor`) es el motor de video narrativo. NUNCA tocar la carp
 - **Subtítulos:** una línea más arriba (y0 = 10.5 % − 1 línea) y máximo 2 líneas por bloque; el mapa con acompañante es más corto (alto .32) para no chocar.
 - **Marcas sobre el video:** el círculo rojo solo va si el rostro se ve (r ≥ 0.17) y la palabra ancla habla de la protagonista (alias/corona/reina…); si no, la toma va sin marca (aviso en el log).
 - **Pelo de atrás:** gira exactamente con la cabeza (`peloSigue`); si se desfasa, sobresale como una segunda pieza.
+
+## Modo sin muñeco (decisión del usuario, 2026-11-24)
+`node scripts/video-narrativo.js ... --sin-muneco`: el director nunca pone muñeco; lo que iba al muñeco pasa a `video` (montaje de tomas reales). Sin storyboard del muñeco. Tras un clip pedido (≤ 3 s) el resto de la frase se llena con otras tomas, nunca pantalla vacía.
+Emparejado de tomas en 3 niveles: **exacta** (muestra lo que dice la frase) > **relacionada** (mismo tipo de situación) > **relleno con criterio** (cualquier toma donde sale ella: sola con rostro visible, o en pareja con su rostro grande; las demás solo cuando se acaban). Una cifra pequeña escrita con letras ("dos piezas") no es dato destacable.

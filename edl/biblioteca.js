@@ -98,10 +98,10 @@ Catálogo (id | fecha | tipo | descripción...):
 ${catalogo}
 Reglas:
 - Solo en frases cuyo SUJETO es ${protagonista || 'la protagonista'} (ella, su nombre, sus logros). En frases sobre OTRAS personas (otras concursantes, su antecesora, la virreina, etc.) la respuesta es null.
-- Solo si el clip muestra lo que la frase dice (vestuario, lugar, evento, época). Si la frase menciona un año, prefiere clips publicados ese año. Mejor null que un clip que no calza.
+- Dos niveles: "exacta" = el clip muestra lo que la frase dice (vestuario, lugar, evento, época; si la frase menciona un año, prefiere clips de ese año); "relacionada" = no es ese momento pero es el mismo tipo de situación (otro desfile para "desfiló", otro vestido de gala para "vestido", otra toma hablando a cámara para una declaración). Prefiere siempre "exacta". Responde null SOLO si ningún clip se parece a lo que dice la frase: en ese caso el sistema pondrá una toma cualquiera de la protagonista, no inventes una relación.
 - No repitas un clip en dos frases. Máximo ${USO_MAX_S} s por aparición: "ss" es el segundo de inicio (0 hasta duración − ${USO_MAX_S}).
 - "motivo": una frase breve de por qué calza.
-Responde SOLO JSON: {"frases":[{"beat":1,"clip":"<id>"|null,"ss":0,"motivo":"..."}]}${errores.length ? `\nTu respuesta anterior tuvo problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
+Responde SOLO JSON: {"frases":[{"beat":1,"clip":"<id>"|null,"nivel":"exacta"|"relacionada","ss":0,"motivo":"..."}]}${errores.length ? `\nTu respuesta anterior tuvo problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
 
 function llamarGeminiTexto(prompt, mensaje) { const gemini = require('../gemini'); return gemini.llamarJSON(prompt, mensaje, gemini.TAREAS.etiquetaClip); }
 
@@ -143,12 +143,21 @@ async function elegirClips(beats, etiquetas, { llamar = llamarGeminiTexto, maxRe
   for (let intento = 0; intento <= maxReintentos; intento++) {
     let r; try { r = await llamar(PROMPT_ELEGIR(catalogo, errores, protagonista), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
     const { ok, descartes } = filtrarElecciones(r && r.frases, beats, etiquetas); errores = descartes;
-    const hechas = new Map(ok.filter(f => f.clip).map(f => [f.beat - 1, { id: f.clip, ss: f.ss, motivo: f.motivo }]));
+    const hechas = new Map(ok.filter(f => f.clip).map(f => [f.beat - 1, { id: f.clip, ss: f.ss, motivo: f.motivo, nivel: f.nivel === 'relacionada' ? 'relacionada' : 'exacta' }]));
     if (!descartes.length) return { elecciones: hechas, avisos };
     if (intento === maxReintentos && hechas.size) { avisos.push('se descartó lo inválido: ' + descartes.join('; ')); return { elecciones: hechas, avisos }; }
   }
   avisos.push('sin clips reales (' + (errores.join('; ') || 'sin respuesta') + ')');
   return { elecciones: new Map(), avisos };
+}
+
+// ── Relleno con criterio (nivel 3): cuando ninguna toma se relaciona con la frase, va una toma cualquiera de la protagonista, pero que SEA de ella ──
+// Es de la protagonista si sale sola y su rostro se ve (r ≥ 0.12 del ancho), o con otra persona pero con su rostro grande (r ≥ 0.22). Primero esas, de acción antes que "otro", rostro grande antes que pequeño; las demás solo si faltan.
+const esDeLaProtagonista = t => { const n = t.personas == null ? 1 : t.personas; return Boolean(t.rostro) && ((n <= 1 && t.rostro.r >= 0.12) || (n === 2 && t.rostro.r >= 0.22)); }; // sola con rostro visible, o en pareja pero con su rostro grande
+function candidatosRelleno(etiquetas) {
+  const orden = (a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || (b.rostro ? b.rostro.r : 0) - (a.rostro ? a.rostro.r : 0);
+  const todas = [...etiquetas].filter(t => t.rostro), buenas = todas.filter(esDeLaProtagonista).sort(orden), resto = todas.filter(t => !esDeLaProtagonista(t)).sort(orden);
+  return [...buenas, ...resto].map(t => t.id); // las de ella primero; las demás solo cuando se acaban (mejor una toma cualquiera que una pantalla vacía)
 }
 
 // Rostro (centro y radio relativos al cuadro original; r respecto al ANCHO) → relativos a la ventana vertical 9:16 donde se muestra
@@ -169,4 +178,4 @@ function dimensiones(ruta) {
   return giro ? { ancho: v.height, alto: v.width } : { ancho: v.width, alto: v.height };
 }
 
-module.exports = { filtrarElecciones, dimensiones, fechaDeNombre, descargarCarpeta, etiquetarClips, limpiarEtiqueta, elegirClips, validarElecciones, rostroEnVentana, lineaDeClip, RAIZ, USO_MAX_S, TIPOS };
+module.exports = { esDeLaProtagonista, candidatosRelleno, filtrarElecciones, dimensiones, fechaDeNombre, descargarCarpeta, etiquetarClips, limpiarEtiqueta, elegirClips, validarElecciones, rostroEnVentana, lineaDeClip, RAIZ, USO_MAX_S, TIPOS };

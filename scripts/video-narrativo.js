@@ -8,7 +8,7 @@ const fs = require('fs'), path = require('path');
 const estilo = require('../estilos/capitol');
 const { alinearPalabras, ventanasDeFrases } = require('../edl/tiemposPalabras');
 const { dirigir, directorPorReglas, validarDireccion, EMOCIONES, GESTOS } = require('../edl/director');
-const { elegirClips, dimensiones, RAIZ } = require('../edl/biblioteca');
+const { elegirClips, dimensiones, candidatosRelleno, RAIZ } = require('../edl/biblioteca');
 const { crearSubtitulos } = require('../lienzo/subtitulos');
 const { ensamblar } = require('../lienzo/ensamblador');
 const { renderizar } = require('../lienzo/render');
@@ -47,20 +47,21 @@ function sinNegro(ruta, ss) {
     if (nac) { const mayor = String(Number(nac.slice(0, 4)) + 18) + nac.slice(4), antes = Object.keys(etiquetas).length; etiquetas = Object.fromEntries(Object.entries(etiquetas).filter(([, t]) => t.fecha >= mayor)); console.log('MAYOR DE EDAD desde ' + mayor + ': ' + Object.keys(etiquetas).length + ' de ' + antes + ' clips'); } rutaDe = Object.fromEntries(JSON.parse(fs.readFileSync(rClips, 'utf8')).map(c => [c.id, c.ruta]));
     const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones;
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
-    for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
+    for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
 
-  const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones });
+  const SIN_MUNECO = process.argv.includes('--sin-muneco'); // sin personajes: tomas reales + motion graphics
+  const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: SIN_MUNECO }), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones, sinMuneco: SIN_MUNECO });
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
-  const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
+  const lista = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id]))) : []; // relleno con criterio: tomas donde sale ella (≤ 2 personas, rostro visible)
   const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
   // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos, lados, nunca parado; video que ilustra cuando el muñeco no aporta)
-  const sb = process.argv.includes('--sin-storyboard') ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS, hayVideo: Boolean(montaje) });
+  const sb = process.argv.includes('--sin-storyboard') || SIN_MUNECO ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS, hayVideo: Boolean(montaje) });
   const escenas = sb.escenas.filter(e => V[e.beat - 1].t0 < hasta);
   // cabeza y kit (--cabeza): rig-foto (por defecto: muñeco articulado de piezas de foto, assets/foto-rig) | plastilina | fotos (muñeco de foto de una pieza)
   const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), KF = path.join(__dirname, '..', 'assets', 'foto-rig'), modoCab = arg('--cabeza', fs.existsSync(path.join(KF, 'rig.json')) ? 'rig-foto' : 'plastilina');

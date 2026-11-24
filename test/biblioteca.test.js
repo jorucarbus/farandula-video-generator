@@ -120,3 +120,19 @@ test('ensamblar con clip: ventana de a lo sumo 3 s, círculo sobre el rostro en 
   const r4 = ensamblar(esc, beats, V, palabras, cfg({ clips: { c1: { ruta: '/x/c1.mp4', ancho: 720, alto: 1280, rostro: null } } }));
   assert.ok(r4.avisos.some(a => /sin coordenadas del rostro/.test(a)));
 });
+
+// ── relleno con criterio ──
+test('candidatosRelleno: primero las tomas donde sale ella (sola y con rostro, o en pareja con rostro grande); las demás al final', () => {
+  const { candidatosRelleno, esDeLaProtagonista } = require('../edl/biblioteca');
+  const e = [
+    { id: 'grupo', tipo: 'baile', personas: 4, rostro: { r: 0.3 } },
+    { id: 'sola_chica', tipo: 'selfie_hablando', personas: 1, rostro: { r: 0.05 } },
+    { id: 'sola', tipo: 'selfie_hablando', personas: 1, rostro: { r: 0.3 } },
+    { id: 'pareja_grande', tipo: 'evento', personas: 2, rostro: { r: 0.25 } },
+    { id: 'pareja_chica', tipo: 'evento', personas: 2, rostro: { r: 0.15 } },
+    { id: 'sin_rostro', tipo: 'paisaje', personas: 0 },
+  ];
+  assert.equal(esDeLaProtagonista(e[2]), true); assert.equal(esDeLaProtagonista(e[0]), false); assert.equal(esDeLaProtagonista(e[4]), false);
+  const ids = candidatosRelleno(e);
+  assert.deepEqual(ids.slice(0, 2).sort(), ['pareja_grande', 'sola']); assert.ok(ids.indexOf('grupo') >= 2 && ids.includes('pareja_chica'), 'las demás solo al final'); assert.ok(!ids.includes('sin_rostro'), 'sin rostro no entra');
+});

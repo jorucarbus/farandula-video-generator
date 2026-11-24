@@ -10,7 +10,7 @@ const { existePieza } = require('../lienzo/recortes');
 const { numerosEnFrase } = require('./partituraVisual');
 
 const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'lugares.json'), 'utf8'))).filter(([k]) => !k.startsWith('_')));
-const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip'];
+const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
 const GESTOS = Object.keys(require('../lienzo/titere-rig').GESTOS); // reacciones de las manos del muñeco (catálogo cerrado)
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste', 'duda', 'orgullo', 'asco', 'preocupacion', 'amor'], TRAJES = ['bastonera', 'gala'];
 const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', 'baston'], ESCENARIOS = ['casa', 'escenario', 'cartel'];
@@ -50,6 +50,7 @@ function validarEscena(e, beats, hechos, clips = null) {
   if (e.principal === 'cifra') {
     const c = e.cifra || {};
     if (!numerosEnFrase(frase).has(c.valor)) err(`la cifra ${c.valor} no está en la frase`);
+    else if (c.valor < 10 && !/\d/.test(frase)) err(`la cifra ${c.valor} es pequeña y viene escrita con letras ("dos piezas"): no es un dato destacable, usa otro principal`);
     if (c.sufijo && !/^[$%]/.test(c.sufijo.trim()) && !contiene(frase, c.sufijo)) err(`el sufijo "${c.sufijo}" no está en la frase`);
     ancla(c.ancla, 'cifra');
   }
@@ -90,6 +91,9 @@ function validarDireccion(escenas, beats, hechos, clips = null) {
   return errores;
 }
 
+// MODO SIN MUÑECO: la pantalla la llevan las tomas reales y las piezas de datos. Un principal "muneco" pasa a "video" (montaje de tomas) y se borra todo dato del muñeco.
+function quitarMuneco(e) { if (e.principal === 'muneco') e.principal = 'video'; delete e.muneco; return e; }
+
 // ── Director por REGLAS (respaldo y base): fechas, cifras, lugares, listas, escenarios, y el muñeco actuando lo narrado ──
 const ICONO_DE = { bastonera: 'wand', corona: 'crown', reina: 'crown', educativa: 'school', colegio: 'school', escuela: 'school', musical: 'music', grupo: 'music', tiktok: 'brand-tiktok', instagram: 'brand-instagram', youtube: 'brand-youtube', titulos: 'trophy', titulo: 'trophy', premio: 'trophy', virreina: 'award', finalista: 'medal', coliseo: 'building-stadium', desfiles: 'flag', desfile: 'flag', respaldo: 'heart', agradecio: 'heart' };
 const COLOR_DE = { crown: 'rojo', trophy: 'verde', heart: 'rojo', award: 'verde', medal: 'verde', school: 'verde', music: 'rojo', 'brand-instagram': 'rojo' };
@@ -99,7 +103,7 @@ const RE_ESCENARIO = [/Unidad Educativa \p{Lu}\p{L}+/u, /Coliseo La California/u
 
 function palabraOriginal(frase, norm) { return (frase.match(/[\p{L}\p{N}]+/gu) || []).find(w => normalizar(w) === norm); }
 
-function escenaPorReglas(b, i, hechos, previa, clips = null) {
+function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) {
   const frase = b.frase, n = i + 1, toks = tokens(frase), usa = new Set();
   const noConf = (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false);
   const e = { beat: n, extras: [] };
@@ -129,6 +133,7 @@ function escenaPorReglas(b, i, hechos, previa, clips = null) {
   if (e.principal === 'clip' && !e.muneco) e.muneco = muneco(); // tras los 3 s del clip, el muñeco actúa lo narrado
   if (!e.principal && escen) { e.principal = 'escenario'; e.escenario = { tipo: 'casa', texto: escen[0], ancla: tokens(escen[0])[0] }; e.muneco = { traje: 'bastonera', pose: 'senalar', emocion: 'normal', ancla_pose: tokens(escen[0])[0] }; }
   if (!e.principal) { e.principal = 'muneco'; e.muneco = muneco(); }
+  if (sinMuneco) quitarMuneco(e); // modo sin muñeco: lo que iba al muñeco pasa a tomas reales de video
   // extras: fecha, y el primer ícono que calce con una palabra de la frase (sin repetir lo que ya hace el principal)
   const fecha = frase.match(RE_FECHA);
   if (fecha) e.extras.push({ tipo: 'insignia', icono: 'calendar-event', color: 'negro', etiqueta: fecha[0], ancla: tokens(fecha[0])[0] });
@@ -143,8 +148,8 @@ function escenaPorReglas(b, i, hechos, previa, clips = null) {
   return e;
 }
 
-function directorPorReglas(beats, hechos, clips = null) {
-  const escenas = []; beats.forEach((b, i) => escenas.push(escenaPorReglas(b, i, hechos, escenas[i - 1], clips)));
+function directorPorReglas(beats, hechos, clips = null, { sinMuneco = false } = {}) {
+  const escenas = []; beats.forEach((b, i) => escenas.push(escenaPorReglas(b, i, hechos, escenas[i - 1], clips, sinMuneco)));
   return escenas;
 }
 
@@ -169,6 +174,25 @@ Formas EXACTAS (una por tipo de principal; usa estas claves tal cual):
 {"beat":6,"principal":"clip","clip":{"id":"<id del clipCandidato>","ss":2,"marca":{"tipo":"circulo","ancla":"corona"}},"extras":[]}
 Responde SOLO JSON: {"escenas":[ ... una por frase ... ]}${errores.length ? `\nTu respuesta anterior tuvo estos problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
 
+const PROMPT_SIN_MUNECO = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada", SIN personajes ni ilustraciones: la pantalla la llevan tomas de video REAL y piezas de datos. Para CADA frase del guion decide qué se ve.
+Catálogo cerrado:
+- principal: "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; dura 3 s) | "mapa" (lugar de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "video" (montaje de tomas reales de fondo, sin dato: úsalo cuando no haya mapa, cifra, lista, escenario ni clipCandidato; el sistema escoge las tomas).
+- extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
+Reglas:
+- Toda frase lleva al menos una pieza. Todo texto en pantalla (etiqueta, letrero, elementos de lista, sufijo) COPIA palabras exactas de la frase; nunca añadas nada que la frase no diga.
+- Cada "ancla" es UNA palabra de la frase: en ella aparece esa pieza.
+- Los elementos de una lista son las cosas nombradas (nombres propios, títulos, cifras), no palabras sueltas como "primera" o "segunda"; si no hay al menos 2 así, usa otro principal.
+- Si la frase trae clipCandidato, úsalo como principal "clip"; solo descártalo si la frase pide un mapa, una cifra o una lista.
+- NO uses "muneco" (no existe en este modo). Varía: no repitas el mismo principal más de 2 frases seguidas.
+Formas EXACTAS:
+{"beat":1,"principal":"video","extras":[{"tipo":"insignia","icono":"crown","etiqueta":"corona","ancla":"corona","color":"rojo"}]}
+{"beat":2,"principal":"mapa","mapa":{"lugar":"Chone","ancla":"Chone"},"extras":[]}
+{"beat":3,"principal":"cifra","cifra":{"valor":12,"sufijo":"aspirantes","ancla":"doce"},"extras":[]}
+{"beat":4,"principal":"lista","lista":{"titulo":"Títulos","items":[{"texto":"Chonera Bonita 2023","ancla":"Chonera"},{"texto":"Miss Turismo Manabí 2024","ancla":"Miss"}]},"extras":[]}
+{"beat":5,"principal":"escenario","escenario":{"tipo":"casa","texto":"Unidad Educativa Amazonas","ancla":"Unidad"},"extras":[]}
+{"beat":6,"principal":"clip","clip":{"id":"<id del clipCandidato>","ss":2,"marca":{"tipo":"circulo","ancla":"corona"}},"extras":[]}
+Responde SOLO JSON: {"escenas":[ ... una por frase ... ]}${errores.length ? `\nTu respuesta anterior tuvo estos problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
+
 function llamarGemini(prompt, mensaje) { const gemini = require('../gemini'); return gemini.llamarJSON(prompt, mensaje, gemini.TAREAS.guionNarrativo); }
 
 // El modelo a veces escribe la lista como {elementos:[texto,...]} o la deja en la raíz: se acepta esa variante SIN relajar el contenido.
@@ -181,24 +205,24 @@ function normalizarEscena(e) {
   return x;
 }
 
-async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1, clips = null } = {}) {
+async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1, clips = null, sinMuneco = false } = {}) {
   const avisos = [], mensaje = JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase, ...(clips && clips.get(i) ? { clipCandidato: { id: clips.get(i).id, ss: clips.get(i).ss, motivo: clips.get(i).motivo } } : {}), noConfirmado: (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false) })));
   let errores = [];
   for (let intento = 0; intento <= maxReintentos; intento++) {
-    let r; try { r = await llamar(PROMPT(errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
-    const escenas = ((r && r.escenas) || []).map(normalizarEscena);
+    let r; try { r = await llamar(sinMuneco ? PROMPT_SIN_MUNECO(errores) : PROMPT(errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
+    const escenas = ((r && r.escenas) || []).map(normalizarEscena); if (sinMuneco) escenas.forEach(quitarMuneco);
     errores = validarDireccion(escenas, beats, hechos, clips);
     if (!errores.length) {
       // Tras los 3 s del clip la pantalla no puede quedar vacía: si el modelo no dio muñeco para una frase con clip, lo completa el código.
-      const porReglas = directorPorReglas(beats, hechos, clips);
-      for (const e of escenas) if (e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
+      const porReglas = directorPorReglas(beats, hechos, clips, { sinMuneco });
+      for (const e of escenas) if (!sinMuneco && e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
       return { escenas, origen: 'llm', avisos };
     }
   }
-  const escenas = directorPorReglas(beats, hechos, clips), malas = validarDireccion(escenas, beats, hechos, clips);
+  const escenas = directorPorReglas(beats, hechos, clips, { sinMuneco }), malas = validarDireccion(escenas, beats, hechos, clips);
   avisos.push(`director por reglas de respaldo (${errores.join('; ') || 'sin respuesta'})`);
   if (malas.length) avisos.push(`el respaldo tiene avisos: ${malas.join('; ')}`);
   return { escenas, origen: 'respaldo', avisos };
 }
 
-module.exports = { GESTOS, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
+module.exports = { GESTOS, quitarMuneco, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };

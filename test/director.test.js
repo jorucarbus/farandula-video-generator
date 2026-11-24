@@ -122,3 +122,24 @@ test('ensamblar con montaje: el video solo va con cifras, listas y clips pedidos
   const sin = ensamblar(esc, beats, V, palabras, { ...cfg, clips: { c7: { ruta: 'c7.mp4', ancho: 720, alto: 1280, rostro: null } } });
   assert.ok(!sin.elementos.some(e => e.cortes), 'sin montaje conserva el diseño anterior');
 });
+
+// ── modo SIN MUÑECO ──
+test('director por reglas en modo sin muñeco: nunca hay muñeco; lo que iba al muñeco pasa a video', () => {
+  const { directorPorReglas, validarDireccion } = require('../edl/director');
+  const beats = [{ frase: 'Dalia ganó la corona en Chone.', rol: 'persona', hechos: [1] }, { frase: 'Estudia Psicología y hace voluntariado.', rol: 'persona', hechos: [2] }], hechos = [{ texto: 'a' }, { texto: 'b' }];
+  const esc = directorPorReglas(beats, hechos, null, { sinMuneco: true });
+  assert.ok(esc.every(e => !e.muneco), 'ninguna escena trae muñeco');
+  assert.ok(esc.some(e => e.principal === 'video'), 'las frases sin dato quedan como video (tomas reales)');
+  assert.deepEqual(validarDireccion(esc, beats, hechos), []);
+});
+test('quitarMuneco convierte el principal muneco en video y borra los datos del muñeco', () => {
+  const { quitarMuneco } = require('../edl/director');
+  const e = quitarMuneco({ beat: 1, principal: 'muneco', muneco: { traje: 'bastonera' }, extras: [] });
+  assert.equal(e.principal, 'video'); assert.equal(e.muneco, undefined);
+});
+test('una cifra pequeña escrita con letras ("dos piezas") no es un dato destacable', () => {
+  const { validarEscena } = require('../edl/director');
+  const beats = [{ frase: 'Eligió un conjunto de dos piezas azul.', hechos: [] }];
+  const errs = validarEscena({ beat: 1, principal: 'cifra', cifra: { valor: 2, sufijo: 'piezas', ancla: 'dos' }, extras: [] }, beats, []);
+  assert.ok(errs.some(x => /pequeña/.test(x)), errs.join(' | '));
+});

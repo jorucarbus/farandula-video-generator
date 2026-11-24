@@ -125,9 +125,13 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
     for (let k = 0; k < beats.length; k++) {
       const e = porBeat.get(k); if (!e) continue;
-      let iv = null, dato = false; if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'video') && !e.muneco) { iv = [V[k].t0, fin(k)]; dato = true; } else if (e.principal === 'clip' && finClip.has(k)) iv = [V[k].t0, finClip.get(k)];
-      if (!iv) continue; const u = tramos4[tramos4.length - 1];
-      if (u && u.dato && dato && iv[0] <= u.b + 0.2) u.b = Math.max(u.b, iv[1]); else tramos4.push({ a: iv[0], b: iv[1], dato }); // solo se juntan datos seguidos; el tramo de un clip pedido termina cuando entra el muñeco
+      const ivs = []; // [inicio, fin, esDato]
+      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
+      else if (e.principal === 'clip' && finClip.has(k)) { ivs.push([V[k].t0, finClip.get(k), false]); if (!e.muneco && fin(k) - finClip.get(k) > 0.5) ivs.push([finClip.get(k), fin(k), true]); } // sin muñeco, lo que queda de la frase tras el clip (≤ 3 s) se llena con otras tomas
+      for (const [ia, ib, dato] of ivs) {
+        const u = tramos4[tramos4.length - 1];
+        if (u && u.dato && dato && ia <= u.b + 0.2) u.b = Math.max(u.b, ib); else tramos4.push({ a: ia, b: ib, dato }); // solo se juntan datos seguidos; el tramo de un clip pedido termina cuando entra el muñeco
+      }
     }
     const pendientes = [...pedidos].sort((p, q) => V[p.k].t0 - V[q.k].t0); let ri = 0;
     for (const tr of tramos4) {
