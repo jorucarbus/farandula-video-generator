@@ -20,7 +20,7 @@ const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', '
 const MAX_EXTRAS = 2;
 
 const normalizar = t => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const tokens = frase => normalizar(frase).split(/[^a-z0-9ñ]+/).filter(Boolean);
+const tokens = frase => normalizar(frase).replace(/(\d)[.,](?=\d)/g, '$1').split(/[^a-z0-9ñ]+/).filter(Boolean); // 6.000 y 0,99 son UNA palabra (6000, 099), como en la línea de tiempo de la voz
 const contiene = (frase, texto) => normalizar(frase).replace(/\s+/g, ' ').includes(normalizar(texto).replace(/\s+/g, ' ').trim());
 const tieneAncla = (frase, ancla) => tokens(frase).includes(normalizar(ancla).trim());
 const nombreDePieza = (traje, pose) => (pose === 'reposo' ? `cuerpo-${traje}` : `cuerpo-${traje}-${pose}`);
@@ -126,7 +126,7 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
   const cifra = (() => { const m = frase.replace(RE_FECHA, '').match(/(\d[\d.]*)\s+([a-záéíóúñ]+)?/i); if (!m) return null; const v = parseInt(m[1].replace(/\./g, ''), 10); return Number.isFinite(v) && v > 1 && !(v >= 1900 && v <= 2100) ? { valor: v, sufijo: m[2] && m[2].length <= 11 ? m[2] : undefined, ancla: normalizar(m[1].replace(/\./g, '')) } : null; })();
   const escen = RE_ESCENARIO.map(re => frase.match(re)).find(Boolean);
   if (!e.principal) { // 2 a 5 cifras con su palabra ("6 años ... 3 títulos"): gráfico de barras
-    const pares = [...frase.replace(RE_FECHA, '').matchAll(/(\d[\d.]*)\s+([a-záéíóúñ]{3,})/gi)].map(m => ({ valor: parseInt(m[1].replace(/\./g, ''), 10), etiqueta: m[2], ancla: normalizar(m[1].replace(/\./g, '')) })).filter(p => Number.isFinite(p.valor) && p.valor > 1 && !(p.valor >= 1900 && p.valor <= 2100));
+    const pares = [...frase.replace(RE_FECHA, '').matchAll(/(?<![\d,.])(\d[\d.]*)\s+([a-záéíóúñ]{3,})/gi)].map(m => ({ valor: parseInt(m[1].replace(/\./g, ''), 10), etiqueta: m[2], ancla: normalizar(m[1].replace(/\./g, '')) })).filter(p => Number.isFinite(p.valor) && p.valor > 1 && !(p.valor >= 1900 && p.valor <= 2100));
     if (pares.length >= 2 && pares.length <= 5) { e.principal = 'grafico'; e.grafico = { items: pares }; }
   }
   if (!e.principal && anios.length >= 3) {
