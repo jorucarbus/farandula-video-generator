@@ -19,9 +19,9 @@ const { planificar, storyboardMarkdown } = require('../edl/storyboard');
 
 const DM = path.join(__dirname, '..', 'data-motor'), KIT = path.join(__dirname, '..', 'assets', 'kit');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
-const g = JSON.parse(fs.readFileSync(path.join(DM, 'guion-reina.json'), 'utf8'));
-const w = JSON.parse(fs.readFileSync(path.join(DM, 'narrativo-voz', 'palabras-whisper.json'), 'utf8'));
-const AUDIO = path.join(DM, 'audios', '2026-11-23 Narrativo con voz.mp3');
+const g = JSON.parse(fs.readFileSync(arg('--guion', path.join(DM, 'guion-reina.json')), 'utf8'));
+const w = JSON.parse(fs.readFileSync(arg('--palabras', path.join(DM, 'narrativo-voz', 'palabras-whisper.json')), 'utf8'));
+const AUDIO = arg('--audio', path.join(DM, 'audios', '2026-11-23 Narrativo con voz.mp3'));
 const hasta = Number(arg('--hasta', Math.min(w.duracion, 74)));
 const carpeta = arg('--carpeta', 'Leidy_Alvarez');
 

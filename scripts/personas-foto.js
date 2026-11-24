@@ -29,4 +29,7 @@ const PERSONAS = {
   },
 };
 PERSONAS.leidy3d.geo = PERSONAS.leidy.geo;
+// Dalia Bucaram: cabeza generada a partir de recortes de sus videos (scripts/cabeza-persona-generar.js) + hoja única 4K vestida por Gemini (hojas-gemini --hojas unica + hojas-recortar --unica). Geometría: punto de partida = leidy, ajustada al centro/mentón de su cabeza.
+const gD = JSON.parse(JSON.stringify(PERSONAS.leidy.geo)); gD.cara.cx = 432; gD.elipse.cx = 432; gD.boca.cx = 432; gD.emo.cx = 432; gD.emo = { ...gD.emo, BY: 215, BH: 720, cy: 540, rx: 195, ry: 305, anillo: [0.7, 0.95] }; gD.chinY = 780; gD.neckY = 895;
+PERSONAS.dalia3d = { ...PERSONAS.leidy3d, salida: path.join(RAIZ, 'foto-rig-dalia3d'), cabeza: path.join(KIT, 'personas', 'dalia', 'cabeza.png'), bocas: path.join(KIT, 'personas', 'dalia3d', 'bocas'), crudoBocas: path.join(__dirname, '..', 'data-motor', 'kit', 'personas', 'dalia3d', 'bocas-crudo'), emociones: path.join(KIT, 'personas', 'dalia3d', 'emociones'), crudoEmociones: path.join(__dirname, '..', 'data-motor', 'kit', 'personas', 'dalia3d', 'emociones-crudo'), geo: gD };
 module.exports = { PERSONAS };

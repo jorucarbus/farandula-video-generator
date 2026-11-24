@@ -45,6 +45,27 @@ function llamarGeminiVideo(ruta) {
   return gemini.parteMultimodal('video', ruta).then(partes => gemini.llamarJSON(PROMPT_ETIQUETA, [...partes, { text: 'Analiza el video.' }], gemini.TAREAS.etiquetaClip));
 }
 
+
+// ETIQUETADO POR CUADROS (barato): en vez de subir el video entero (1 cuadro/s + audio), se mandan N cuadros al azar (uno por tramo del clip, así cubren toda la toma).
+// Pierde lo que se DICE en el audio ("dice" queda vacío); el resto de la etiqueta sale igual. N=4 por defecto (env CUADROS_POR_CLIP).
+const PROMPT_CUADROS = PROMPT_ETIQUETA.replace('Analiza este video corto', 'Analiza estos cuadros tomados al azar de un video corto').replace('"dice":"resumen de lo que se dice (1 frase) o vacío",', '"dice":"",').replace('"t":segundo en que el rostro principal se ve mejor', '"cuadro":número del cuadro (1 a N) donde el rostro principal se ve mejor').replace('relativos a las dimensiones del cuadro en ese segundo t.', 'relativos a las dimensiones de ESE cuadro.');
+function cuadrosAlAzar(ruta, duracion, n = Number(process.env.CUADROS_POR_CLIP) || 4) {
+  const FFM = process.env.FFMPEG_BIN || require('ffmpeg-static'), d = Math.max(0.5, duracion || 3), out = [];
+  for (let i = 0; i < n; i++) {
+    const t = +((i + Math.random()) * d / n).toFixed(2), tt = Math.min(t, Math.max(0, d - 0.1));
+    try { const b = require('child_process').execFileSync(FFM, ['-v', 'error', '-ss', String(tt), '-i', ruta, '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '4', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'], { maxBuffer: 1 << 24 }); if (b.length) out.push({ t: tt, data: b.toString('base64') }); } catch (e) { /* cuadro ilegible: se omite */ }
+  }
+  return out;
+}
+async function llamarGeminiCuadros(ruta, clip) {
+  const gemini = require('../gemini'), cuadros = cuadrosAlAzar(ruta, clip && clip.duracion);
+  if (!cuadros.length) throw new Error('sin cuadros legibles');
+  const partes = []; cuadros.forEach((c, i) => { partes.push({ text: 'Cuadro ' + (i + 1) + ' (segundo ' + c.t + '):' }); partes.push({ inlineData: { mimeType: 'image/jpeg', data: c.data } }); });
+  const r = await gemini.llamarJSON(PROMPT_CUADROS.replace('1 a N', '1 a ' + cuadros.length), [...partes, { text: 'Analiza los cuadros.' }], gemini.TAREAS.etiquetaClip);
+  if (r && r.rostro && r.rostro.cuadro != null) { const c = cuadros[Math.min(cuadros.length, Math.max(1, Math.round(+r.rostro.cuadro))) - 1]; r.rostro.t = c ? c.t : 0; }
+  return r;
+}
+
 function limpiarEtiqueta(r, clip) {
   const num = (x, a, b, d) => (Number.isFinite(+x) ? Math.min(b, Math.max(a, +x)) : d);
   const rostro = r.rostro && r.rostro.visible !== false ? { t: num(r.rostro.t, 0, Math.max(0, (clip.duracion || 3) - 0.1), 0), cx: num(r.rostro.cx, 0, 1, 0.5), cy: num(r.rostro.cy, 0, 1, 0.4), r: num(r.rostro.r, 0.02, 0.6, 0.2) } : null;
@@ -54,7 +75,7 @@ function limpiarEtiqueta(r, clip) {
 }
 
 // clips: salida de descargarCarpeta. cache: ruta del JSON {id: etiqueta}. Reintenta cada clip una vez y sigue si falla.
-async function etiquetarClips(clips, { cache, etiquetador = llamarGeminiVideo, concurrencia = 3, progreso = null } = {}) {
+async function etiquetarClips(clips, { cache, etiquetador = (process.env.ETIQUETAR_VIDEO_COMPLETO ? llamarGeminiVideo : llamarGeminiCuadros), concurrencia = 3, progreso = null } = {}) {
   const guardadas = cache && fs.existsSync(cache) ? JSON.parse(fs.readFileSync(cache, 'utf8')) : {}, fallos = [];
   const pendientes = clips.filter(c => !guardadas[c.id]); let hechas = 0;
   const trabajar = async c => {

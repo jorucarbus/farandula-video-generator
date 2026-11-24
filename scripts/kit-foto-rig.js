@@ -55,11 +55,11 @@ const BOCA = G.boca, VISEMAS = ['Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh
 async function parches(BOCA, dirImgs, VIS, pref) { // parches de la cara (bocas o emociones): se igualan al color de la cara base, con borde suave y recortados a la silueta de la cabeza
   const S = 0.32, { BX, BY, BW, BH } = BOCA, base = await loadImage(fs.readFileSync(P.cabeza)), cab = await loadImage(path.join(SAL, 'cabeza.png'));
   const bb = createCanvas(BW, BH), bbx = bb.getContext('2d'); bbx.drawImage(base, BX, BY, BW, BH, 0, 0, BW, BH); const bd = bbx.getImageData(0, 0, BW, BH).data, cx0 = BOCA.cx - BX, cy0 = BOCA.cy - BY, RX = BOCA.rx, RY = BOCA.ry, pw = Math.round(BW * S), ph = Math.round(BH * S);
-  const salida = {};
+  const salida = {}, ANI = BOCA.anillo || [0.95, 1.2];
   for (const v of VIS) {
     const img = await loadImage(fs.readFileSync(path.join(dirImgs, v + '.png'))), c = createCanvas(BW, BH), x = c.getContext('2d'); x.drawImage(img, 0, 0); const id = x.getImageData(0, 0, BW, BH), d = id.data;
     // ganancia de color por canal en un anillo exterior (piel alrededor de la boca): iguala la luz y el tono de la imagen generada a los de la cara base
-    let sg = [0, 0, 0], sb = [0, 0, 0], n = 0; for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY); if (r > 0.95 && r < 1.2) { const i = (y * BW + xx) * 4; for (let k = 0; k < 3; k++) { sg[k] += d[i + k]; sb[k] += bd[i + k]; } n++; } }
+    let sg = [0, 0, 0], sb = [0, 0, 0], n = 0; for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY); if (r > ANI[0] && r < ANI[1]) { const i = (y * BW + xx) * 4; for (let k = 0; k < 3; k++) { sg[k] += d[i + k]; sb[k] += bd[i + k]; } n++; } }
     const gan = sg.map((v, k) => (sg[k] ? sb[k] / sg[k] : 1));
     for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const i = (y * BW + xx) * 4, r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY), a = Math.max(0, Math.min(1, (1 - r) / 0.35)); for (let k = 0; k < 3; k++) d[i + k] = Math.min(255, d[i + k] * gan[k]); d[i + 3] = Math.round(255 * a * a * (3 - 2 * a)); }
     x.putImageData(id, 0, 0);
