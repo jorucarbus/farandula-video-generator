@@ -31,8 +31,8 @@ const TRAJES_RIG = {
 // (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, caraFoto: m.cabeza.cara };
+  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-abierto', 'mano-pulgar', 'mano-senalar'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
@@ -44,7 +44,7 @@ const ANCLAS = { ojoY: -0.20, ojoDx: 0.27, ojoR: 0.075, bocaY: 0.255, bocaAncho:
 const POSES = {
   reposo: { I: { s: 7, c: 5 }, D: { s: 7, c: 5 } },
   celebrar: { I: { s: 152, c: 6 }, D: { s: 152, c: 6 }, salta: true },
-  senalar: { I: { s: 7, c: 5 }, D: { s: 92, c: 0 } },
+  senalar: { I: { s: 7, c: 5 }, D: { s: 92, c: 0 }, mano: { D: 'senalar' } },
 };
 // Cada gesto: duración (s), si los brazos se dibujan delante de la cabeza, y una función (τ en segundos desde el inicio) → dónde debe quedar la
 // MANO de cada brazo ({ mx, my } en el espacio del brazo: mx > 0 = hacia afuera del cuerpo, my hacia abajo; origen = arriba del torso, centro) y
@@ -52,12 +52,12 @@ const POSES = {
 const osc = (t, f, a) => Math.sin(t * f * 6.283) * a;
 const GESTOS = {
   mejillas: { dur: 1.6, delante: true, j: () => ({ I: { mx: 92, my: -58, mano: 'abierto' }, D: { mx: 92, my: -58, mano: 'abierto' }, cabeza: -4 }) },            // manos a las mejillas (sorpresa)
-  pecho: { dur: 1.6, delante: true, j: () => ({ D: { mx: -22, my: 100, mano: 'abierto' }, cabeza: 5 }) },                                                       // mano al pecho (me conmueve)
+  pecho: { dur: 1.6, delante: true, j: () => ({ D: { mx: -22, my: 100, mano: 'abierto', muneca: 25 }, cabeza: 5 }) },                                                       // mano al pecho (me conmueve)
   encoger: { dur: 1.2, j: t => ({ I: { mx: 168, my: 150, mano: 'abierto' }, D: { mx: 168, my: 150, mano: 'abierto' }, subir: 12 + osc(t, 2, 2), cabeza: -3 }) },     // encogerse de hombros
   aplauso: { dur: 1.6, delante: true, j: t => ({ I: { mx: 14 + osc(t, 3.2, 14), my: 120, mano: 'abierto' }, D: { mx: 14 + osc(t, 3.2, 14), my: 120, mano: 'abierto' } }) }, // aplauso
   cintura: { dur: 1.8, j: () => ({ I: { mx: 100, my: 214, mano: 'puno' }, D: { mx: 100, my: 214, mano: 'puno' }, cabeza: 4 }) },                                  // manos en la cintura (reto)
   boca: { dur: 1.6, delante: true, j: () => ({ D: { mx: 30, my: -18, mano: 'abierto' }, cabeza: -3 }) },                                                       // mano a la boca (chisme)
-  saludo: { dur: 1.8, j: t => ({ D: { mx: 175 + osc(t, 3, 22), my: -100, mano: 'abierto' }, cabeza: 4 }) },                                                      // saludo con la mano
+  saludo: { dur: 1.8, j: t => ({ D: { mx: 175 + osc(t, 3, 22), my: -100, mano: 'abierto', muneca: osc(t, 3, 28) }, cabeza: 4 }) },                                                      // saludo con la mano
 };
 
 // Cinemática inversa de 2 huesos: dado el hombro S y el punto T donde debe llegar la mano, devuelve los ángulos { s, c } (grados) con el codo hacia afuera.
@@ -113,7 +113,8 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const peso = G ? acotar(tau / 0.28) * acotar((G.dur - tau) / 0.28) : 0, obj = G ? G.j(tau) : {};
       for (const L of ['I', 'D']) if (obj[L] && obj[L].mx !== undefined && !obj[L].s) Object.assign(obj[L], ik({ x: R.hombro.x, y: R.hombro.y - (obj.subir || 0) }, { x: obj[L].mx, y: obj[L].my }, LG.sup, LG.ant));
       const lado = L => ({ s: lerp(pose[L].s, obj[L] ? obj[L].s : pose[L].s, peso), c: lerp(pose[L].c, obj[L] ? obj[L].c : pose[L].c, peso) });
-      const aI = lado('I'), aD = lado('D'), manoI = peso > 0.5 && obj.I && obj.I.mano ? obj.I.mano : 'abierto', manoD = peso > 0.5 && obj.D && obj.D.mano ? obj.D.mano : 'abierto';
+      const aI = lado('I'), aD = lado('D'), manoI = peso > 0.5 && obj.I && obj.I.mano ? obj.I.mano : (pose.mano && pose.mano.I) || 'abierto', manoD = peso > 0.5 && obj.D && obj.D.mano ? obj.D.mano : (pose.mano && pose.mano.D) || 'abierto';
+      const munI = spr(0, 'mI', peso && obj.I && obj.I.muneca ? obj.I.muneca * peso : 0, dt), munD = spr(0, 'mD', peso && obj.D && obj.D.muneca ? obj.D.muneca * peso : 0, dt);
       const sI = spr(0, 'sI', aI.s, dt), cI = spr(0, 'cI', aI.c, dt), sD = spr(0, 'sD', aD.s, dt), cD = spr(0, 'cD', aD.c, dt);
       // cuerpo: caída de entrada, saltos y respiración
       const c = caida(tAbs - t0); let dy = c.dy, sy = c.sy;
@@ -135,7 +136,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       if (R.piernasJuntas) dib(img.piernas, 0, R.cadera.y, 0.5, 0, 0, false); else if (R.piernas) for (const lado of [-1, 1]) dib(img.pierna, lado * R.cadera.x, R.cadera.y, 0.5, 0.04, -lado * (pose.salta ? 0.12 : 0.02), lado < 0);
       if (R.falda) dib(img[R.falda], R.faldaPos.x, R.faldaPos.y, R.faldaPos.px, R.faldaPos.py, Math.sin(tAbs * 2.4) * 0.02 - giro, false);
       // 3) torso y brazos (en reposo los brazos van delante del torso; en gestos de cara, también delante de la cabeza)
-      const brazo = (lado, s, c, mano) => { // lado -1 = izquierda de la pantalla; s, c en grados (+ hacia afuera / + doblar hacia el cuerpo)
+      const brazo = (lado, s, c, mano, mun = 0) => { // lado -1 = izquierda de la pantalla; s, c en grados (+ hacia afuera / + doblar hacia el cuerpo)
         const im = img[mano === 'puno' ? R.brazos[1] : R.brazos[0]], wB = im.width, hB = im.height, cod = hB * (R.codoFrac ?? 0.5);
         ctx.save(); ctx.translate(lado * R.hombro.x, R.hombro.y - subir); if (lado > 0) ctx.scale(-1, 1); // espejo para el derecho: mismas convenciones
         ctx.rotate(s * GRAD);
@@ -146,7 +147,10 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
           if (Math.abs(c) > 10) { ctx.beginPath(); ctx.arc(wB / 2, cod, ci.r * 0.72, 0, Math.PI * 2); ctx.fillStyle = ci.col; ctx.fill(); } // relleno de la esquina, debajo de los dos tramos
           ctx.save(); ctx.beginPath(); ctx.rect(0, 0, wB, cod + 2); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); // brazo superior (con todo el hombro)
           ctx.save(); ctx.translate(wB / 2, cod); ctx.rotate(-c * GRAD); ctx.translate(-wB / 2, -cod);
-          ctx.save(); ctx.beginPath(); ctx.rect(0, cod - 2, wB, hB - cod + 4); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); ctx.restore(); // antebrazo y mano
+          if (R.manoFotos) { // la mano es una pieza aparte: queda DETRÁS de la manga (la muñeca se esconde bajo el puño del uniforme) y gira en la muñeca
+            const nm = mano === 'puno' ? 'pulgar' : (R.manoFotos[mano] ? mano : 'abierto'), mi = img['mano-' + nm], mf = R.manoFotos[nm];
+            ctx.save(); ctx.translate(R.muneca.x, R.muneca.y - 10); ctx.rotate(mun * GRAD); ctx.drawImage(mi, -mf.ax, 0); ctx.restore(); }
+          ctx.save(); ctx.beginPath(); ctx.rect(0, cod - 2, wB, hB - cod + 4); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); ctx.restore(); // antebrazo (manga) por delante de la mano
           B.sinSombra(ctx); ctx.restore(); return;
         }
         // brazo superior (mitad de arriba) y antebrazo con mano (mitad de abajo, un poco solapadas), girando en el codo
@@ -159,7 +163,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const delante = Boolean(G && G.delante && peso > 0.01);
       if (R.cabezaAntes) cabezaF();
       dib(img[R.torso], 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false);
-      if (!delante || R.hombros) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
+      if (!delante || R.hombros) { brazo(-1, sI, cI, manoI, munI); brazo(1, sD, cD, manoD, munD); }
       if (R.hombros) dib(img.hombros, 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false); // el hombro del torso va encima del brazo: ahí está la unión
       // 4) cabeza con expresión modelada y accesorios (con cabezaAntes se dibuja antes del torso: el cuello queda detrás del cuello del traje)
       function cabezaF() {
@@ -178,7 +182,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       ctx.restore();
       }
       if (!R.cabezaAntes) cabezaF();
-      if (delante && !R.hombros) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
+      if (delante && !R.hombros) { brazo(-1, sI, cI, manoI, munI); brazo(1, sD, cD, manoD, munD); }
       ctx.restore();
       // pegatinas flotantes (bastón…) con resortes y giro opcional
       pegatinas.forEach((p, i) => {
