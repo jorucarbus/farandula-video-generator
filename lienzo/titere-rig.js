@@ -31,9 +31,28 @@ const TRAJES_RIG = {
 // (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, caraFoto: m.cabeza.cara };
+  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
+// ── Visemas (formas de la boca al hablar). Si la voz trae `visemas` (un nombre por cuadro; 'N' = boca en reposo) se usa tal cual; si no, se elige por la abertura. ──
+const VISEMA_POR_ABERTURA = [[0.08, null], [0.22, 'Uh'], [0.40, 'D'], [0.58, 'Oh'], [0.76, 'Ee'], [2, 'Aa']];
+function visemaAhora(voz, ap, tAbs) {
+  if (voz && voz.visemas) { const v = voz.visemas[Math.floor(tAbs * (voz.fps || 30))]; return !v || v === 'N' ? null : v; }
+  for (const [lim, v] of VISEMA_POR_ABERTURA) if (ap < lim) return v; return 'Aa';
+}
+// Visemas a partir del texto y los tiempos de cada palabra (español): reparte las sílabas de cada palabra a lo largo de su duración y deja la boca cerrada entre palabras.
+// palabras: [{ texto, t0, t1 }] en segundos del video. → array de nombres por cuadro ('N' = reposo).
+function visemasDesdePalabras(palabras, fps = 30, nCuadros = 0) {
+  const total = nCuadros || Math.ceil(Math.max(0, ...palabras.map(p => p.t1)) * fps) + 1, out = new Array(total).fill('N');
+  const VOC = { a: 'Aa', e: 'Ee', i: 'Ee', o: 'Oh', u: 'Woo' }, CON = { m: 'M', b: 'M', p: 'M', f: 'F', v: 'F', s: 'S', z: 'S', x: 'S', d: 'D', t: 'D', l: 'D', n: 'D', r: 'R', c: 'Uh', g: 'Uh', j: 'Uh', k: 'Uh', q: 'Uh', y: 'Uh', h: null };
+  for (const p of palabras) {
+    const letras = String(p.texto).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, ''), seq = [];
+    for (let i = 0; i < letras.length; i++) { const c = letras[i], v = VOC[c] || CON[c]; if (!v) continue; if (seq.length && seq[seq.length - 1] === v) continue; seq.push(v); }
+    if (!seq.length) continue; const dur = Math.max(0.05, p.t1 - p.t0), paso = dur / seq.length;
+    seq.forEach((v, k) => { const a = Math.floor((p.t0 + k * paso) * fps), b = Math.max(a + 1, Math.floor((p.t0 + (k + 1) * paso) * fps)); for (let f = a; f < b && f < total; f++) if (f >= 0) out[f] = v; });
+  }
+  return out;
+}
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
 // Caja de la cara (píxeles de la pieza «cabeza») y anclas de ojos, cejas y boca relativas a ella
@@ -171,7 +190,10 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       ctx.save(); ctx.translate(R.cabeza.x, hy); ctx.rotate(cabAng);
       B.sombraDeCapa(ctx, u / e, 0.3, 0); ctx.drawImage(im, -im.width * R.cabeza.px, -im.height * R.cabeza.py); B.sinSombra(ctx);
       ctx.save(); ctx.translate(CARA.cx - im.width * R.cabeza.px, CARA.cy - im.height * R.cabeza.py);
-      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
+      if (R.bocasFoto && emo.e === 'normal') { // boca FOTOGRÁFICA según lo que se dice (visema); en silencio queda la boca de la foto
+        const vz = visemaAhora(voz, ap, tAbs), b = R.bocasFoto; ctx.restore(); if (vz && img['boca-' + vz]) ctx.drawImage(img['boca-' + vz], b.x - im.width * R.cabeza.px, b.y - im.height * R.cabeza.py); ctx.save();
+      }
+      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap: R.bocasFoto && emo.e === 'normal' ? 0 : ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
       else if (!R.sinExpr) dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: CARA.w, h: CARA.h, piel, anclas: A, ap, tAbs, fase: 0.9, cab: null, escala: escalaExpr, limpia: true }); ctx.restore();
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], ia = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;
@@ -198,4 +220,4 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
   };
 }
 
-module.exports = { ik, titereRig, POSES, GESTOS, TRAJES_RIG, CARA, ANCLAS };
+module.exports = { visemasDesdePalabras, ik, titereRig, POSES, GESTOS, TRAJES_RIG, CARA, ANCLAS };

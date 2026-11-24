@@ -46,6 +46,25 @@ async function cuerpo() {
 }
 
 // ── cabeza y pelo, a partir de la foto: se quita el fondo gris por inundación desde el borde con un modelo de fondo suave ──
+// Bocas FOTOGRÁFICAS (visemas): cada una es la zona de la boca de la misma cara con otra posición de labios (scripts/bocas-generar.js → assets/kit/bocas/<visema>.png).
+// Se iguala el color a la cara base, se pega con borde suave y se limita a la silueta de la cabeza. El rig las cambia según lo que se dice.
+const BOCA = { BX: 210, BY: 470, BW: 450, BH: 360 }, VISEMAS = ['Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh', 'R'];
+async function bocas() {
+  const S = 0.32, { BX, BY, BW, BH } = BOCA, base = await loadImage(fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png'))), cab = await loadImage(path.join(SAL, 'cabeza.png'));
+  const bb = createCanvas(BW, BH), bbx = bb.getContext('2d'); bbx.drawImage(base, BX, BY, BW, BH, 0, 0, BW, BH); const bd = bbx.getImageData(0, 0, BW, BH).data, cx0 = 432 - BX, cy0 = 655 - BY, RX = 150, RY = 115, pw = Math.round(BW * S), ph = Math.round(BH * S);
+  const salida = {};
+  for (const v of VISEMAS) {
+    const img = await loadImage(fs.readFileSync(path.join(KIT, 'bocas', v + '.png'))), c = createCanvas(BW, BH), x = c.getContext('2d'); x.drawImage(img, 0, 0); const id = x.getImageData(0, 0, BW, BH), d = id.data;
+    // ganancia de color por canal en un anillo exterior (piel alrededor de la boca): iguala la luz y el tono de la imagen generada a los de la cara base
+    let sg = [0, 0, 0], sb = [0, 0, 0], n = 0; for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY); if (r > 0.95 && r < 1.2) { const i = (y * BW + xx) * 4; for (let k = 0; k < 3; k++) { sg[k] += d[i + k]; sb[k] += bd[i + k]; } n++; } }
+    const gan = sg.map((v, k) => (sg[k] ? sb[k] / sg[k] : 1));
+    for (let y = 0; y < BH; y++) for (let xx = 0; xx < BW; xx++) { const i = (y * BW + xx) * 4, r = Math.hypot((xx - cx0) / RX, (y - cy0) / RY), a = Math.max(0, Math.min(1, (1 - r) / 0.35)); for (let k = 0; k < 3; k++) d[i + k] = Math.min(255, d[i + k] * gan[k]); d[i + 3] = Math.round(255 * a * a * (3 - 2 * a)); }
+    x.putImageData(id, 0, 0);
+    const pc = createCanvas(pw, ph), px = pc.getContext('2d'); px.imageSmoothingQuality = 'high'; px.drawImage(c, 0, 0, pw, ph); px.globalCompositeOperation = 'destination-in'; px.drawImage(cab, Math.round(BX * S), Math.round(BY * S), pw, ph, 0, 0, pw, ph);
+    fs.writeFileSync(path.join(SAL, 'boca-' + v + '.png'), pc.toBuffer('image/png')); salida[v] = true;
+  }
+  return { x: Math.round(BX * S), y: Math.round(BY * S), w: pw, h: ph, lista: VISEMAS };
+}
 async function cabeza() {
   const img = await loadImage(fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png'))), W = img.width, H = img.height, { id } = pixeles(img), d = id.data;
   const media = (x0, y0) => { let r = 0, g = 0, b = 0, n = 0; for (let y = y0; y < y0 + 16; y++) for (let x = x0; x < x0 + 16; x++) { const i = (y * W + x) * 4; r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } return [r / n, g / n, b / n]; };
@@ -94,7 +113,7 @@ async function manos(arm) {
 }
 (async () => {
   fs.mkdirSync(SAL, { recursive: true });
-  const c = await cuerpo(), h = await cabeza(); await manos();
-  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MUN - Y_HOMBRO + 2), largo: { sup: Y_CODO - Y_PIV, ant: Y_MUN + 50 - Y_CODO }, muneca: MUNECA, manos: MANOS }, null, 2));
+  const c = await cuerpo(), h = await cabeza(); await manos(); const bc = await bocas();
+  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, bocas: bc, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MUN - Y_HOMBRO + 2), largo: { sup: Y_CODO - Y_PIV, ant: Y_MUN + 50 - Y_CODO }, muneca: MUNECA, manos: MANOS }, null, 2));
   console.log('listo', SAL, JSON.stringify(h));
 })().catch(e => { console.error('FALLO', e); process.exit(1); });
