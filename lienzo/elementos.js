@@ -140,7 +140,7 @@ function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, alto = 0.40, t0, t1 }) 
 
 // ── Recuadro vertical redondeado con clip real + marcas a mano encima ───────────────────────────
 // marcas: [{ tipo:'circulo', cx, cy, rx, ry, t, dur? } | { tipo:'subrayado', x0, y0, x1, y1, t, dur? }] en fracciones del recuadro; t ABSOLUTO.
-function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.56, t0, t1 }) {
+function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.616, t0, t1 }) {
   let dir = null, nFrames = 0, WW = 0, HH = 0, fpsClip = 30;
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...marcas.map(m => ({ t: m.t, sonido: 'trazo' }))],
@@ -173,7 +173,7 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.56, t0, t
 // el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
 // Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
 const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
-function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.56, atenuar = [], base = 0.08, fuerte = 0.30 }) {
+function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30 }) {
   let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
   const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
   const velo = tAbs => { let a = base; for (const v of atenuar) { const k = acotar((tAbs - v.t0) / 0.3) * acotar((v.t1 - tAbs) / 0.3); a = Math.max(a, lerp(base, fuerte, k)); } return a; };
