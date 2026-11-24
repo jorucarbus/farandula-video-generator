@@ -86,7 +86,8 @@ async function cabeza() {
   const lum = (r, g, b) => 0.3 * r + 0.59 * g + 0.11 * b;
   const cab = hacer((x, y) => y <= 560 ? 1 : y <= 700 ? (x > 235 && x < 640 ? 1 : (700 - y) / 140) : y <= NECK_Y && x > 300 && x < 585 ? 1 : 0); // el pelo de los lados se desvanece: sigue en la capa de pelo de atrás
   // pelo (detrás de la espalda): toda la foto, pero por debajo de la barbilla solo lo oscuro (sin suéter ni piel)
-  const CORTE = NECK_Y + (50 - 26) / S, pel = hacer((x, y, r, g, b) => (y <= 640 ? 1 : lum(r, g, b) < 105 ? 1 : 0) * (y <= CORTE - 60 ? 1 : y >= CORTE ? 0 : (CORTE - y) / 60)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
+  const CORTE = NECK_Y + (50 - 26) / S, enCara = (x, y) => ((x - 432) / 212) ** 2 + ((y - 450) / 330) ** 2 < 1, // la cara NO va en la capa de pelo: si no, al moverse el pelo se vería una segunda cabeza detrás de la primera
+    pel = hacer((x, y, r, g, b) => (y < 340 || enCara(x, y) ? 0 : y <= 640 ? 1 : lum(r, g, b) < 105 ? 1 : 0) * Math.min(1, (y - 340) / 90) * (y <= CORTE - 60 ? 1 : y >= CORTE ? 0 : (CORTE - y) / 60)); // el pelo termina en la línea de los hombros: no asoma por el hueco del brazo
   guardar(cab, 'cabeza'); guardar(pel, 'pelo');
   return { cw, ch, pivoteY: NECK_Y * S / ch, chinY: CHIN_Y * S, neckY: NECK_Y * S, cara: { cx: 432 * S, cy: 408 * S, w: 610 * S, h: 663 * S } }; // caja de la cara medida sobre esta foto
 }

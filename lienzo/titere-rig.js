@@ -32,7 +32,7 @@ const TRAJES_RIG = {
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
   TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v)], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, peloK: 0.2, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 // ── Visemas (formas de la boca al hablar). Si la voz trae `visemas` (un nombre por cuadro; 'N' = boca en reposo) se usa tal cual; si no, se elige por la abertura. ──
 const VISEMA_POR_ABERTURA = [[0.08, null], [0.22, 'Uh'], [0.40, 'D'], [0.58, 'Oh'], [0.76, 'Ee'], [2, 'Aa']];
@@ -150,7 +150,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       sy *= 1 + 0.014 * Math.sin(tAbs * 2.1); const sx = 1 + (1 - sy) * 0.6, giro = Math.sin(tAbs * 1.3) * 0.02;
       const subir = estado.subir.paso(obj.subir && peso ? obj.subir * peso : 0, dt);
       const cabObj = (obj.cabeza || 0) * peso * GRAD + (emo.e === 'enojo' ? 0.05 : emo.e === 'triste' ? -0.06 : 0) + Math.sin(tAbs * 1.1) * 0.025 + (pose.salta ? Math.sin(tAbs * 5.2) * 0.07 : 0);
-      const cabAng = estado.cab.paso(cabObj, dt), pelo = estado.pelo.paso(-cabAng * 1.3 + giro * 2 + (dy > 0 ? -0.05 : 0), dt);
+      const cabAng = estado.cab.paso(cabObj, dt), pelo = estado.pelo.paso((-cabAng * 1.3 + giro * 2 + (dy > 0 ? -0.05 : 0)) * (R.peloK ?? 1), dt);
       const ap = voz ? (voz.abertura[Math.floor(tAbs * (voz.fps || 30))] ?? 0) : 0;
       B.sombraDeContacto(ctx, X, Y + H * 0.005, 240 * e * 0.62 * (1 - dy * 0.5), H * 0.03, 0.30 * acotar(t / 0.2) * (1 - Math.min(0.6, dy)));
       ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / 0.05 + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx * e, sy * e); ctx.translate(0, -R.pies);
