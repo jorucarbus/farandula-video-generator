@@ -33,7 +33,7 @@ const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 function registrarTrajeFoto(nombre, dir) { // un traje por persona: 'bastonera-foto' (cabeza genérica) y 'bastonera-foto@<slug>' (assets/foto-rig-<slug>)
   try { const m = JSON.parse(fs.readFileSync(path.join(dir, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
   TRAJES_RIG[nombre] = { dir, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas', 'mano-relajada', 'mano-abierta', 'mano-puno', 'mano-senalar', ...m.bocas.lista.map(v => 'boca-' + v), ...(m.emociones ? m.emociones.lista.map(v => 'emo-' + v) : [])], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, cabezaK: m.cabeza.k || 1, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, emocionesFoto: m.emociones, peloK: 0.2, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, cabezaK: m.cabeza.k || 1, manoFotos: m.manos, muneca: m.muneca, bocasFoto: m.bocas, emocionesFoto: m.emociones, peloSigue: true, borde: { color: '#ffffff', grosor: 0.0055 }, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 }
 registrarTrajeFoto('bastonera-foto', RIG_FOTO);
@@ -89,7 +89,7 @@ const GESTOS = {
   boca: { dur: 1.6, delante: true, j: () => ({ D: { mx: 30, my: -18, mano: 'abierto' }, cabeza: -3 }) },                                                       // mano a la boca (chisme)
   senala_arriba: { dur: 1.8, j: t => ({ D: { mx: 150 + osc(t, 2.5, 6), my: -190, mano: 'senalar' }, cabeza: -4 }) },                                                        // señala el dato que está arriba
   cabeza: { dur: 1.8, delante: true, j: t => ({ I: { mx: 98, my: -196, mano: 'abierto' }, D: { mx: 98, my: -196, mano: 'abierto' }, cabeza: osc(t, 2, 3), subir: 4 }) },                // manos a la cabeza (no puede ser / me duele)
-  menton: { dur: 2.0, delante: true, j: () => ({ D: { mx: 44, my: 6, mano: 'puno' }, cabeza: 6 }) },                                                                          // pensativa, mano en el mentón (duda)
+  menton: { dur: 2.0, delante: true, j: () => ({ D: { mx: 76, my: -44, mano: 'relajada' }, cabeza: 7 }) },                                                                          // pensativa, mano en el mentón (duda)
   asiente: { dur: 1.4, j: t => ({ cabeza: osc(t, 2.4, 7) }) },                                                                                                                 // asiente con la cabeza (de acuerdo)
   saludo: { dur: 1.8, j: t => ({ D: { mx: 175 + osc(t, 3, 22), my: -100, mano: 'abierto', muneca: osc(t, 3, 28) }, cabeza: 4 }) },                                                      // saludo con la mano
 };
@@ -111,7 +111,7 @@ function ik(S, T, L1, L2) {
 
 // Elemento del lienzo. Misma interfaz que recortes.muneco para que el ensamblador lo use igual; kit: 'plastilina'.
 // poses: [{ t, pieza }] con piezas 'cuerpo-bastonera[-celebrar|-senalar]'; gestos: [{ id, t }] (t absoluto, en la palabra ancla).
-function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, encuadres = [], entrada = 'caida', escalaExpr = 1.1, t0, t1, saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], gestos = [], voz = null, anclas = {} }) {
+function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, encuadres = [], entrada = 'caida', espejo = false, escalaExpr = 1.1, t0, t1, saltos = [], poses = [], emociones = [], accesorios = [], pegatinas = [], gestos = [], voz = null, anclas = {} }) {
   const A = { ...ANCLAS, ...anclas }, R = TRAJES_RIG[traje] || TRAJES_RIG.bastonera, LG = R.long || LONG, DIR = R.dir || RIG;
   const nombrePose = p => (/celebrar/.test(p) ? 'celebrar' : /senalar/.test(p) ? 'senalar' : 'reposo');
   const lineaPoses = [{ t: t0, pose: 'reposo' }, ...poses.map(p => ({ t: p.t, pose: nombrePose(p.pieza) }))].sort((a, b) => a.t - b.t);
@@ -163,15 +163,15 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, encu
       sy *= 1 + 0.014 * Math.sin(tAbs * 2.1); const sx = 1 + (1 - sy) * 0.6, giro = Math.sin(tAbs * 1.3) * 0.02;
       const subir = estado.subir.paso(obj.subir && peso ? obj.subir * peso : 0, dt);
       const cabObj = (obj.cabeza || 0) * peso * GRAD + (emo.e === 'enojo' ? 0.05 : emo.e === 'triste' ? -0.06 : 0) + Math.sin(tAbs * 1.1) * 0.025 + (pose.salta ? Math.sin(tAbs * 5.2) * 0.07 : 0);
-      const cabAng = estado.cab.paso(cabObj, dt), pelo = estado.pelo.paso((-cabAng * 1.3 + giro * 2 + (dy > 0 ? -0.05 : 0)) * (R.peloK ?? 1), dt);
+      const cabAng = estado.cab.paso(cabObj, dt), pelo = R.peloSigue ? cabAng : estado.pelo.paso((-cabAng * 1.3 + giro * 2 + (dy > 0 ? -0.05 : 0)) * (R.peloK ?? 1), dt); // peloSigue: el pelo de atrás gira EXACTAMENTE con la cabeza (si no, sobresale como una segunda pieza)
       const ap = voz ? (voz.abertura[Math.floor(tAbs * (voz.fps || 30))] ?? 0) : 0;
       B.sombraDeContacto(ctx, X, Y + H * 0.005, 240 * e * 0.62 * (1 - dy * 0.5), H * 0.03, 0.30 * acotar(t / 0.2) * (1 - Math.min(0.6, dy)));
-      ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / (entrada === 'fundido' ? 0.35 : 0.05) + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx * e, sy * e); ctx.translate(0, -R.pies);
+      ctx.save(); ctx.globalAlpha *= acotar((tAbs - t0) / (entrada === 'fundido' ? 0.35 : 0.05) + 0.0001); ctx.translate(X, Y - dy * H); ctx.rotate(giro); ctx.scale(sx * e * (espejo ? -1 : 1), sy * e); ctx.translate(0, -R.pies); // espejo: el muñeco mira hacia el otro lado cuando ocupa el lado derecho
       const dib = (im, x, y, px, py, ang = 0, espejo = false, sombra = 0.35, kk = 1) => { // dibuja una pieza girando alrededor de su pivote (px, py fracciones)
         ctx.save(); ctx.translate(x, y); ctx.rotate(ang); if (espejo) ctx.scale(-1, 1); B.sombraDeCapa(ctx, u / e, sombra, 0.28 * 0); ctx.drawImage(im, -im.width / kk * px, -im.height / kk * py, im.width / kk, im.height / kk); B.sinSombra(ctx); ctx.restore();
       };
       // 1) pelo (detrás de todo, cuelga con resorte)
-      dib(img.pelo, R.pelo.x, R.pelo.y - subir * 0.3, R.pelo.px, R.pelo.py, pelo, false, 0.3, R.cabezaK || 1);
+      dib(img.pelo, R.pelo.x, R.pelo.y - subir * (R.peloSigue ? 0.8 : 0.3), R.pelo.px, R.pelo.py, pelo, false, 0.3, R.cabezaK || 1);
       // 2) piernas y falda
       if (R.piernasJuntas) dib(img.piernas, 0, R.cadera.y, 0.5, 0, 0, false); else if (R.piernas) for (const lado of [-1, 1]) dib(img.pierna, lado * R.cadera.x, R.cadera.y, 0.5, 0.04, -lado * (pose.salta ? 0.12 : 0.02), lado < 0);
       if (R.falda) dib(img[R.falda], R.faldaPos.x, R.faldaPos.y, R.faldaPos.px, R.faldaPos.py, Math.sin(tAbs * 2.4) * 0.02 - giro, false);

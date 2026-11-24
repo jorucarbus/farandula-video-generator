@@ -29,8 +29,8 @@ const anclaDeDato = e => (e.principal === 'mapa' ? e.mapa.ancla : e.principal ==
 const primeraPalabraDeContenido = frase => tokens(frase).find(t => t.length >= 5) || tokens(frase)[0];
 
 // escenas: salida validada del director; beats: [{frase, rol, hechos}]; opciones: { emocionesValidas, gestosValidos } (para no pedir lo que el rig no tiene)
-function planificar(escenas, beats, { emocionesValidas = null, gestosValidos = null } = {}) {
-  const out = escenas.map(e => JSON.parse(JSON.stringify(e))), filas = []; let ultimoPrimer = -9, escuchas = 0;
+function planificar(escenas, beats, { emocionesValidas = null, gestosValidos = null, hayVideo = false } = {}) {
+  const out = escenas.map(e => JSON.parse(JSON.stringify(e))), filas = []; let ultimoPrimer = -9, escuchas = 0, ladoActual = 'der', ultimaFueMuneco = false, ultimoCentrado = -9;
   const emo = n => (!emocionesValidas || emocionesValidas.includes(n) ? n : 'normal'), ges = n => (!gestosValidos || gestosValidos.includes(n) ? n : null);
   out.forEach(e => {
     const k = e.beat - 1, frase = beats[k].frase, rx = reaccionDe(frase), esDato = DATOS.includes(e.principal), esEsc = e.principal === 'escenario', anc = anclaDeDato(e);
@@ -39,7 +39,9 @@ function planificar(escenas, beats, { emocionesValidas = null, gestosValidos = n
     if (esDato && !e.muneco && (e.principal === 'mapa' || rx)) { e.muneco = { traje: 'bastonera', pose: 'reposo', emocion: 'normal' }; razon.push(e.principal === 'mapa' ? 'mapa: la protagonista lo señala' : 'dato con carga emocional: la protagonista reacciona al dato'); }
     if (esDato && !e.muneco) razon.push('dato solo, con tomas de video de fondo (variedad)');
     if (e.principal === 'clip' && !e.muneco) razon.push('toma real de la protagonista');
-    if (!e.muneco) { filas.push(fila(e, frase, rx, razon, null)); return; }
+    // 1b) EL MUÑECO TIENE QUE APORTAR: una frase de muñeco sin nada que sentir, sin dato que señalar y que no abre ni cierra el video se cuenta mejor con tomas reales que ilustren
+    if (hayVideo && e.principal === 'muneco' && !rx && k > 0 && k < out.length - 1) { delete e.muneco; e.principal = 'video'; razon.push('el muñeco no aportaba nada aquí: mejor tomas de video que ilustren lo que se cuenta'); }
+    if (!e.muneco) { ultimaFueMuneco = false; filas.push(fila(e, frase, rx, razon, null)); return; }
     const m = e.muneco; m.gestos = m.gestos || [];
     // 2) reacción por plantilla (lo que le gusta / le duele)
     if (rx) {
@@ -60,6 +62,9 @@ function planificar(escenas, beats, { emocionesValidas = null, gestosValidos = n
     if (!esDato && !esEsc && m.emocion !== 'normal') plano = 'medio';
     if (rx && rx.intensidad === 'alta' && k - ultimoPrimer >= 3 && !esDato && !esEsc) { m.plano = 'primer'; m.ancla_plano = rx.ancla; ultimoPrimer = k; plano = 'primer'; razon.push('primer plano: la reacción importa'); }
     m.encuadre = plano === 'primer' ? 'medio' : plano; // plano de base de la frase; el primer plano entra y sale en la palabra ancla
+    // LADOS: el muñeco ocupa un lado y los gráficos (insignias, la casa) van al otro; el lado cambia cada vez que el muñeco vuelve a ocupar un lado tras otra pieza (mapa, video, dato solo)
+    if (plano !== 'companero') { if (k - ultimoCentrado > 1) ladoActual = ladoActual === 'izq' ? 'der' : 'izq'; m.lado = ladoActual; ultimoCentrado = k; }
+    ultimaFueMuneco = true;
     filas.push(fila(e, frase, rx, razon, plano));
   });
   return { escenas: out, storyboard: filas };
@@ -67,7 +72,7 @@ function planificar(escenas, beats, { emocionesValidas = null, gestosValidos = n
 
 function fila(e, frase, rx, razon, plano) {
   const m = e.muneco, det = e.principal === 'mapa' ? e.mapa.lugar : e.principal === 'cifra' ? `${e.cifra.valor} ${e.cifra.sufijo || ''}` : e.principal === 'lista' ? e.lista.items.map(i => i.texto).join(' · ') : e.principal === 'escenario' ? e.escenario.texto : e.principal === 'clip' ? 'clip real (≤3 s)' : '';
-  return { beat: e.beat, frase, pantalla: e.principal + (det ? ` (${det})` : ''), muneco: m ? { plano: plano ? PLANOS_NOMBRE[plano] : '', emocion: m.emocion, pose: m.pose, gestos: (m.gestos || []).map(g => `${g.id}@${g.ancla}`), primerPlano: m.plano === 'primer' } : null, razon };
+  return { beat: e.beat, frase, pantalla: e.principal + (det ? ` (${det})` : ''), muneco: m ? { plano: (plano ? PLANOS_NOMBRE[plano] : '') + (m.lado ? ` · lado ${m.lado === 'izq' ? 'izquierdo' : 'derecho'}` : ''), emocion: m.emocion, pose: m.pose, gestos: (m.gestos || []).map(g => `${g.id}@${g.ancla}`), primerPlano: m.plano === 'primer' } : null, razon };
 }
 
 function storyboardMarkdown(filas, titulo = 'Storyboard') {

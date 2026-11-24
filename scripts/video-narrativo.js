@@ -54,14 +54,14 @@ function sinNegro(ruta, ss) {
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
-  // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos de cámara, nunca parado)
-  const sb = process.argv.includes('--sin-storyboard') ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS });
-  const escenas = sb.escenas.filter(e => V[e.beat - 1].t0 < hasta);
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
   const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
   const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
+  // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos, lados, nunca parado; video que ilustra cuando el muñeco no aporta)
+  const sb = process.argv.includes('--sin-storyboard') ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS, hayVideo: Boolean(montaje) });
+  const escenas = sb.escenas.filter(e => V[e.beat - 1].t0 < hasta);
   // cabeza y kit (--cabeza): rig-foto (por defecto: muñeco articulado de piezas de foto, assets/foto-rig) | plastilina | fotos (muñeco de foto de una pieza)
   const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), KF = path.join(__dirname, '..', 'assets', 'foto-rig'), modoCab = arg('--cabeza', fs.existsSync(path.join(KF, 'rig.json')) ? 'rig-foto' : 'plastilina');
   const usaPlast = modoCab === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png')), usaRigFoto = modoCab === 'rig-foto' && fs.existsSync(path.join(KF, 'rig.json'));
@@ -74,7 +74,7 @@ function sinNegro(ruta, ss) {
   // REGLA: la protagonista no habla con la voz del narrador, solo reacciona; su boca solo se sincroniza donde el guion la CITA (comillas o beat.cita). --lipsync-total solo para pruebas.
   const citas = ventanasDeCitas(g.beats, palabras, V), voz = process.argv.includes('--lipsync-total') ? vozTotal : vozSoloEnCitas(vozTotal, citas, FPS);
   console.log(citas.length ? `CITAS (la protagonista habla): ${citas.map(c => c.t0.toFixed(1) + '-' + c.t1.toFixed(1) + 's').join(', ')}` : 'Sin citas: la protagonista solo reacciona (no hay sincronía labial).');
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro });
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro, alias: require('../edl/storyboard').REACCIONES.protagonista.alias });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));

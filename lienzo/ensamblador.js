@@ -19,6 +19,7 @@ const SLOTS = {
   escenario: [{ cx: 0.75, cy: 0.30 }, { cx: 0.25, cy: 0.30 }],
   clip: [{ cx: 0.76, cy: 0.40 }, { cx: 0.76, cy: 0.64 }], // a la derecha, como con el muñeco (que entra después del clip)
 };
+const espejar = (p, der) => (der ? { ...p, cx: 1 - p.cx } : p);
 const SLOTS_COMP = [{ cx: 0.84, cy: 0.80 }, { cx: 0.16, cy: 0.80 }]; // con el muñeco acompañante abajo: las insignias van a los lados del muñeco, no sobre el dato
 const SLOTS_VIDEO = [{ cx: 0.22, cy: 0.27 }, { cx: 0.80, cy: 0.27 }]; // con el video de fondo: las insignias flotan en las esquinas de arriba del recuadro
 // Encuadres del muñeco (fracciones del cuadro): cx, base (pies) y alto (de los pies a la coronilla). medio/primer ponen la cabeza arriba y dejan los pies fuera del cuadro.
@@ -27,6 +28,12 @@ const PEGATINA = { baston: { dx: 0.34, dy: 0.40, ancho: 0.40, giro: true }, 'gua
 
 // cfg: { foto (Buffer|ruta de la cabeza), recorte, anclas?, proporcion = 0.30, voz = null, clips = { id: { ruta, ancho, alto, rostro } } }
 // Devuelve { elementos, claves, avisos }. Regla de 3 s: un clip real se muestra como máximo USO_MAX_S seguidos y en total.
+// Un círculo sobre el rostro solo tiene sentido si la cara se ve (rostro grande) y la palabra ancla habla de la protagonista; si no, la toma va sin marca.
+const ANCLAS_SENTIDO = ['corona', 'coronada', 'reina', 'virreina', 'bastonera', 'campeona', 'ganadora', 'ella'];
+function marcaConSentido(info, ancla, alias = []) {
+  const t = tokens(String(ancla || ''))[0]; return Boolean(info && info.rostro && info.rostro.r >= 0.17 && t && (alias.includes(t) || ANCLAS_SENTIDO.includes(t)));
+}
+
 function ensamblar(escenas, beats, V, palabras, cfg) {
   const fin = k => V[k].t1 + 0.4;
   const idxEn = (k, ancla) => { const n = tokens(String(ancla))[0]; for (let i = V[k].desde; i < V[k].hasta; i++) if (tokens(palabras[i].palabra)[0] === n) return i; return V[k].desde; };
@@ -49,29 +56,30 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       const gastado = uso.get(e.clip.id) || 0, dur = Math.min(USO_MAX_S - gastado, fin(k) - t0, USO_MAX_S);
       if (dur < 0.5) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' ya agotó sus ' + USO_MAX_S + ' s de uso; se omite'); continue; }
       uso.set(e.clip.id, gastado + dur); finClip.set(k, t0 + dur);
-      const marcas = [], m = e.clip.marca, cara = m && info.rostro ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
+      const marcas = [], m = e.clip.marca && marcaConSentido(info, e.clip.marca.ancla, cfg.alias) ? e.clip.marca : null, cara = m && info.rostro ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
       if (m && cara) { // círculo rojo a mano sobre el rostro, en la palabra ancla (dentro de la ventana del clip)
         const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
         marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + k }); marca(k, m.ancla);
-      } else if (m) avisos.push('frase ' + (k + 1) + ': sin coordenadas del rostro; el clip va sin círculo');
+      } else if (e.clip.marca) avisos.push('frase ' + (k + 1) + (!info.rostro ? ': sin coordenadas del rostro; el clip va sin círculo' : ': el círculo no tiene sentido (rostro pequeño o la palabra no habla de ella); el clip va sin marca'));
       elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
     }
-    if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
-    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: e.muneco ? 0.33 : M ? 0.52 : 0.56, t0, t1 })); card([t0, t1]); marca(k, e.mapa.ancla); }
-    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.30 : M ? 0.66 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'video') { cubre.push([t0, t1]); } // solo montaje de tomas (lo arma el paso 4b): el muñeco no aporta aquí
+    if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: e.muneco && e.muneco.lado === 'der' ? 0.30 : 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
+    if (e.principal === 'mapa') { const l = LUGARES[e.mapa.lugar]; elementos.push(E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, tPin: tPal(k, e.mapa.ancla), cy: e.muneco ? 0.375 : M ? 0.52 : 0.56, alto: e.muneco ? 0.32 : 0.40, t0, t1 })); card([t0, t1]); marca(k, e.mapa.ancla); }
+    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.66 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
-      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.30 : M ? 0.64 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
+      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.64 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
   }
 
   // 2) el muñeco: un elemento por tramo de frases consecutivas con muñeco
   const conMuneco = [...porBeat.values()].filter(e => e.muneco).map(e => e.beat - 1).sort((a, b) => a - b);
-  const tramos = []; for (const k of conMuneco) { const u = tramos[tramos.length - 1]; if (u && u[u.length - 1] === k - 1 && porBeat.get(k).principal !== 'clip') u.push(k); else tramos.push([k]); } // un clip empieza tramo nuevo: el muñeco entra cuando el clip termina
+  const tramos = []; for (const k of conMuneco) { const u = tramos[tramos.length - 1]; const ld = kk => porBeat.get(kk).muneco.lado, ultimoLado = u && [...u].reverse().map(ld).find(Boolean); if (u && u[u.length - 1] === k - 1 && porBeat.get(k).principal !== 'clip' && !(ld(k) && ultimoLado && ld(k) !== ultimoLado)) u.push(k); else tramos.push([k]); } // un clip empieza tramo nuevo: el muñeco entra cuando el clip termina
   let primeraEntrada = true; // el muñeco cae solo la primera vez; después entra con un fundido (si no, caería en cada frase)
   for (const tr of tramos) {
-    const encuadres = [], primero = porBeat.get(tr[0]), m0 = primero.muneco, poses = [], emociones = [], accesorios = [], pegatinas = [], saltos = [], gestos = [], usados = new Set();
+    const ladoDer = tr.some(kk => porBeat.get(kk).muneco && porBeat.get(kk).muneco.lado === 'der'), encuadres = [], primero = porBeat.get(tr[0]), m0 = primero.muneco, poses = [], emociones = [], accesorios = [], pegatinas = [], saltos = [], gestos = [], usados = new Set();
     for (const k of tr) {
       const m = porBeat.get(k).muneco, ini = V[k].t0;
       if (k !== tr[0]) { poses.push({ t: ini, pieza: nombreDePieza(m.traje, 'reposo') }); emociones.push({ t: ini, e: 'normal' }); }
@@ -80,16 +88,16 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       if (m.accesorio && !usados.has(m.accesorio)) { usados.add(m.accesorio); accesorios.push({ id: m.accesorio, t: tPal(k, m.ancla_accesorio || m.ancla_pose) }); marca(k, m.ancla_accesorio); }
       for (const a of m.saltos || []) saltos.push(tPal(k, a));
       for (const g of [m.gesto, ...(m.gestos || [])].filter(Boolean)) { gestos.push({ id: g.id, t: tPal(k, g.ancla) }); marca(k, g.ancla); } // los gestos del storyboard (varios por frase) además del gesto del director
-      { const pl = ENC[m.encuadre || (porBeat.get(k).principal === 'escenario' ? 'lado' : 'cuerpo')]; encuadres.push({ t: Math.max(ini, k === tr[0] ? ini : ini - 0.05), ...pl });
-        if (m.plano === 'primer') { const tp = Math.max(ini + 0.1, tPal(k, m.ancla_plano) - 0.25); encuadres.push({ t: tp, ...ENC.primer }); encuadres.push({ t: Math.min(fin(k) - 0.2, tp + 2.6), ...pl }); } }
+      { const pl = espejar(ENC[m.encuadre || (porBeat.get(k).principal === 'escenario' ? 'lado' : 'cuerpo')], ladoDer && m.encuadre !== 'companero'); encuadres.push({ t: Math.max(ini, k === tr[0] ? ini : ini - 0.05), ...pl });
+        if (m.plano === 'primer') { const tp = Math.max(ini + 0.1, tPal(k, m.ancla_plano) - 0.25); encuadres.push({ t: tp, ...espejar(ENC.primer, ladoDer) }); encuadres.push({ t: Math.min(fin(k) - 0.2, tp + 2.6), ...pl }); } }
       if (m.pegatina) { // la pegatina (p. ej. el bastón) se va cuando el muñeco cambia de pose en esta misma frase
         const ini = tPal(k, m.pegatina.ancla), cambio = m.pose !== 'reposo' ? tPal(k, m.ancla_pose) : null;
-        pegatinas.push({ id: m.pegatina.id, t0: ini, t1: cambio !== null && cambio > ini + 0.3 ? cambio - 0.05 : fin(k), ...PEGATINA[m.pegatina.id] }); marca(k, m.pegatina.ancla);
+        pegatinas.push({ id: m.pegatina.id, t0: ini, t1: cambio !== null && cambio > ini + 0.3 ? cambio - 0.05 : fin(k), ...PEGATINA[m.pegatina.id], ...(ladoDer ? { dx: -PEGATINA[m.pegatina.id].dx } : {}) }); marca(k, m.pegatina.ancla);
       }
     }
     const lado = primero.principal === 'escenario', sig = tr[tr.length - 1] + 1, t1m = porBeat.has(sig) && porBeat.get(sig).principal === 'clip' ? V[sig].t0 : fin(tr[tr.length - 1]); // antes de un clip el muñeco sale justo cuando empieza el video
     cubre.push([finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1m]);
-    const ini0 = encuadres.length ? encuadres[0] : { cx: lado ? 0.26 : 0.30, base: 0.90, alto: lado ? 0.56 : 0.60 }, comun = { entrada: primeraEntrada ? 'caida' : 'fundido', cx: ini0.cx, base: ini0.base, alto: ini0.alto, encuadres: encuadres.sort((a, b) => a.t - b.t), t0: finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1: t1m, voz: cfg.voz || null,
+    const ini0 = encuadres.length ? encuadres[0] : { cx: lado ? 0.26 : 0.30, base: 0.90, alto: lado ? 0.56 : 0.60 }, comun = { espejo: ladoDer, entrada: primeraEntrada ? 'caida' : 'fundido', cx: ini0.cx, base: ini0.base, alto: ini0.alto, encuadres: encuadres.sort((a, b) => a.t - b.t), t0: finClip.has(tr[0]) ? finClip.get(tr[0]) + 0.1 : V[tr[0]].t0 + 0.1, t1: t1m, voz: cfg.voz || null,
       poses: poses.sort((a, b) => a.t - b.t), emociones: emociones.sort((a, b) => a.t - b.t), accesorios, pegatinas, saltos };
     // kit de plastilina: muñeco ARTICULADO de piezas (titere-rig); kit de fotos: el de recortes de antes
     primeraEntrada = false;
@@ -101,7 +109,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3) extras (insignias, sello) en sus posiciones
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
-    const slots = e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : M && (e.principal === 'cifra' || e.principal === 'lista') ? SLOTS_VIDEO : SLOTS[e.principal] || SLOTS.muneco; let s = 0;
+    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && (e.principal === 'cifra' || e.principal === 'lista')) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
     for (const x of e.extras || []) {
       if (x.tipo === 'insignia') { const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
@@ -117,7 +125,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
     for (let k = 0; k < beats.length; k++) {
       const e = porBeat.get(k); if (!e) continue;
-      let iv = null, dato = false; if ((e.principal === 'cifra' || e.principal === 'lista') && !e.muneco) { iv = [V[k].t0, fin(k)]; dato = true; } else if (e.principal === 'clip' && finClip.has(k)) iv = [V[k].t0, finClip.get(k)];
+      let iv = null, dato = false; if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'video') && !e.muneco) { iv = [V[k].t0, fin(k)]; dato = true; } else if (e.principal === 'clip' && finClip.has(k)) iv = [V[k].t0, finClip.get(k)];
       if (!iv) continue; const u = tramos4[tramos4.length - 1];
       if (u && u.dato && dato && iv[0] <= u.b + 0.2) u.b = Math.max(u.b, iv[1]); else tramos4.push({ a: iv[0], b: iv[1], dato }); // solo se juntan datos seguidos; el tramo de un clip pedido termina cuando entra el muñeco
     }
@@ -134,7 +142,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         }
         const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
         const ss = pedido ? pedido.ss : Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = [];
-        if (pedido && pedido.marca) {
+        if (pedido && pedido.marca && marcaConSentido(info, pedido.marca.ancla, cfg.alias)) {
           const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
           if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
           else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');

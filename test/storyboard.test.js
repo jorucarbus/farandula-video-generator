@@ -44,3 +44,27 @@ test('planificar: primer plano solo en reacciones fuertes y con enfriamiento (no
   assert.ok(out[1].muneco.plano !== 'primer' && out[2].muneco.plano !== 'primer', 'enfriamiento de 3 frases');
   assert.equal(out[3].muneco.plano, 'primer');
 });
+
+test('planificar: si el muñeco no aporta y hay video, la frase va con tomas que ilustren; con video no disponible se queda el muñeco', () => {
+  const beats = [beat('Ella ganó la corona.'), beat('Vive en una casa tranquila.'), beat('Trabaja todos los días.'), beat('Ayer cerró el año con un viaje.')];
+  const escenas = beats.map((b, i) => ({ beat: i + 1, principal: 'muneco', muneco: { traje: 'bastonera', pose: 'reposo', emocion: 'normal' }, extras: [] }));
+  const con = planificar(escenas, beats, { ...opc, hayVideo: true }).escenas, sin = planificar(escenas, beats, { ...opc, hayVideo: false }).escenas;
+  assert.equal(con[0].principal, 'muneco');                         // abre el video: ella reacciona
+  assert.equal(con[1].principal, 'video'); assert.ok(!con[1].muneco);   // sin nada que sentir ni señalar: tomas
+  assert.equal(con[3].principal, 'muneco');                         // cierra el video: vuelve el muñeco
+  assert.ok(sin.every(e => e.principal === 'muneco' && e.muneco), 'sin video disponible el muñeco no se quita');
+});
+
+test('planificar: el lado del muñeco cambia al volver tras otra pieza y los gráficos van al lado contrario', () => {
+  const beats = [beat('Ella ganó la corona.'), beat('Nació en Chone.'), beat('Segunda quedó otra candidata.'), beat('Al final todo terminó bien.')];
+  const escenas = [
+    { beat: 1, principal: 'muneco', muneco: { traje: 'bastonera', pose: 'reposo', emocion: 'normal' }, extras: [] },
+    { beat: 2, principal: 'mapa', mapa: { lugar: 'Chone', ancla: 'Chone' }, extras: [] },
+    { beat: 3, principal: 'muneco', muneco: { traje: 'bastonera', pose: 'reposo', emocion: 'normal' }, extras: [] },
+    { beat: 4, principal: 'muneco', muneco: { traje: 'bastonera', pose: 'reposo', emocion: 'normal' }, extras: [] },
+  ];
+  const out = planificar(escenas, beats, opc).escenas;
+  assert.ok(out[0].muneco.lado && out[2].muneco.lado && out[0].muneco.lado !== out[2].muneco.lado, 'tras el mapa el muñeco cambia de lado');
+  assert.equal(out[3].muneco.lado, out[2].muneco.lado, 'frases seguidas con muñeco mantienen el lado');
+  assert.equal(out[1].muneco.lado, undefined, 'el comentarista del mapa va centrado abajo');
+});

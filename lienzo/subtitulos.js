@@ -23,11 +23,11 @@ function bloques(palabras) {
 function crearSubtitulos({ palabras, claves = new Set(), w, h, estilo }) {
   registrarFuentes(estilo); // sin la fuente registrada, measureText usaría otra y las palabras saldrían pegadas
   const u = Math.min(w, h);
-  const x0 = Math.round(w * 0.137), y0 = Math.round(h * 0.105), tam = Math.round(u * 0.054), interlinea = Math.round(tam * 1.26);
+  const tam = Math.round(u * 0.054), interlinea = Math.round(tam * 1.26), x0 = Math.round(w * 0.137), y0 = Math.round(h * 0.105) - interlinea; // una línea más arriba: nunca choca con lo de abajo (mapas, tarjetas, la cabeza del muñeco)
   const ancho = w * 0.74;
   const fuente = `${tam}px ${estilo.tipografia.texto}`;
   const medidor = require('@napi-rs/canvas').createCanvas(8, 8).getContext('2d'); medidor.font = fuente;
-  const grupos = bloques(palabras).map(idx => {
+  const grupos = bloques(palabras).flatMap(idx => {
     // Reparto en líneas por ancho medido.
     const lineas = []; let linea = []; let x = 0;
     for (const i of idx) {
@@ -36,8 +36,9 @@ function crearSubtitulos({ palabras, claves = new Set(), w, h, estilo }) {
       linea.push({ i, x, ancho: medidor.measureText(palabras[i].palabra).width }); x += wp;
     }
     if (linea.length) lineas.push(linea);
-    const ini = palabras[idx[0]].t0, fin = palabras[idx[idx.length - 1]].t1;
-    return { idx, lineas, t0: ini, t1: fin };
+    // máximo 2 líneas por bloque: si salen 3 o más, el bloque se parte para que el texto no baje a chocar con lo que hay debajo
+    const partes = []; for (let i = 0; i < lineas.length; i += 2) partes.push(lineas.slice(i, i + 2));
+    return partes.map(ls => { const ids = ls.flat().map(c => c.i); return { idx: ids, lineas: ls.map(l => l.map(c => ({ ...c, x: c.x - l[0].x }))), t0: palabras[ids[0]].t0, t1: palabras[ids[ids.length - 1]].t1 }; });
   });
   grupos.forEach(g => { g.aparece = Math.max(0, g.t0 - 0.06); });
   grupos.forEach((g, k) => { g.desaparece = k + 1 < grupos.length ? grupos[k + 1].aparece : g.t1 + 0.4; });

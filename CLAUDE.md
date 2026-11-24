@@ -39,3 +39,10 @@ Este clon (`feat/edl-motor`) es el motor de video narrativo. NUNCA tocar la carp
 - **Planos de cámara:** cuerpo, lado, compañero (abajo), medio y PRIMER PLANO (solo reacciones fuertes, con enfriamiento de 3 frases), con movimiento suave (resortes). El muñeco cae SOLO la primera vez; después entra con fundido.
 - **Emociones fotográficas** (por persona, `assets/foto-rig-<slug>`): feliz, sorpresa, triste, enojo, duda, orgullo, asco, preocupación, amor (`scripts/emociones-generar.js` + `scripts/bocas-elegir.js`). Gestos nuevos: senala_arriba, cabeza, menton, asiente.
 - Para otra persona: `scripts/personas-foto.js` (geometría), generar cabeza (`cabeza-persona-generar.js`), bocas y emociones, `kit-foto-rig.js --persona <slug>`; `--persona` o la carpeta de la biblioteca eligen el muñeco.
+
+### Reglas de composición añadidas (2026-11-24)
+- **El muñeco debe aportar:** una frase con muñeco sin reacción, sin dato que señalar y que no abre ni cierra el video se convierte en principal `video` (tomas reales que ilustren). El muñeco solo se queda si hay algo que sentir/señalar o si no hay video disponible.
+- **Lados:** el muñeco ocupa un lado (cuerpo/medio/primer plano/escenario, `lado: izq|der`, espejado con `espejo`) y las insignias/el escenario van al lado contrario; el lado cambia cada vez que el muñeco vuelve tras otra pieza. El comentarista de los mapas va centrado abajo.
+- **Subtítulos:** una línea más arriba (y0 = 10.5 % − 1 línea) y máximo 2 líneas por bloque; el mapa con acompañante es más corto (alto .32) para no chocar.
+- **Marcas sobre el video:** el círculo rojo solo va si el rostro se ve (r ≥ 0.17) y la palabra ancla habla de la protagonista (alias/corona/reina…); si no, la toma va sin marca (aviso en el log).
+- **Pelo de atrás:** gira exactamente con la cabeza (`peloSigue`); si se desfasa, sobresale como una segunda pieza.

@@ -98,13 +98,13 @@ function mundo() {
 }
 
 // lugar: { lon, lat, nombre }; tPin: segundo ABSOLUTO en que cae el marcador (la palabra del lugar).
-function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, t0, t1 }) {
+function mapa({ pais = 'Ecuador', lugar, tPin, cy = 0.5, alto = 0.40, t0, t1 }) {
   const { paises } = mundo();
   const destino = paises.find(f => f.properties.name === pais);
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
-      const cw = Math.round(w * 0.86), ch = Math.round(h * 0.40), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
+      const cw = Math.round(w * 0.86), ch = Math.round(h * alto), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
       const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) };
       const ajuste = (col, pad) => { const p = geoMercator().fitExtent([[pad, pad], [cw - pad, ch - pad]], col); return { k: p.scale(), t: p.translate() }; };
       const A = ajuste(ampl, cw * 0.06), Z = ajuste({ type: 'FeatureCollection', features: [destino] }, cw * 0.16);
