@@ -2,7 +2,6 @@
 
 Todo se genera a mano en ChatGPT con la suscripción fija. Los prompts están en inglés (los modelos de imagen lo siguen mejor); las instrucciones, en español.
 ChatGPT tiene límites de uso de imágenes por ventana de tiempo (revisa los tuyos). Si se niega a generar el rostro de una persona real, no lo fuerces: avísame y vemos otra vía.
-Todo rostro de persona real, dibujado o fotográfico, pasa por revisión de un abogado ecuatoriano antes de publicar.
 
 ## Qué se genera y cuántas veces
 
