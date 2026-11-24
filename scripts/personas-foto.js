@@ -19,5 +19,14 @@ const PERSONAS = {
     emociones: path.join(KIT, 'personas', 'leidy', 'emociones'), crudoEmociones: path.join(__dirname, '..', 'data-motor', 'kit', 'personas', 'leidy', 'emociones-crudo'),
     emocionesElegidas: { feliz: 'feliz-1', sorpresa: 'sorpresa-1', triste: 'triste-1', enojo: 'enojo-1', duda: 'duda-1', orgullo: 'orgullo-1', asco: 'asco-1', preocupacion: 'preocupacion-1', amor: 'amor-1' },
   },
+  // Experimental: bocas y emociones sacadas de las hojas 3D re-vestidas por Gemini (scripts/hojas-recortar.js); misma cabeza y geometría que 'leidy'
+  leidy3d: {
+    salida: path.join(RAIZ, 'foto-rig-leidy3d'), cabeza: path.join(KIT, 'personas', 'leidy', 'cabeza.png'), bocas: path.join(KIT, 'personas', 'leidy3d', 'bocas'), crudoBocas: path.join(__dirname, '..', 'data-motor', 'kit', 'personas', 'leidy3d', 'bocas-crudo'),
+    elegidas: { Aa: 'Aa-1', Ee: 'Ee-1', Oh: 'Oh-1', Woo: 'Woo-1', M: 'M-1', F: 'F-1', D: 'D-1', S: 'S-1', Uh: 'Uh-1', R: 'R-1' },
+    emociones: path.join(KIT, 'personas', 'leidy3d', 'emociones'), crudoEmociones: path.join(__dirname, '..', 'data-motor', 'kit', 'personas', 'leidy3d', 'emociones-crudo'),
+    emocionesElegidas: { feliz: 'feliz-1', sorpresa: 'sorpresa-1', triste: 'triste-1', enojo: 'enojo-1', duda: 'duda-1', orgullo: 'orgullo-1', asco: 'asco-1', preocupacion: 'preocupacion-1', amor: 'amor-1' },
+    geo: null,
+  },
 };
+PERSONAS.leidy3d.geo = PERSONAS.leidy.geo;
 module.exports = { PERSONAS };
