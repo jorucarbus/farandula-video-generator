@@ -14,7 +14,37 @@ function ruido(semilla = 1) { let a = semilla >>> 0; return () => { a = (a * 166
 function suavizar(s, hz) { const a = 1 - Math.exp(-TAU * hz / SR); let y = 0; for (let i = 0; i < s.length; i++) { y += a * (s[i] - y); s[i] = y; } return s; }
 
 // Cada generador acepta { pitch (razón de tono, 1 = base), variante (0..n-1) }.
+
+// ── Muestras REALES (CC0, Freesound vía Openverse; assets/sfx/<sonido>-N.wav, ver MANIFEST.json): si existen, reemplazan a la síntesis; si no, queda el sintético de respaldo.
+// SFX_SINTETICOS=1 fuerza el sintético. El tono (pitch) remuestrea la muestra con interpolación lineal.
+const DIR_SFX = require('path').join(__dirname, '..', 'assets', 'sfx');
+const GANANCIA_REAL = { pop: 0, clic: -1, tick: 0, golpe: 0, trazo: -6, ding: 0, whoosh: 3 }; // nivel base de cada muestra real respecto al sintético (dB)
+const _muestras = {};
+function leerWav(ruta) { // WAV PCM 16 bits mono → Float32Array
+  const b = require('fs').readFileSync(ruta); let p = 12;
+  while (p + 8 <= b.length) { const id = b.toString('ascii', p, p + 4), n = b.readUInt32LE(p + 4); if (id === 'data') { const m = Math.floor(Math.min(n, b.length - p - 8) / 2), out = new Float32Array(m); for (let i = 0; i < m; i++) out[i] = b.readInt16LE(p + 8 + i * 2) / 32768; return out; } p += 8 + n + (n % 2); }
+  return new Float32Array(0);
+}
+function muestrasDe(sonido) {
+  if (process.env.SFX_SINTETICOS) return [];
+  if (_muestras[sonido]) return _muestras[sonido];
+  const fs = require('fs'), lista = []; if (fs.existsSync(DIR_SFX)) for (let i = 1; i < 10; i++) { const f = require('path').join(DIR_SFX, `${sonido}-${i}.wav`); if (fs.existsSync(f)) lista.push(leerWav(f)); else break; }
+  return (_muestras[sonido] = lista.filter(x => x.length > 0));
+}
+function realDe(sonido, { pitch = 1, variante = 0 } = {}) {
+  const m = muestrasDe(sonido); if (!m.length) return null;
+  const src = m[variante % m.length], n = Math.floor(src.length / pitch), out = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = i * pitch, i0 = Math.floor(x), fr = x - i0; out[i] = src[i0] * (1 - fr) + (src[i0 + 1] ?? 0) * fr; }
+  return out;
+}
+
 const SONIDOS = {
+  whoosh({ pitch = 1 } = {}) { // respaldo sintético: ruido filtrado con barrido de brillo
+    const dur = 0.42, n = Math.round(dur * SR), s = new Float32Array(n), r = ruido(7); let y = 0;
+    for (let i = 0; i < n; i++) { const t = i / SR, x = t / dur, fc = (300 + 3200 * Math.sin(Math.PI * x)) * pitch, a = 1 - Math.exp(-TAU * fc / SR); y += a * (r() - y); s[i] = y * Math.sin(Math.PI * x) * 1.6; }
+    return s;
+  },
+
   // Aparece un elemento: barrido ascendente corto y redondo (3 voces).
   pop({ pitch = 1, variante = 0 } = {}) {
     const v = variante % 3, dur = [0.16, 0.13, 0.10][v], f0 = [420, 360, 520][v] * pitch, f1 = [1120, 880, 1500][v] * pitch, dec = [28, 34, 45][v], sw = [0.06, 0.05, 0.035][v];
@@ -66,15 +96,15 @@ function mezclar(eventos, duracion, { ganancias = {}, maestro = 0 } = {}) {
   const total = new Float32Array(Math.ceil(duracion * SR));
   const cache = new Map(), azar = ruido(12345), contador = {}, ultimo = {};
   for (const e of [...eventos].sort((a, b) => a.t - b.t)) {
-    const f = SONIDOS[e.sonido]; if (!f) continue;
+    const f = SONIDOS[e.sonido]; if (!f && !muestrasDe(e.sonido).length) continue;
     if (e.sonido !== 'tick' && ultimo[e.sonido] !== undefined && e.t - ultimo[e.sonido] < SEPARACION_MIN) continue;
     ultimo[e.sonido] = e.t;
     const k = contador[e.sonido] = (contador[e.sonido] ?? -1) + 1;
-    const variante = (k + e.sonido.length) % (VARIANTES[e.sonido] || 1);
+    const nReal = muestrasDe(e.sonido).length, variante = (k + e.sonido.length) % (nReal || VARIANTES[e.sonido] || 1);
     const pitch = (e.pitch || 1) * (1 + azar() * 0.06), jitterDb = azar() * 1.5; // ±6 % de tono, ±1.5 dB
     const clave = `${e.sonido}|${variante}|${pitch.toFixed(3)}`;
-    const buf = cache.get(clave) || (cache.set(clave, f({ pitch, variante })), cache.get(clave));
-    const g = dbALin((ganancias[e.sonido] ?? 0) + (e.db || 0) + jitterDb + maestro), ini = Math.round(e.t * SR);
+    const buf = cache.get(clave) || (cache.set(clave, (nReal ? realDe(e.sonido, { pitch, variante }) : null) || f({ pitch, variante })), cache.get(clave));
+    const g = dbALin((ganancias[e.sonido] ?? 0) + (nReal ? (GANANCIA_REAL[e.sonido] ?? -6) : 0) + (e.db || 0) + jitterDb + maestro), ini = Math.round(e.t * SR);
     for (let i = 0; i < buf.length && ini + i < total.length; i++) if (ini + i >= 0) total[ini + i] += buf[i] * g;
   }
   let pico = 0; for (let i = 0; i < total.length; i++) pico = Math.max(pico, Math.abs(total[i]));
@@ -100,4 +130,4 @@ function ticksDeConteo(valor, t0, dur, ease, max = 10) {
   return elegidos;
 }
 
-module.exports = { SONIDOS, VARIANTES, mezclar, escribirWav, ticksDeConteo, SR };
+module.exports = { muestrasDe, SONIDOS, VARIANTES, mezclar, escribirWav, ticksDeConteo, SR };

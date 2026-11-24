@@ -229,7 +229,7 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
     return memo.get(arch);
   };
   return {
-    t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => ({ t: c.t0, sonido: 'clic', db: -10 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
+    t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => (c.trans === 'fundido' ? { t: c.t0, sonido: 'clic', db: -10 } : { t: c.t0, sonido: 'whoosh', db: -4 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
     async preparar({ w, h, fps }) {
       fpsM = fps; WW = Math.round(w * ancho); HH = Math.round(WW * 16 / 9); dir = fs.mkdtempSync(path.join(os.tmpdir(), 'montaje-'));
       const ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static');

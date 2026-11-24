@@ -1,0 +1,173 @@
+{
+ "descripcion": "Efectos de sonido CC0 (Freesound vía Openverse). Licencia CC0 1.0: sin atribución obligatoria; se guarda autor y origen por trazabilidad.",
+ "archivos": [
+  {
+   "archivo": "pop-1.wav",
+   "sonido": "pop",
+   "titulo": "Pop 2",
+   "autor": "greenvwbeetle",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/greenvwbeetle/sounds/244654",
+   "descarga": "https://cdn.freesound.org/previews/244/244654_3624044-hq.mp3",
+   "duracion_original_s": 0.14,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "pop-2.wav",
+   "sonido": "pop",
+   "titulo": "Pop 5",
+   "autor": "greenvwbeetle",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/greenvwbeetle/sounds/244657",
+   "descarga": "https://cdn.freesound.org/previews/244/244657_3624044-hq.mp3",
+   "duracion_original_s": 0.13,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "pop-3.wav",
+   "sonido": "pop",
+   "titulo": "Pop 01.wav",
+   "autor": "MATRIXXX_",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/MATRIXXX_/sounds/506546",
+   "descarga": "https://cdn.freesound.org/previews/506/506546_6142149-hq.mp3",
+   "duracion_original_s": 0.1,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "clic-1.wav",
+   "sonido": "clic",
+   "titulo": "SFX UI Button Click",
+   "autor": "suntemple",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/suntemple/sounds/253168",
+   "descarga": "https://cdn.freesound.org/previews/253/253168_4404552-hq.mp3",
+   "duracion_original_s": 0.16,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "clic-2.wav",
+   "sonido": "clic",
+   "titulo": "UI Button Click",
+   "autor": "benzix2",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/benzix2/sounds/467951",
+   "descarga": "https://cdn.freesound.org/previews/467/467951_6769414-hq.mp3",
+   "duracion_original_s": 0.12,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "tick-1.wav",
+   "sonido": "tick",
+   "titulo": "Click Tick.wav",
+   "autor": "malle99",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/malle99/sounds/384187",
+   "descarga": "https://cdn.freesound.org/previews/384/384187_6712901-hq.mp3",
+   "duracion_original_s": 0.15,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "tick-2.wav",
+   "sonido": "tick",
+   "titulo": "Metal tick 1",
+   "autor": "kubawolanin",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/kubawolanin/sounds/185611",
+   "descarga": "https://cdn.freesound.org/previews/185/185611_349289-hq.mp3",
+   "duracion_original_s": 0.15,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "golpe-1.wav",
+   "sonido": "golpe",
+   "titulo": "Thud3.wav",
+   "autor": "BMacZero",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/BMacZero/sounds/96138",
+   "descarga": "https://cdn.freesound.org/previews/96/96138_1554918-hq.mp3",
+   "duracion_original_s": 0.42,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "golpe-2.wav",
+   "sonido": "golpe",
+   "titulo": "Thud2.wav",
+   "autor": "BMacZero",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/BMacZero/sounds/96137",
+   "descarga": "https://cdn.freesound.org/previews/96/96137_1554918-hq.mp3",
+   "duracion_original_s": 0.58,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "trazo-1.wav",
+   "sonido": "trazo",
+   "titulo": "marker-whiteboard-short05",
+   "autor": "newagesoup",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/newagesoup/sounds/335953",
+   "descarga": "https://cdn.freesound.org/previews/335/335953_4067257-hq.mp3",
+   "duracion_original_s": 0.74,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "ding-1.wav",
+   "sonido": "ding",
+   "titulo": "sqeeeek_bell_ting1.wav",
+   "autor": "sqeeeek",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/sqeeeek/sounds/237106",
+   "descarga": "https://cdn.freesound.org/previews/237/237106_4277312-hq.mp3",
+   "duracion_original_s": 0.35,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "ding-2.wav",
+   "sonido": "ding",
+   "titulo": "ding2.wav",
+   "autor": "MashedTatoes2",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/MashedTatoes2/sounds/515643",
+   "descarga": "https://cdn.freesound.org/previews/515/515643_10246545-hq.mp3",
+   "duracion_original_s": 0.35,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "whoosh-1.wav",
+   "sonido": "whoosh",
+   "titulo": "Swosh swoosh whoosh air sound, free, high quality",
+   "autor": "qubodup",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/qubodup/sounds/60026",
+   "descarga": "https://cdn.freesound.org/previews/60/60026_71257-hq.mp3",
+   "duracion_original_s": 0.49,
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "whoosh-2.wav",
+   "sonido": "whoosh",
+   "titulo": "Swipe Whoosh",
+   "autor": "qubodup",
+   "licencia": "cc0",
+   "licencia_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "origen": "https://freesound.org/people/qubodup/sounds/60007",
+   "descarga": "https://cdn.freesound.org/previews/60/60007_71257-hq.mp3",
+   "duracion_original_s": 0.45,
+   "descargado": "2026-11-24"
+  }
+ ]
+}

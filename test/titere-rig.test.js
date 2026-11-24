@@ -68,3 +68,12 @@ test('citas: la protagonista solo habla donde el guion la cita (comillas o cita:
   assert.equal(voz.visemas[0], 'N'); assert.equal(voz.visemas[2], 'Aa'); assert.equal(voz.visemas[6], 'N'); assert.equal(voz.abertura[6], 0);
   assert.equal(vozSoloEnCitas({ fps: 1, abertura: new Float32Array(3), visemas: ['Aa', 'Aa', 'Aa'] }, [], 1), null);   // sin citas: nunca habla
 });
+
+// ── sonidos reales (muestras CC0 en assets/sfx) ──
+test('sonidos: con muestras reales la mezcla usa los archivos de assets/sfx y no recorta; sin ellas cae al sintético', () => {
+  const S = require('../lienzo/sonidos');
+  assert.ok(S.muestrasDe('pop').length >= 1 && S.muestrasDe('whoosh').length >= 1, 'hay muestras reales de pop y whoosh');
+  const ev = [{ t: 0.1, sonido: 'pop' }, { t: 0.6, sonido: 'whoosh' }, { t: 1.2, sonido: 'golpe' }];
+  const m = S.mezclar(ev, 2, {}); let pico = 0; for (const v of m) pico = Math.max(pico, Math.abs(v));
+  assert.ok(pico > 0.02 && pico <= 0.95, 'suena y nunca recorta');
+});
