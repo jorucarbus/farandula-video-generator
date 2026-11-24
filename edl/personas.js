@@ -58,8 +58,14 @@ async function fotoDe(persona) {
 // 3) dónde está el rostro y hacia dónde mira (sin identificar)
 async function analizarFoto(ruta, { llamar = null } = {}) {
   const gemini = require('../gemini'), partes = await gemini.parteMultimodal('imagen', ruta);
-  llamar = llamar || (() => gemini.llamarJSON('Analiza esta foto SIN identificar a nadie. Responde SOLO JSON: {"una_persona":true|false,"rostro":{"cx":0-1,"cy":0-1,"r":0-1},"mira":"izquierda"|"derecha"|"frente","nitida":true|false}. cx, cy = centro del rostro y r = radio de la cabeza, relativos al ANCHO de la imagen; "mira" = hacia dónde mira la persona vista desde quien mira la foto (si de frente, "frente").', [...partes, { text: 'Analiza la foto.' }], gemini.TAREAS.etiquetaClip));
-  return llamar();
+  // El rectángulo del rostro se pide en el formato nativo de detección de Gemini (box_2d = [ymin, xmin, ymax, xmax] en 0-1000), que es mucho más preciso que pedir centro y radio.
+  llamar = llamar || (() => gemini.llamarJSON('Detecta el rostro de la persona principal de esta foto SIN identificar a nadie. Responde SOLO JSON: {"una_persona":true|false,"box_2d":[ymin,xmin,ymax,xmax],"mira":"izquierda"|"derecha"|"frente","nitida":true|false}. box_2d = rectángulo AJUSTADO al rostro (frente a barbilla, de oreja a oreja; sin pelo largo ni hombros) en coordenadas 0-1000 sobre la imagen completa. "mira" = hacia dónde mira la persona vista desde quien mira la foto (de frente = "frente").', [...partes, { text: 'Detecta el rostro.' }], gemini.TAREAS.etiquetaClip));
+  const r = await llamar();
+  if (r && Array.isArray(r.box_2d) && r.box_2d.length === 4) { // → rostro { cx, cy, r } relativos al ancho (r = mitad del lado mayor del rectángulo), con el aspecto real de la imagen
+    const img = await require('@napi-rs/canvas').loadImage(require('fs').readFileSync(ruta)), [y0, x0, y1, x1] = r.box_2d.map(v => Math.max(0, Math.min(1000, Number(v)))), W = img.width, H = img.height;
+    r.rostro = { cx: ((x0 + x1) / 2000), cy: ((y0 + y1) / 2000), r: Math.max((x1 - x0) / 1000 * W, (y1 - y0) / 1000 * H) / 2 / W };
+  }
+  return r;
 }
 
 // 4) círculo: recorte cuadrado sobre el rostro (≈ 2,4 veces su radio), espejado si hace falta; el lado de pantalla se elige para que mire hacia adentro
@@ -67,7 +73,8 @@ async function prepararCirculo(ruta, an, { lado = null, salida }) {
   const img = await loadImage(fs.readFileSync(ruta)), W = img.width, H = img.height, f = an && an.rostro ? an.rostro : { cx: 0.5, cy: 0.4, r: 0.18 };
   const lad = lado || (an && an.mira === 'derecha' ? 'izq' : an && an.mira === 'izquierda' ? 'der' : 'izq'); // mira a la derecha → círculo a la izquierda (mira hacia el centro)
   const espejar = Boolean(an && ((lad === 'izq' && an.mira === 'izquierda') || (lad === 'der' && an.mira === 'derecha')));
-  const px = Math.min(W, H, f.r * W * 2.4), X0 = Math.max(0, Math.min(W - px, f.cx * W - px / 2)), Y0 = Math.max(0, Math.min(H - px, f.cy * H - px * 0.5));
+  // lado = 3 veces el radio del rostro (la cabeza entera con algo de aire); centrado EN el rostro (el círculo no corta la cara), sin salirse de la foto
+  const px = Math.min(W, H, f.r * W * 3.0), X0 = Math.max(0, Math.min(W - px, f.cx * W - px / 2)), Y0 = Math.max(0, Math.min(H - px, f.cy * H - px / 2));
   const c = createCanvas(512, 512), x = c.getContext('2d');
   x.imageSmoothingQuality = 'high';
   if (espejar) { x.translate(512, 0); x.scale(-1, 1); }

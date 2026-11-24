@@ -67,12 +67,12 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: e.muneco && e.muneco.lado === 'der' ? 0.30 : 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
     if (e.principal === 'mapa') { // sin muñeco y con tomas de fondo, el mapa se suma en la parte baja de la tarjeta del video (el video sigue debajo)
       const l = e.mapa.lugar ? LUGARES[e.mapa.lugar] : null; if (e.mapa.lugar ? !l : !PAISES[e.mapa.pais]) throw new Error(`mapa: lugar o país fuera del catálogo (${e.mapa.lugar || e.mapa.pais})`);
-      const base = { cy: e.muneco ? 0.375 : M ? 0.63 : 0.56, alto: e.muneco ? 0.32 : M ? 0.33 : 0.40, tPin: tPal(k, e.mapa.ancla), t0, t1 };
+      const base = { cy: e.muneco ? 0.375 : M ? 0.79 : 0.56, alto: e.muneco ? 0.32 : M ? 0.30 : 0.40, tPin: tPal(k, e.mapa.ancla), t0, t1 };
       elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0, t1]); marca(k, e.mapa.ancla); }
-    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.66 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.80 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
-      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.64 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
+      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.79 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
   }
