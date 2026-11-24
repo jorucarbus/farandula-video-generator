@@ -12,6 +12,8 @@ const { elegirClips, dimensiones, RAIZ } = require('../edl/biblioteca');
 const { crearSubtitulos } = require('../lienzo/subtitulos');
 const { ensamblar } = require('../lienzo/ensamblador');
 const { renderizar } = require('../lienzo/render');
+const { envolventeDeVoz } = require('../lienzo/voz');
+const { visemasDesdePalabras } = require('../lienzo/titere-rig');
 
 const DM = path.join(__dirname, '..', 'data-motor'), KIT = path.join(__dirname, '..', 'assets', 'kit');
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -49,11 +51,15 @@ const carpeta = arg('--carpeta', 'Leidy_Alvarez');
   const lista = etiquetas ? Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id])).sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || b.rostro.r - a.rostro.r).map(t => t.id) : [];
   const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
-  // cabeza y kit: plastilina (cabeza SIN cara, cuerpos sin cabeza, expresiones modeladas) por defecto; --cabeza fotos usa el kit de fotos con la cabeza ficticia
-  const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), usaPlast = arg('--cabeza', 'plastilina') === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png'));
-  const cab = usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
+  // cabeza y kit (--cabeza): rig-foto (por defecto: muñeco articulado de piezas de foto, assets/foto-rig) | plastilina | fotos (muñeco de foto de una pieza)
+  const KP = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig'), KF = path.join(__dirname, '..', 'assets', 'foto-rig'), modoCab = arg('--cabeza', fs.existsSync(path.join(KF, 'rig.json')) ? 'rig-foto' : 'plastilina');
+  const usaPlast = modoCab === 'plastilina' && fs.existsSync(path.join(KP, 'cabeza.png')), usaRigFoto = modoCab === 'rig-foto' && fs.existsSync(path.join(KF, 'rig.json'));
+  const cab = usaRigFoto ? { kit: 'rig-foto' } // muñeco articulado de piezas de FOTO (assets/foto-rig): manos de piel, bocas fotográficas por visema
+    : usaPlast ? { kit: 'plastilina' } // muñeco articulado de piezas (assets/kit-plastilina/rig)
     : { foto: fs.readFileSync(path.join(KIT, 'cabeza-relleno-mujer.png')), recorte: { cx: 0.5, cy: 0.345, rx: 0.353, ry: 0.28 } };
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje });
+  // voz del muñeco: abertura/energía del audio y VISEMAS sacados del texto y los tiempos de cada palabra (sincronía labial)
+  const FPS = 30, env = await envolventeDeVoz(AUDIO, { fps: FPS, duracion: hasta }), visemas = visemasDesdePalabras(palabras.map(p => ({ texto: p.palabra, t0: p.t0, t1: p.t1 })), FPS, Math.ceil(hasta * FPS) + 1), voz = { ...env, visemas };
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));

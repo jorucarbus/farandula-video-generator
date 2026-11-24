@@ -7,7 +7,7 @@ const path = require('path');
 const { loadImage } = require('@napi-rs/canvas');
 const { lerp, acotar, easeOutBack } = require('../overlay/animacion');
 const B = require('./base');
-const { Resorte, salto, caida, dibujarExpresion, piezaKit, ACCESORIOS } = require('./recortes');
+const { Resorte, salto, caida, dibujarExpresion, piezaKit, ACCESORIOS, parpadea } = require('./recortes');
 
 const RIG = path.join(__dirname, '..', 'assets', 'kit-plastilina', 'rig');
 const GRAD = Math.PI / 180;
@@ -52,6 +52,13 @@ function visemasDesdePalabras(palabras, fps = 30, nCuadros = 0) {
     seq.forEach((v, k) => { const a = Math.floor((p.t0 + k * paso) * fps), b = Math.max(a + 1, Math.floor((p.t0 + (k + 1) * paso) * fps)); for (let f = a; f < b && f < total; f++) if (f >= 0) out[f] = v; });
   }
   return out;
+}
+// Parpadeo de foto: un párpado del tono de la piel que tapa el ojo (borde difuminado) y una línea fina de pestañas; ctx ya está en el centro de la caja de la cara k.
+function parpadeoFoto(ctx, k, tAbs, piel) {
+  if (!parpadea(tAbs, 0.9)) return; const dx = k.w * ANCLAS_FOTO.ojoDx, oy = k.h * ANCLAS_FOTO.ojoY, R = k.w * ANCLAS_FOTO.ojoR, tono = Array.isArray(piel) ? piel : [piel, piel];
+  [-1, 1].forEach((s, n) => { ctx.save(); ctx.translate(s * dx, oy); const g = ctx.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 2.0); g.addColorStop(0, tono[n]); g.addColorStop(0.45, tono[n]); g.addColorStop(1, tono[n].replace('rgb(', 'rgba(').replace(')', ',0)'));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -R * 0.1, R * 2.0, R * 1.25, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(40,24,20,0.85)'; ctx.lineWidth = Math.max(1.2, k.w * 0.011); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-R * 1.25, R * 0.08); ctx.quadraticCurveTo(0, R * 0.5, R * 1.25, R * 0.08); ctx.stroke(); ctx.restore(); });
 }
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
@@ -101,7 +108,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
   const nombrePose = p => (/celebrar/.test(p) ? 'celebrar' : /senalar/.test(p) ? 'senalar' : 'reposo');
   const lineaPoses = [{ t: t0, pose: 'reposo' }, ...poses.map(p => ({ t: p.t, pose: nombrePose(p.pieza) }))].sort((a, b) => a.t - b.t);
   const lista = [...emociones].sort((a, b) => a.t - b.t), gs = [...gestos].sort((a, b) => a.t - b.t);
-  let cabCara = null, img = {}, imgs = {}, piel = 'rgb(230,190,165)', estado = null;
+  let pielP = null, cabCara = null, img = {}, imgs = {}, piel = 'rgb(230,190,165)', estado = null;
   const eventos = [{ t: t0 + 0.5, sonido: 'golpe' }, ...poses.map(p => ({ t: p.t, sonido: 'clic' })), ...saltos.map(t => ({ t, sonido: 'clic', db: -3 })), ...gs.map(g => ({ t: g.t, sonido: 'pop', db: -6 })),
     ...accesorios.map(a => ({ t: a.t + 0.45, sonido: 'ding' })), ...pegatinas.map(p => ({ t: p.t0, sonido: 'pop' })), ...lista.filter(e => e.t > t0).map(e => ({ t: e.t, sonido: 'trazo', db: -5 }))];
   const nuevoEstado = () => ({ ult: null, j: {}, pelo: new Resorte(60, 6), cab: new Resorte(140, 12), sw: new Resorte(90, 10), subir: new Resorte(120, 12), pegs: pegatinas.map(() => ({ x: new Resorte(90, 9), y: new Resorte(90, 9) })) });
@@ -119,6 +126,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
         cc.getContext('2d').drawImage(im, cw / 2 - k.cx, chh / 2 - k.cy); cabCara = cc;
         const muestra = (x0, y0) => { const d = im.getContext ? null : null; const t = require('@napi-rs/canvas').createCanvas(6, 6), tx = t.getContext('2d'); tx.drawImage(im, x0, y0, 6, 6, 0, 0, 6, 6); const dd = tx.getImageData(0, 0, 6, 6).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < dd.length; i += 4) if (dd[i + 3] > 200) { r += dd[i]; g += dd[i + 1]; b += dd[i + 2]; n++; } return n ? `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})` : 'rgb(230,190,165)'; };
         piel = [muestra(k.cx - k.w * 0.3, k.cy + k.h * 0.05), muestra(k.cx + k.w * 0.25, k.cy + k.h * 0.05)];
+        { const a = muestra(k.cx - k.w * 0.17, k.cy + k.h * 0.13).match(/\d+/g).map(Number), b = muestra(k.cx + k.w * 0.17, k.cy + k.h * 0.13).match(/\d+/g).map(Number); pielP = `rgb(${Math.round((a[0] + b[0]) / 2)},${Math.round((a[1] + b[1]) / 2)},${Math.round((a[2] + b[2]) / 2)})`; } // tono de los párpados: media de las mejillas bajo los ojos
       } else if (!R.sinExpr) { const c = img.cabeza, cv = require('@napi-rs/canvas').createCanvas(8, 8), x = cv.getContext('2d'); x.drawImage(c, CARA.cx + CARA.w * 0.3, CARA.cy + CARA.h * 0.1, 8, 8, 0, 0, 8, 8);
       const d = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; } if (n) piel = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`; }
     },
@@ -193,7 +201,8 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       if (R.bocasFoto && emo.e === 'normal') { // boca FOTOGRÁFICA según lo que se dice (visema); en silencio queda la boca de la foto
         const vz = visemaAhora(voz, ap, tAbs), b = R.bocasFoto; ctx.restore(); if (vz && img['boca-' + vz]) ctx.drawImage(img['boca-' + vz], b.x - im.width * R.cabeza.px, b.y - im.height * R.cabeza.py); ctx.save();
       }
-      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap: R.bocasFoto && emo.e === 'normal' ? 0 : ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
+      if (R.caraFoto) { const k = R.caraFoto; ctx.restore(); ctx.save(); ctx.translate(k.cx - im.width * R.cabeza.px, k.cy - im.height * R.cabeza.py); if (emo.e === 'normal' && R.bocasFoto) parpadeoFoto(ctx, k, tAbs, pielP || piel); // con la boca fotográfica el parpadeo también es de foto (párpado de piel + línea de pestañas)
+        else dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: k.w, h: k.h, piel, anclas: ANCLAS_FOTO, ap: R.bocasFoto && emo.e === 'normal' ? 0 : ap, tAbs, fase: 0.9, cab: cabCara, escala: escalaExpr * 0.8, limpia: false }); }
       else if (!R.sinExpr) dibujarExpresion(ctx, { emocion: emo.e, t: tAbs - emo.t, w: CARA.w, h: CARA.h, piel, anclas: A, ap, tAbs, fase: 0.9, cab: null, escala: escalaExpr, limpia: true }); ctx.restore();
       for (const a of accesorios) { // el accesorio cae sobre la cabeza y se queda pegado
         const ac = ACCESORIOS[a.id], ia = imgs[ac.archivo], tt = tAbs - a.t; if (tt < 0) continue;

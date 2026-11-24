@@ -45,3 +45,13 @@ test('titereRig dibuja un cuadro con cada traje y cada pose sin errores y deja p
     assert.ok(opacos > 540 * 960 * 0.1, `${traje}/${pose}: el muñeco ocupa el cuadro (${opacos} px)`);
   }
 });
+
+test('visemasDesdePalabras: vocales y consonantes del español a lo largo de la palabra, y boca cerrada entre palabras', () => {
+  const { visemasDesdePalabras } = require('../lienzo/titere-rig');
+  const v = visemasDesdePalabras([{ texto: 'Hola', t0: 0, t1: 0.4 }, { texto: 'mamá', t0: 0.6, t1: 1.0 }], 10, 11);
+  assert.equal(v.length, 11);
+  assert.deepEqual(v.slice(0, 4), ['Oh', 'D', 'Aa', 'Aa']);   // h muda → o, l, a
+  assert.equal(v[4], 'N'); assert.equal(v[5], 'N');           // pausa entre palabras
+  assert.deepEqual(v.slice(6, 10), ['M', 'Aa', 'M', 'Aa']);   // m a m a
+  assert.ok(v.every(x => ['N', 'Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh', 'R'].includes(x)));
+});
