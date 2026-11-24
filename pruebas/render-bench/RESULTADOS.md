@@ -24,3 +24,19 @@ blender -b -P bench_blender.py -- --engine eevee --stride 1 --out out_eevee
 blender -b -P bench_blender.py -- --engine cycles --stride 12 --samples 64 --out out_cycles
 npm install && node bench_three.js --gpu on --out out_three
 ```
+
+## Segunda prueba: maniquí con esqueleto (glTF), 12 clones, fondo transparente
+Maniquí MPFB (CC0) sin descargas: `herramientas/blender/maniqui_caminata.py` crea cuerpo + rig `game_engine` (53 huesos), alisa la cabeza y exporta GLB con un ciclo de caminata de 24 cuadros. `bench_three_gltf.js` lo carga en three.js (GLTFLoader + SkeletonUtils.clone + AnimationMixer).
+
+| Medida (RTX 3070, 1080x1920, 12 maniquíes de 53 huesos con sombras) | Resultado |
+|---|---|
+| Carga de página + 2 GLB de 1,4 MB | 0,53 s |
+| Render por cuadro | 2 ms |
+| Captura PNG con canal alfa | 24 ms |
+| Captura JPEG | 16 ms |
+
+**Lo que sí queda comprobado:** three.js carga glTF con esqueleto, anima 12 clones desfasados, proyecta sombras sobre un suelo invisible (`ShadowMaterial`) y entrega PNG con transparencia a ~24 ms por cuadro. El renderizado no es el cuello de botella.
+
+**Lo que NO salió bien (problema del asset, no de three.js):** el maniquí que generé a mano con MPFB tiene la malla deformada con la caminata (piernas fundidas como falda, brazos largos) y la cara alisada aún deja ver nariz y cuencas, así que no es "sin rostro". No logré arreglarlo con poses por direcciones ni calibrando ejes. Un asset ya riggeado y animado de verdad (Mixamo, Quaternius, Kenney) probablemente evita esto, pero requiere descargarlo (permiso del usuario, y verificar su licencia).
+
+**Alternativa sin assets:** construir el maniquí en código con piezas articuladas (torso ovoide, cabeza esférica sin rasgos, cápsulas en brazos y piernas), como el héroe de la primera prueba, con una biblioteca de animaciones procedurales (caminar, aplaudir, señalar, caer). Estilo arcilla/juguete, cero riesgo de licencias, el género se distingue por silueta (cadera/hombros/cabello) y cuesta pocos tokens.

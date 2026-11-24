@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+const Q = new URLSearchParams(location.search), NCLONES = Number(Q.get('n') || 12), W = 1080, H = 1920;
+const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, premultipliedAlpha: true });
+R.setPixelRatio(1); R.setSize(W, H); R.setClearColor(0x000000, 0); R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(R.domElement);
+const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(40, W / H, 0.1, 100); cam.position.set(0, 1.5, 9); cam.lookAt(0, 0.95, 0);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc4ae, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(4, 8, 6); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8, near: 1, far: 30 }); sun.shadow.bias = -0.0005; scene.add(sun);
+// suelo que solo recibe sombra (transparente salvo la sombra): útil para componer con fondo 2D
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({ opacity: 0.25 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const loader = new GLTFLoader(), [gf, gm] = await Promise.all(['/assets/maniqui_f.glb', '/assets/maniqui_m.glb'].map(u => loader.loadAsync(u)));
+const PAL = ['#C8553D', '#F0B429', '#3D7EAA', '#6B8F71', '#8E5572', '#E8A87C'], mixers = [], actores = [];
+for (let i = 0; i < NCLONES; i++) {
+  const src = i % 2 ? gm : gf, o = SkeletonUtils.clone(src.scene);
+  o.traverse(n => { if (n.isMesh) { n.castShadow = true; n.material = n.material.clone(); n.material.color.set(PAL[i % PAL.length]); n.frustumCulled = false; } });
+  const col = i % 4, fila = Math.floor(i / 4); o.position.set((col - 1.5) * 1.5, 0, -fila * 1.8); scene.add(o);
+  const mx = new THREE.AnimationMixer(o), act = mx.clipAction(src.animations[0]); act.play(); act.time = (i * 0.37) % act.getClip().duration; mixers.push(mx); actores.push(o);
+}
+window.info = { clips: gf.animations.map(a => a.name + ' ' + a.duration.toFixed(2) + 's'), bones: (() => { let b = 0; gf.scene.traverse(n => n.isBone && b++); return b; })() };
+window.renderFrame = f => { mixers.forEach(m => m.setTime(f / 24 + 0.0)); const t0 = performance.now(); R.render(scene, cam); const gl = R.getContext(), px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return performance.now() - t0; };
+window.png = () => R.domElement.toDataURL('image/png'); window.jpeg = () => R.domElement.toDataURL('image/jpeg', 0.92);
+const dbg = R.getContext().getExtension('WEBGL_debug_renderer_info'); window.gpu = dbg ? R.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '?'; window.ready = true;
+</script></body></html>
