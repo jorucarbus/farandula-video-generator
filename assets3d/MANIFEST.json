@@ -1,0 +1,105 @@
+{
+ "descripcion": "Assets 3D descargados con permiso del usuario. Ver catálogo en docs/biblioteca-3d.",
+ "archivos": [
+  {
+   "archivo": "hdri/brown_photostudio_02_2k.hdr",
+   "bytes": 6492863,
+   "sha256": "153ca0cb899575c00f5b23065958d250a0f73e8789c8cf5957ccea313baf2bb6",
+   "md5_verificado": true,
+   "fuente": "https://polyhaven.com/a/brown_photostudio_02",
+   "licencia_leida": "CC0 (polyhaven.com/license: 'Our assets are all licensed as CC0'; atribucion no obligatoria)",
+   "nota": "",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "hdri/cyclorama_hard_light_2k.hdr",
+   "bytes": 5684968,
+   "sha256": "e0dfa8b61510e6e8966b7ba809b75b9a2f5fbf582dea1963f9fd8d4c72d2d0c0",
+   "md5_verificado": true,
+   "fuente": "https://polyhaven.com/a/cyclorama_hard_light",
+   "licencia_leida": "CC0 (polyhaven.com/license: 'Our assets are all licensed as CC0'; atribucion no obligatoria)",
+   "nota": "",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "hdri/neon_photostudio_2k.hdr",
+   "bytes": 6334365,
+   "sha256": "e6baa610a8e3518177465440777897def354015bf89aac82f1a23ee84b75e116",
+   "md5_verificado": true,
+   "fuente": "https://polyhaven.com/a/neon_photostudio",
+   "licencia_leida": "CC0 (polyhaven.com/license: 'Our assets are all licensed as CC0'; atribucion no obligatoria)",
+   "nota": "",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "hdri/sunset_jhbcentral_4k.hdr",
+   "bytes": 23911312,
+   "sha256": "eb388d9816eaf79db2f3e8bd391117ae24f10437ea9e00d1a9a24e083150cf97",
+   "md5_verificado": true,
+   "fuente": "https://polyhaven.com/a/sunset_jhbcentral",
+   "licencia_leida": "CC0 (polyhaven.com/license: 'Our assets are all licensed as CC0'; atribucion no obligatoria)",
+   "nota": "",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "hdri/kloofendal_48d_partly_cloudy_puresky_4k.hdr",
+   "bytes": 20674857,
+   "sha256": "3061c00a16ecae748e84fd6c44c04804f539c118bb66325db858bad87b11bf88",
+   "md5_verificado": true,
+   "fuente": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+   "licencia_leida": "CC0 (polyhaven.com/license: 'Our assets are all licensed as CC0'; atribucion no obligatoria)",
+   "nota": "",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kenney/kenney_city-kit-suburban_20.zip",
+   "bytes": 3038740,
+   "sha256": "5869c35cf30b1c87bdb2d197b6d325eebadd2ef08ea27f04797e8e08d77a9a39",
+   "md5_verificado": false,
+   "fuente": "https://kenney.nl/assets/city-kit-suburban",
+   "licencia_leida": "CC0 (enlace creativecommons.org/publicdomain/zero/1.0 en la pagina del pack; kenney.nl/support: 'Attribution is not required')",
+   "nota": "descargado desde el navegador; formatos segun contenido del ZIP",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kaykit/KayKit_Character_Animations_1.1.zip",
+   "bytes": 14858957,
+   "sha256": "65882f31f905ad2e953819648a59287cdeab8f623908d5ef701971d3758be20f",
+   "md5_verificado": false,
+   "fuente": "https://kaylousberg.itch.io/kaykit-character-animations",
+   "licencia_leida": "CC0 (itch.io: 'Asset license: Creative Commons Zero v1.0 Universal'; descripcion: 'Free for personal and commercial use, no attribution required'; el autor pide no revender copias sin modificar)",
+   "nota": "version FREE 1.1 (14 MB segun la pagina)",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "kaykit/KayKit_City_Builder_Bits_1.0_FREE.zip",
+   "bytes": 4881740,
+   "sha256": "aff444e1d083ddac331be94ea4a7590e5604ef49715ae23df71cd2e9659bd33f",
+   "md5_verificado": false,
+   "fuente": "https://kaylousberg.itch.io/city-builder-bits",
+   "licencia_leida": "CC0 (itch.io: 'Asset license: Creative Commons Zero v1.0 Universal'; descripcion: 'Free for personal and commercial use, no attribution required'; el autor pide no revender copias sin modificar)",
+   "nota": "version FREE (4.6 MB segun la pagina)",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "quaternius/Universal Animation Library[Standard].zip",
+   "bytes": 15904933,
+   "sha256": "cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724",
+   "md5_verificado": false,
+   "fuente": "https://quaternius.itch.io/universal-animation-library",
+   "licencia_leida": "CC0 (quaternius.com: 'Free to use in personal, educational and commercial projects. (CC0 License)')",
+   "nota": "version Standard (parte gratis; 15 MB segun itch)",
+   "descargado": "2026-11-24"
+  },
+  {
+   "archivo": "quaternius/Universal Animation Library 2[Standard].zip",
+   "bytes": 18735003,
+   "sha256": "4008ea208a604773a2b2177d965f0f5d3195498b5bf838c3f5785d68e95f2a68",
+   "md5_verificado": false,
+   "fuente": "https://quaternius.itch.io/universal-animation-library-2",
+   "licencia_leida": "CC0 (quaternius.com: 'Free to use in personal, educational and commercial projects. (CC0 License)')",
+   "nota": "version Standard (parte gratis; 17 MB segun itch)",
+   "descargado": "2026-11-24"
+  }
+ ]
+}
