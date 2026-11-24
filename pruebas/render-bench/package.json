@@ -1,0 +1,1 @@
+{"name":"render-bench","private":true,"version":"0.0.0","description":"Medicion three.js vs Blender (no forma parte del motor)","dependencies":{"puppeteer-core":"^25.18.1","three":"^0.187.0"}}

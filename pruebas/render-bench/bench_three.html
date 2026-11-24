@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+const SC = await (await fetch('/scene.json')).json();
+const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+R.setPixelRatio(1); R.setSize(SC.w, SC.h); R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(R.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(SC.bg);
+const cam = new THREE.PerspectiveCamera(SC.fov, SC.w / SC.h, 0.1, 100);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xcfc4ae, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(5, 10, 3); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 40 }); sun.shadow.radius = 4; sun.shadow.bias = -0.0005; scene.add(sun);
+const mat = (c, r = 0.6) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+const add = (g, m, x, y, z, parent = scene) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; parent.add(o); return o; };
+const floor = add(new THREE.PlaneGeometry(60, 60), mat(SC.floor, 0.9), 0, 0, 0); floor.rotation.x = -Math.PI / 2; floor.castShadow = false;
+add(new THREE.BoxGeometry(SC.runwayW, SC.runwayH, SC.runwayLen), mat(SC.runway, 0.4), 0, SC.runwayH / 2, 0);
+// público instanciado (cabeza + torso)
+const n = SC.aud.length, headM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.12, 24, 12), mat('#ffffff'), n), bodyM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.3, 24, 12), mat('#ffffff'), n);
+const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+SC.aud.forEach((a, i) => { c.set(a.c); headM.setColorAt(i, c); bodyM.setColorAt(i, c);
+  m4.compose(new THREE.Vector3(a.x, a.h - 0.1, a.z), q, new THREE.Vector3(1, 1, 1)); headM.setMatrixAt(i, m4);
+  m4.compose(new THREE.Vector3(a.x, a.h * 0.55, a.z), q, new THREE.Vector3(0.7, 1.2, 0.45)); bodyM.setMatrixAt(i, m4); });
+headM.castShadow = bodyM.castShadow = true; scene.add(headM, bodyM);
+// héroe
+const hero = new THREE.Group(); scene.add(hero); const hm = mat(SC.hero), by = SC.runwayH;
+const torso = add(new THREE.SphereGeometry(0.3, 24, 12), hm, 0, by + 1.2, 0, hero); torso.scale.set(0.65, 1.1, 0.4);
+add(new THREE.SphereGeometry(0.13, 24, 12), hm, 0, by + 1.62, 0, hero);
+const limb = (len, r, px, py) => { const g = new THREE.CylinderGeometry(r, r, len, 16); g.translate(0, -len / 2, 0); return add(g, hm, px, py, 0, hero); };
+const legs = [limb(0.85, 0.07, -0.1, by + 0.88), limb(0.85, 0.07, 0.1, by + 0.88)], arms = [limb(0.6, 0.05, -0.26, by + 1.42), limb(0.6, 0.05, 0.26, by + 1.42)];
+const ease = t => t * t * (3 - 2 * t), lerp = (a, b, t) => a + (b - a) * t;
+window.setFrame = f => { const t = f / (SC.frames - 1), e = ease(t), ph = f / SC.fps * 2 * Math.PI;
+  cam.position.set(...SC.camA.p.map((v, i) => lerp(v, SC.camB.p[i], e))); cam.lookAt(...SC.camA.t.map((v, i) => lerp(v, SC.camB.t[i], e)));
+  hero.position.z = lerp(SC.heroZ0, SC.heroZ1, t) - 0; hero.position.z = lerp(SC.heroZ0, SC.heroZ1, t);
+  [0, 1].forEach(i => { legs[i].rotation.x = Math.sin(ph + (i ? Math.PI : 0)) * 0.5; arms[i].rotation.x = Math.sin(ph + (i ? 0 : Math.PI)) * 0.4; }); };
+window.renderFrame = f => { window.setFrame(f); const t0 = performance.now(); R.render(scene, cam); const gl = R.getContext(), px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return performance.now() - t0; };
+window.jpeg = q => R.domElement.toDataURL('image/jpeg', q);
+const dbg = R.getContext().getExtension('WEBGL_debug_renderer_info'); window.gpu = dbg ? R.getContext().getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'desconocido'; window.ready = true;
+</script></body></html>
