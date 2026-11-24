@@ -2,7 +2,7 @@
 // Uso: node scripts/hojas-3d.js [carpeta renders] [carpeta salida]
 const fs = require('fs'), path = require('path');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const R = process.argv[2] || path.join(__dirname, '..', 'data-motor', 'blender', 'todo'), S = process.argv[3] || path.join(__dirname, '..', 'data-motor', 'blender', 'hojas');
+const pos = process.argv.slice(2).filter(a => !a.startsWith('--')), R = pos[0] || path.join(__dirname, '..', 'data-motor', 'blender', 'todo'), S = pos[1] || path.join(__dirname, '..', 'data-motor', 'blender', 'hojas');
 fs.mkdirSync(S, { recursive: true });
 const EMO = ['feliz', 'sorpresa', 'triste', 'enojo', 'duda', 'orgullo', 'asco', 'preocupacion', 'amor'], VIS = ['Neutral', 'Aa', 'Ee', 'Oh', 'Woo', 'M', 'F', 'D', 'S', 'Uh', 'R'], ANG = [-90, -60, -30, 0, 30, 60, 90];
 async function hoja(nombre, archivos, cols, celda, hueco = 6, ventana = null) { // ventana: recorte {x,y,w,h} de cada render (fracciones)
@@ -20,3 +20,5 @@ async function hoja(nombre, archivos, cols, celda, hueco = 6, ventana = null) { 
   await hoja('3d-visemas-b', VB.map(v => 'vf_' + v), 3, { w: 512, h: 512 }, 6, { x: 0.12, y: 0.05, w: 0.76, h: 0.76 });
   await hoja('3d-angulos', [...ANG.map(a => 'angulo_' + (a >= 0 ? '+' : '') + a), null], 4, { w: 480, h: 640 }, 6, { x: 0.15, y: 0, w: 0.7, h: 1 });
 })();
+// Hoja ÚNICA: 9 emociones + 11 visemas (20 celdas, cara completa) en una sola rejilla 5x4 para generarla con UNA imagen de alta resolución
+(async () => { if (!process.argv.includes('--unica')) return; await hoja('3d-unica', [...EMO.map(e => 'emosup_' + e), ...VIS.map(v => 'vf_' + v)], 5, { w: 400, h: 400 }, 6, { x: 0.12, y: 0.05, w: 0.76, h: 0.76 }); })();
