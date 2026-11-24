@@ -31,8 +31,8 @@ const TRAJES_RIG = {
 // (el cuello queda detrás del cuello alto del uniforme) y la cara es la de la foto (sin expresiones dibujadas).
 const RIG_FOTO = path.join(__dirname, '..', 'assets', 'foto-rig');
 try { const m = JSON.parse(fs.readFileSync(path.join(RIG_FOTO, 'rig.json'), 'utf8')), pv = m.cabeza.pivoteY;
-  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'brazo-abierto', 'piernas'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
-    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, caraFoto: m.cabeza.cara };
+  TRAJES_RIG['bastonera-foto'] = { dir: RIG_FOTO, piezas: ['cabeza', 'pelo', 'torso', 'hombros', 'brazo-abierto', 'piernas'], torso: 'torso', falda: null, brazos: ['brazo-abierto', 'brazo-abierto'], piernas: true, piernasJuntas: true, cabezaAntes: true,
+    cabeza: { x: 0, y: 26, px: 0.5, py: pv }, pelo: { x: 0, y: 26, px: 0.5, py: pv }, torsoPiv: { px: 0.5, py: 0 }, hombro: { x: m.CX - m.EJE_BRAZO, y: m.Y_HOMBRO + m.PIV_Y }, cadera: { x: 0, y: m.Y_CADERA - 2 }, pies: m.cuerpo.H, alto: m.cuerpo.H + m.cabeza.neckY + 4, long: m.largo, brazoPivY: m.PIV_Y, codoFrac: m.codoFrac, codoDuro: true, hombros: true, caraFoto: m.cabeza.cara };
   } catch { /* sin piezas de foto: el traje no existe */ }
 const ANCLAS_FOTO = { ojoY: 0.01, ojoDx: 0.17, ojoR: 0.058, bocaY: 0.33, bocaAncho: 0.118, cejaY: -0.075 }; // medidas sobre la foto de la cabeza ficticia (misma que usa recortes.muneco)
 const LONG = { sup: 150, ant: 118 }; // brazo superior y antebrazo hasta el centro de la mano (píxeles del armado)
@@ -143,7 +143,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
         if (R.codoDuro) { // codo en bisagra: dos tramos rígidos con ángulo marcado; un disco del color de la manga tapa la cuña que abre la esquina
           const piv = R.brazoPivY ?? 0, ci = R.codoInfo || { col: '#e8e8e8', r: wB * 0.3 };
           ctx.translate(-wB / 2, -piv);
-          if (Math.abs(c) > 10) { ctx.beginPath(); ctx.arc(wB / 2, cod, ci.r * 0.9, 0, Math.PI * 2); ctx.fillStyle = ci.col; ctx.fill(); } // relleno de la esquina, debajo de los dos tramos
+          if (Math.abs(c) > 10) { ctx.beginPath(); ctx.arc(wB / 2, cod, ci.r * 0.72, 0, Math.PI * 2); ctx.fillStyle = ci.col; ctx.fill(); } // relleno de la esquina, debajo de los dos tramos
           ctx.save(); ctx.beginPath(); ctx.rect(0, 0, wB, cod + 2); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); // brazo superior (con todo el hombro)
           ctx.save(); ctx.translate(wB / 2, cod); ctx.rotate(-c * GRAD); ctx.translate(-wB / 2, -cod);
           ctx.save(); ctx.beginPath(); ctx.rect(0, cod - 2, wB, hB - cod + 4); ctx.clip(); ctx.drawImage(im, 0, 0); ctx.restore(); ctx.restore(); // antebrazo y mano
@@ -159,7 +159,8 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       const delante = Boolean(G && G.delante && peso > 0.01);
       if (R.cabezaAntes) cabezaF();
       dib(img[R.torso], 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false);
-      if (!delante) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
+      if (!delante || R.hombros) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
+      if (R.hombros) dib(img.hombros, 0, -subir * 0.6, 0.5, 0, Math.sin(tAbs * 1.3 + 1) * 0.012, false); // el hombro del torso va encima del brazo: ahí está la unión
       // 4) cabeza con expresión modelada y accesorios (con cabezaAntes se dibuja antes del torso: el cuello queda detrás del cuello del traje)
       function cabezaF() {
       const hy = R.cabeza.y - subir * 0.8, im = img.cabeza;
@@ -177,7 +178,7 @@ function titereRig({ traje = 'bastonera', cx = 0.5, base = 0.9, alto = 0.5, esca
       ctx.restore();
       }
       if (!R.cabezaAntes) cabezaF();
-      if (delante) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
+      if (delante && !R.hombros) { brazo(-1, sI, cI, manoI); brazo(1, sD, cD, manoD); }
       ctx.restore();
       // pegatinas flotantes (bastón…) con resortes y giro opcional
       pegatinas.forEach((p, i) => {

@@ -7,8 +7,8 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const KIT = path.join(__dirname, '..', 'assets', 'kit'), SAL = path.join(__dirname, '..', 'assets', 'foto-rig');
 const interp = (pts, y) => { if (y <= pts[0][0]) return pts[0][1]; for (let i = 1; i < pts.length; i++) if (y <= pts[i][0]) { const [y0, v0] = pts[i - 1], [y1, v1] = pts[i]; return v0 + (v1 - v0) * (y - y0) / (y1 - y0); } return pts[pts.length - 1][1]; };
 // borde interior del brazo izquierdo (el que da al torso) por fila; el derecho es el espejo respecto al eje x = CX
-const CX = 221, BORDE = [[22, 176], [50, 152], [88, 140], [150, 139], [220, 136], [290, 128], [320, 116], [398, 112], [402, 82], [470, 82]], Y_HOMBRO = 22, PIV_Y = 40, Y_CODO = 280, Y_MANO = 470, Y_CADERA = 458;
-const EJE_BRAZO = 104; // x del eje del brazo (centro de la manga) en la foto
+const CX = 221, BORDE = [[40, 160], [88, 140], [150, 139], [220, 136], [290, 128], [320, 116], [398, 112], [402, 82], [470, 82]], Y_PIV = 66, R_HOMBRO = 38, Y_HOMBRO = Y_PIV - R_HOMBRO, PIV_Y = R_HOMBRO, Y_CORE = 96, Y_CODO = 280, Y_MANO = 470, Y_CADERA = 458;
+const EJE_BRAZO = 108; // x del eje del brazo (centro de la manga) en la foto
 
 function pixeles(img) { const c = createCanvas(img.width, img.height), x = c.getContext('2d'); x.drawImage(img, 0, 0); return { c, x, id: x.getImageData(0, 0, img.width, img.height) }; }
 // suaviza el alfa (3x3) para que los cortes rectos no se vean dentados; no toca el color
@@ -23,12 +23,21 @@ async function cuerpo() {
   const dentroBrazoI = (x, y) => y >= Y_HOMBRO && y <= Y_MANO && x < interp(BORDE, y), dentroBrazoD = (x, y) => y >= Y_HOMBRO && y <= Y_MANO && (W - 1 - x + (2 * CX - W + 1)) < interp(BORDE, y);
   // torso + falda: todo menos los brazos, hasta la línea de la cadera
   const core = createCanvas(W, Y_CADERA + 4), cx = core.getContext('2d'), cid = cx.createImageData(W, Y_CADERA + 4);
-  for (let y = 0; y < Y_CADERA + 4; y++) for (let x = 0; x < W; x++) { if (dentroBrazoI(x, y) || dentroBrazoD(x, y)) continue; const i = (y * W + x) * 4, o = i; cid.data[o] = d[i]; cid.data[o + 1] = d[i + 1]; cid.data[o + 2] = d[i + 2]; cid.data[o + 3] = d[i + 3]; }
+  for (let y = 0; y < Y_CADERA + 4; y++) for (let x = 0; x < W; x++) { if (y >= Y_CORE && (dentroBrazoI(x, y) || dentroBrazoD(x, y))) continue; const i = (y * W + x) * 4, o = i; cid.data[o] = d[i]; cid.data[o + 1] = d[i + 1]; cid.data[o + 2] = d[i + 2]; cid.data[o + 3] = d[i + 3]; }
   cx.putImageData(cid, 0, 0); guardar(core, 'torso');
   // brazo (el izquierdo de la foto), recortado y centrado en su eje; el derecho se obtiene espejando este
   const aw = 2 * (EJE_BRAZO + 6), ah = Y_MANO - Y_HOMBRO + 4, br = createCanvas(aw, ah), bx = br.getContext('2d'), bid = bx.createImageData(aw, ah);
-  for (let y = Y_HOMBRO; y < Y_HOMBRO + ah; y++) for (let x = 0; x < EJE_BRAZO + 80; x++) { if (!dentroBrazoI(x, y)) continue; const ox = x - EJE_BRAZO + aw / 2, oy = y - Y_HOMBRO; if (ox < 0 || ox >= aw) continue; const i = (y * W + x) * 4, o = (oy * aw + ox) * 4; bid.data[o] = d[i]; bid.data[o + 1] = d[i + 1]; bid.data[o + 2] = d[i + 2]; bid.data[o + 3] = d[i + 3]; }
-  bx.putImageData(bid, 0, 0); guardar(br, 'brazo-abierto'); guardar(br, 'brazo-puno');
+  // color de la manga (blanco del uniforme) para el disco del hombro
+  let mr = 0, mg = 0, mb = 0, mn = 0; for (let y = 110; y < 130; y++) for (let x = 70; x < 130; x++) { const i = (y * W + x) * 4; if (d[i + 3] > 250 && d[i] > 190 && Math.abs(d[i] - d[i + 2]) < 16) { mr += d[i]; mg += d[i + 1]; mb += d[i + 2]; mn++; } }
+  const colM = mn ? `rgb(${Math.round(mr / mn)},${Math.round(mg / mn)},${Math.round(mb / mn)})` : '#e8e8e8';
+  for (let y = Y_PIV; y < Y_HOMBRO + ah; y++) for (let x = 0; x < EJE_BRAZO + 80; x++) { if (!dentroBrazoI(x, y)) continue; const ox = x - EJE_BRAZO + aw / 2, oy = y - Y_HOMBRO; if (ox < 0 || ox >= aw) continue; const i = (y * W + x) * 4, o = (oy * aw + ox) * 4; bid.data[o] = d[i]; bid.data[o + 1] = d[i + 1]; bid.data[o + 2] = d[i + 2]; bid.data[o + 3] = d[i + 3]; }
+  bx.fillStyle = colM; bx.beginPath(); bx.arc(aw / 2 + 4, R_HOMBRO, 24, 0, Math.PI * 2); bx.fill();
+  const tmp = createCanvas(aw, ah); tmp.getContext('2d').putImageData(bid, 0, 0); bx.drawImage(tmp, 0, 0);
+  guardar(br, 'brazo-abierto'); guardar(br, 'brazo-puno');
+  // hombros del torso (a la izquierda y derecha del cuello), se dibujan ENCIMA del brazo: ahí está la unión; el borde inferior se desvanece
+  { const hh = Y_CORE + 16, hc = createCanvas(W, hh), hx = hc.getContext('2d'), hid = hx.createImageData(W, hh);
+    for (let y = 0; y < hh; y++) for (let x = 0; x < W; x++) { if (Math.abs(x - CX) < 64) continue; const i = (y * W + x) * 4, f = y < Y_CORE ? 1 : (hh - y) / 16; hid.data[i] = d[i]; hid.data[i + 1] = d[i + 1]; hid.data[i + 2] = d[i + 2]; hid.data[i + 3] = Math.round(d[i + 3] * f); }
+    hx.putImageData(hid, 0, 0); guardar(hc, 'hombros'); }
   // piernas: desde justo bajo el dobladillo hasta las botas; en las filas de las manos solo la zona central
   const lg = createCanvas(W, H - Y_CADERA), lx = lg.getContext('2d'), lid = lx.createImageData(W, H - Y_CADERA);
   for (let y = Y_CADERA; y < H; y++) for (let x = 0; x < W; x++) { if (y < Y_MANO && (x < 100 || x > 342)) continue; const i = (y * W + x) * 4, o = ((y - Y_CADERA) * W + x) * 4; lid.data[o] = d[i]; lid.data[o + 1] = d[i + 1]; lid.data[o + 2] = d[i + 2]; lid.data[o + 3] = d[i + 3]; }
@@ -65,6 +74,6 @@ async function cabeza() {
 (async () => {
   fs.mkdirSync(SAL, { recursive: true });
   const c = await cuerpo(), h = await cabeza();
-  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MANO - Y_HOMBRO + 4), largo: { sup: Y_CODO - Y_HOMBRO - PIV_Y, ant: Y_MANO - 30 - Y_CODO } }, null, 2));
+  fs.writeFileSync(path.join(SAL, 'rig.json'), JSON.stringify({ descripcion: 'Piezas del rig de fotos (cuerpo FICTICIO genérico + cabeza FICTICIA). Coordenadas en píxeles de estas piezas.', cuerpo: c, cabeza: h, CX, EJE_BRAZO, Y_HOMBRO, PIV_Y, Y_CODO, Y_MANO, Y_CADERA, codoFrac: (Y_CODO - Y_HOMBRO) / (Y_MANO - Y_HOMBRO + 4), largo: { sup: Y_CODO - Y_PIV, ant: Y_MANO - 30 - Y_CODO } }, null, 2));
   console.log('listo', SAL, JSON.stringify(h));
 })().catch(e => { console.error('FALLO', e); process.exit(1); });
