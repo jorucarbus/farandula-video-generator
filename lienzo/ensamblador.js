@@ -40,7 +40,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
   const elementos = [], claves = new Set(), avisos = [], uso = new Map(), finClip = new Map(); // finClip: beat → segundo en que termina su clip real
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
-  const cubre = [], tarjetas = [], pedidos = []; // cubre: intervalos con una pieza PRINCIPAL en pantalla; tarjetas: solo las que van sobre el montaje; pedidos: clips que el director pidió para una frase
+  const cubre = [], tarjetas = [], pedidos = [], zoomsT = []; // zoomsT: segundos de las palabras clave (anclas de insignias, mapas y gráficos): ahí se da un golpe de zoom a la toma; // cubre: intervalos con una pieza PRINCIPAL en pantalla; tarjetas: solo las que van sobre el montaje; pedidos: clips que el director pidió para una frase
   const card = iv => { cubre.push(iv); tarjetas.push(iv); };
   const M = cfg.montaje && cfg.montaje.ids && cfg.montaje.ids.length ? cfg.montaje : null; // con montaje, el video es el fondo de todo el tiempo
 
@@ -68,8 +68,12 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     if (e.principal === 'mapa') { // sin muñeco y con tomas de fondo, el mapa se suma en la parte baja de la tarjeta del video (el video sigue debajo)
       const l = e.mapa.lugar ? LUGARES[e.mapa.lugar] : null; if (e.mapa.lugar ? !l : !PAISES[e.mapa.pais]) throw new Error(`mapa: lugar o país fuera del catálogo (${e.mapa.lugar || e.mapa.pais})`);
       const base = { cy: e.muneco ? 0.375 : M ? 0.79 : 0.56, alto: e.muneco ? 0.32 : M ? 0.30 : 0.40, tPin: tPal(k, e.mapa.ancla), t0, t1 };
-      elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0, t1]); marca(k, e.mapa.ancla); }
+      elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0, t1]); marca(k, e.mapa.ancla); zoomsT.push(tPal(k, e.mapa.ancla)); }
     if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.80 : 0.42, t0: ta, t1 })); card([ta, t1]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'grafico') { // barras que crecen, abajo sobre la tarjeta del video (o arriba con muñeco)
+      const its = e.grafico.items.map(b => ({ etiqueta: b.etiqueta, valor: b.valor, t: tPal(k, b.ancla) })), ta = Math.max(0, Math.min(...its.map(b => b.t)) - 0.3);
+      elementos.push(E.grafico({ titulo: e.grafico.titulo, items: its, cy: e.muneco ? 0.36 : M ? 0.79 : 0.42, alto: 0.30, t0: ta, t1 })); card([ta, t1]); e.grafico.items.forEach(b => { marca(k, b.ancla); zoomsT.push(tPal(k, b.ancla)); });
+    }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
       elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.79 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
@@ -112,9 +116,9 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3) extras (insignias, sello) en sus posiciones
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
-    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && ['cifra', 'lista', 'mapa'].includes(e.principal)) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
+    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && ['cifra', 'lista', 'mapa', 'grafico'].includes(e.principal)) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
     for (const x of e.extras || []) {
-      if (x.tipo === 'insignia') { const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
+      if (x.tipo === 'insignia') { zoomsT.push(tPal(k, x.ancla)); const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
     }
   }
@@ -134,7 +138,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     for (let k = 0; k < beats.length; k++) {
       const e = porBeat.get(k); if (!e) continue;
       const ivs = []; // [inicio, fin, esDato]
-      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'mapa' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
+      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'mapa' || e.principal === 'grafico' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
       else if (e.principal === 'clip' && finClip.has(k)) { ivs.push([V[k].t0, finClip.get(k), false]); if (!e.muneco && fin(k) - finClip.get(k) > 0.5) ivs.push([finClip.get(k), fin(k), true]); } // sin muñeco, lo que queda de la frase tras el clip (≤ 3 s) se llena con otras tomas
       for (const [ia, ib, dato] of ivs) {
         const u = tramos4[tramos4.length - 1];
@@ -166,7 +170,8 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       if (cortes.length) { // un resto mínimo se absorbe en la última toma; el montaje de este tramo termina donde termina el dato
         const ult = cortes[cortes.length - 1]; if (tr.b - ult.t1 > 0 && tr.b - ult.t1 < 0.5) ult.t1 = Math.min(tr.b, ult.t0 + MAXC);
         const merge = []; for (const [a, b] of [...tarjetas].sort((p, q) => p[0] - q[0])) { const u = merge[merge.length - 1]; if (u && a <= u.t1 + 0.2) u.t1 = Math.max(u.t1, b); else merge.push({ t0: a, t1: b }); }
-        elementos.unshift(E.montaje({ cortes, t0: tr.a, t1: ult.t1, atenuar: merge })); // primero: queda DEBAJO de todo lo demás
+        const zs = []; for (const z of [...zoomsT].sort((p, q) => p - q)) if (z > tr.a + 0.4 && z < ult.t1 - 0.5 && (!zs.length || z - zs[zs.length - 1] >= 2.2)) zs.push(z); // un golpe de zoom por palabra clave, separados ≥ 2,2 s
+        elementos.unshift(E.montaje({ cortes, t0: tr.a, t1: ult.t1, atenuar: merge, zooms: zs })); if (zs.length) avisos.push('zoom digital en ' + zs.map(z => z.toFixed(1) + ' s').join(', ')); // primero: queda DEBAJO de todo lo demás
       }
     }
   } else if (cfg.relleno && cfg.relleno.ids && cfg.relleno.ids.length) {

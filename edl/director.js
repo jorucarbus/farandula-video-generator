@@ -13,7 +13,7 @@ const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(pat
 // Países que el mapa sabe acercar (español → nombre en el atlas mundial). Ecuador y su zona usan LUGARES (ciudades).
 const PAISES = { 'Puerto Rico': 'Puerto Rico', 'Estados Unidos': 'United States of America', 'México': 'Mexico', 'España': 'Spain', 'Colombia': 'Colombia', 'Perú': 'Peru', 'Venezuela': 'Venezuela', 'Argentina': 'Argentina', 'Brasil': 'Brazil', 'Chile': 'Chile', 'República Dominicana': 'Dominican Rep.', 'Cuba': 'Cuba', 'Panamá': 'Panama', 'Francia': 'France', 'Italia': 'Italy', 'Reino Unido': 'United Kingdom', 'Canadá': 'Canada', 'Japón': 'Japan', 'China': 'China', 'Rusia': 'Russia', 'Alemania': 'Germany', 'Tailandia': 'Thailand', 'Filipinas': 'Philippines', 'Australia': 'Australia', 'India': 'India', 'Vietnam': 'Vietnam', 'Corea del Sur': 'South Korea', 'Costa Rica': 'Costa Rica', 'Bolivia': 'Bolivia', 'Paraguay': 'Paraguay', 'Uruguay': 'Uruguay', 'Guatemala': 'Guatemala', 'Honduras': 'Honduras', 'Nicaragua': 'Nicaragua', 'El Salvador': 'El Salvador', 'Jamaica': 'Jamaica', 'Haití': 'Haiti', 'Portugal': 'Portugal', 'Venezuela ': 'Venezuela' };
 delete PAISES['Venezuela '];
-const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
+const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video', 'grafico']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
 const GESTOS = Object.keys(require('../lienzo/titere-rig').GESTOS); // reacciones de las manos del muñeco (catálogo cerrado)
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste', 'duda', 'orgullo', 'asco', 'preocupacion', 'amor'], TRAJES = ['bastonera', 'gala'];
 const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', 'baston'], ESCENARIOS = ['casa', 'escenario', 'cartel'];
@@ -59,6 +59,12 @@ function validarEscena(e, beats, hechos, clips = null) {
     else if (c.valor < 10 && !/\d/.test(frase)) err(`la cifra ${c.valor} es pequeña y viene escrita con letras ("dos piezas"): no es un dato destacable, usa otro principal`);
     if (c.sufijo && !/^[$%]/.test(c.sufijo.trim()) && !contiene(frase, c.sufijo)) err(`el sufijo "${c.sufijo}" no está en la frase`);
     ancla(c.ancla, 'cifra');
+  }
+  if (e.principal === 'grafico') { // barras que crecen: 2 a 5 barras, cada una con una cifra que la frase dice y una palabra (etiqueta) que la frase dice
+    const g = e.grafico || {}, it = g.items;
+    if (!Array.isArray(it) || it.length < 2 || it.length > 5) err('el gráfico necesita de 2 a 5 barras');
+    else { const nums = numerosEnFrase(frase); for (const b of it) { if (!nums.has(b.valor)) err(`la cifra ${b.valor} del gráfico no está en la frase`); literal(b.etiqueta, 'etiqueta de barra'); ancla(b.ancla, 'barra'); } }
+    if (g.titulo && !/^[\p{L} ]{3,22}$/u.test(g.titulo)) err('título de gráfico inválido');
   }
   if (e.principal === 'lista') {
     const l = e.lista || {};
@@ -119,6 +125,10 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
   const lugar = Object.keys(LUGARES).find(l => contiene(frase, l)), pais = !lugar && Object.keys(PAISES).sort((a, b) => b.length - a.length).find(p => contiene(frase, p));
   const cifra = (() => { const m = frase.replace(RE_FECHA, '').match(/(\d[\d.]*)\s+([a-záéíóúñ]+)?/i); if (!m) return null; const v = parseInt(m[1].replace(/\./g, ''), 10); return Number.isFinite(v) && v > 1 && !(v >= 1900 && v <= 2100) ? { valor: v, sufijo: m[2] && m[2].length <= 11 ? m[2] : undefined, ancla: normalizar(m[1].replace(/\./g, '')) } : null; })();
   const escen = RE_ESCENARIO.map(re => frase.match(re)).find(Boolean);
+  if (!e.principal) { // 2 a 5 cifras con su palabra ("6 años ... 3 títulos"): gráfico de barras
+    const pares = [...frase.replace(RE_FECHA, '').matchAll(/(\d[\d.]*)\s+([a-záéíóúñ]{3,})/gi)].map(m => ({ valor: parseInt(m[1].replace(/\./g, ''), 10), etiqueta: m[2], ancla: normalizar(m[1].replace(/\./g, '')) })).filter(p => Number.isFinite(p.valor) && p.valor > 1 && !(p.valor >= 1900 && p.valor <= 2100));
+    if (pares.length >= 2 && pares.length <= 5) { e.principal = 'grafico'; e.grafico = { items: pares }; }
+  }
   if (!e.principal && anios.length >= 3) {
     const partes = frase.split(/,\s*| y /).map(p => p.trim()).filter(p => /\b(19|20)\d{2}\b/.test(p));
     if (partes.length >= 2) { e.principal = 'lista'; e.lista = { titulo: 'Títulos', items: partes.slice(0, 4).map(p => { const t = p.replace(RE_VERBO_LISTA, '').replace(/[.]$/, ''); return { texto: t, ancla: tokens(t)[0] }; }) }; }
@@ -163,7 +173,7 @@ function directorPorReglas(beats, hechos, clips = null, { sinMuneco = false } = 
 // ── Director con modelo (catálogo cerrado) + validador + respaldo ─────────────────────────────────────────────
 const PROMPT = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada". Para CADA frase del guion decide qué se ve.
 Catálogo cerrado:
-- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (ciudad de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}, o un PAÍS de esta lista: ${Object.keys(PAISES).join(', ')}; usa {"lugar":...} o {"pais":...}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; el clip dura 3 s y DESPUÉS entra el muñeco: puedes dar "muneco" en esa misma frase) .
+- principal: "muneco" (la protagonista ACTÚA lo que se cuenta; NO habla) | "mapa" (ciudad de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}, o un PAÍS de esta lista: ${Object.keys(PAISES).join(', ')}; usa {"lugar":...} o {"pais":...}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "grafico" (barras que crecen: 2 a 5 cifras que la frase dice, cada una con su etiqueta y su ancla: {"grafico":{"titulo"?:"...","items":[{"etiqueta":"años","valor":6,"ancla":"seis"}]}}) | "escenario" (casa/escenario/cartel con un letrero) | "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; el clip dura 3 s y DESPUÉS entra el muñeco: puedes dar "muneco" en esa misma frase) .
 - "muneco": {traje: ${TRAJES.join('|')}, pose: ${POSES.join('|')} (celebrar/senalar solo con traje bastonera), emocion: ${EMOCIONES.join('|')}, accesorio?: "corona", pegatina?: {id: ${PEGATINAS.join('|')}, ancla}, gesto?: {id: ${GESTOS.join('|')}, ancla} (reacción de las manos: mejillas=sorpresa, pecho=ternura/agradecimiento, boca=chisme o rumor, aplauso=premio, cintura=reto/competencia, encoger=duda, saludo), ancla_pose?, ancla_emocion?, ancla_accesorio?}. Solo con principal muneco o escenario.
 - extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
 Reglas:

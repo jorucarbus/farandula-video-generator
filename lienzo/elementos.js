@@ -55,6 +55,31 @@ function cifra({ valor, sufijo, prefijo, agrupar, conteo, cy = 0.46, t0, t1 }) {
   };
 }
 
+// ── Gráfico de barras que CRECE (cada barra sube en su palabra; el valor cuenta hasta su cifra; la mayor va en rojo) ─────────
+// items: [{ etiqueta, valor, t (abs, segundo de la palabra) }]; titulo opcional. Tarjeta blanca como la lista.
+function grafico({ titulo, items, cy = 0.5, alto = 0.30, t0, t1 }) {
+  const maxV = Math.max(...items.map(i => i.valor)), iMax = items.findIndex(i => i.valor === maxV), fmt = v => (Number.isInteger(v) ? v.toLocaleString('es-EC').replace(/ /g, '.') : String(v));
+  return {
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...items.map(i => ({ t: i.t, sonido: 'clic' }))],
+    dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
+      const ancho = w * 0.84, alt = h * alto, x = (w - ancho) / 2, y = h * cy - alt / 2, e = pop(t, 0.3), pad = u * 0.04, tam = Math.round(u * 0.034), tit = titulo ? tam * 1.7 : 0;
+      ctx.save(); ctx.globalAlpha = acotar(t / 0.12); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
+      B.sombraDeCapa(ctx, u, 0.6, 0.30); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, x, y, ancho, alt, u * 0.035); ctx.fill(); B.sinSombra(ctx);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (titulo) { ctx.fillStyle = estilo.colores.negro; ctx.font = `${Math.round(tam * 1.15)}px ${estilo.tipografia.texto}`; ctx.fillText(titulo, w / 2, y + pad + tit / 2 - tam * 0.2); }
+      const n = items.length, zona = ancho - pad * 2, ancha = zona / n, gap = ancha * 0.22, bw = ancha - gap, base = y + alt - pad - tam * 1.5, tope = y + pad + tit + tam * 1.6, util = base - tope;
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + pad, base); ctx.lineTo(x + ancho - pad, base); ctx.stroke();
+      items.forEach((it, i) => {
+        const p = easeOutCubic(acotar((tAbs - it.t) / 0.75)), bh = util * (it.valor / maxV) * p, bx = x + pad + i * ancha + gap / 2;
+        ctx.fillStyle = i === iMax ? estilo.colores.rojo : estilo.colores.negro; B.rectRedondo(ctx, bx, base - bh, bw, Math.max(bh, 0.1), Math.min(bw * 0.18, u * 0.012)); if (bh > 2) ctx.fill();
+        if (p > 0.02) { ctx.fillStyle = estilo.colores.negro; ctx.font = `${Math.round(tam * 1.5)}px ${estilo.tipografia.numero}`; ctx.fillText(fmt(Math.round(it.valor * p)), bx + bw / 2, base - bh - tam * 0.9); }
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.font = `${Math.round(tam * 0.95)}px ${estilo.tipografia.texto}`; ctx.fillText(it.etiqueta, bx + bw / 2, base + tam * 0.9);
+      });
+      ctx.restore();
+    },
+  };
+}
+
 // ── Lista numerada (tarjeta blanca con insignias negras; cada fila entra en su palabra) ─────────
 function listaNumerada({ titulo, items, cy = 0.5, t0, t1 }) { // items: [{ texto, t (abs) }]
   return {
@@ -192,9 +217,11 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.616, t0, 
 // el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
 // Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
 const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
-function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30 }) {
+function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30, zooms = [] }) {
   let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
   const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
+  // zoom digital: un golpe de acercamiento (≈ 10 %) en cada palabra clave (zooms: [t absolutos]); sube en 0,12 s y se relaja en ≈ 0,7 s
+  const zoomEn = tAbs => { let k = 0; for (const z of zooms) { const tt = tAbs - z; if (tt < 0 || tt > 1.2) continue; k = Math.max(k, tt < 0.12 ? easeOutCubic(tt / 0.12) : Math.exp(-(tt - 0.12) * 3.6)); } return 1 + 0.10 * k; };
   const velo = tAbs => { let a = base; for (const v of atenuar) { const k = acotar((tAbs - v.t0) / 0.3) * acotar((v.t1 - tAbs) / 0.3); a = Math.max(a, lerp(base, fuerte, k)); } return a; };
   const cuadro = async (ci, tAbs) => {
     const c = cola[ci], idx = Math.min(cuadros[ci], Math.max(1, Math.floor((tAbs - c.t0) * fpsM) + 1)), arch = path.join(dir, `c${ci}_${String(idx).padStart(4, '0')}.jpg`);
@@ -220,7 +247,7 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
       ctx.save(); ctx.globalAlpha = acotar(t / 0.12) * acotar((t1 - tAbs) / 0.2); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
       B.sombraDeCapa(ctx, u, 1.0, 0.42); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 10, Y - 10, WW + 20, HH + 20, u * 0.06); ctx.fill(); B.sinSombra(ctx);
       ctx.save(); B.rectRedondo(ctx, X, Y, WW, HH, u * 0.05); ctx.clip();
-      const pon = (img, dx, dy, s = 1, a = 1) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy); ctx.scale(s, s); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); };
+      const zm = zoomEn(tAbs), pon = (img, dx, dy, s = 1, a = 1) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy); ctx.scale(s * zm, s * zm); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); };
       if (!enTrans) pon(imgA, 0, 0);
       else if (c.trans === 'empuja') { pon(imgP, -p * WW, 0); pon(imgA, (1 - p) * WW, 0); }
       else if (c.trans === 'abajo') { pon(imgP, 0, p * HH); pon(imgA, 0, -(1 - p) * HH); }
@@ -239,4 +266,4 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
   };
 }
 
-module.exports = { retrato, cifra, listaNumerada, mapa, ventanaClip, montaje, TRANS };
+module.exports = { retrato, cifra, grafico, listaNumerada, mapa, ventanaClip, montaje, TRANS };

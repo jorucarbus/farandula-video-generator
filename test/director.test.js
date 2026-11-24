@@ -152,3 +152,12 @@ test('mapa de un PAÍS: el director por reglas lo detecta y el validador exige e
   assert.deepEqual(validarEscena(e, beats, []), []);
   assert.ok(validarEscena({ beat: 1, principal: 'mapa', mapa: { pais: 'Francia', ancla: 'final' }, extras: [] }, beats, []).length > 0, 'un país que la frase no dice no pasa');
 });
+
+test('gráfico de barras: dos o más cifras con su palabra lo activan y el validador exige cifras y etiquetas literales de la frase', () => {
+  const { directorPorReglas, validarEscena } = require('../edl/director');
+  const beats = [{ frase: 'Acumula 6 años de carrera y 12 rivales vencidas.', hechos: [] }];
+  const e = directorPorReglas(beats, [], null, { sinMuneco: true })[0];
+  assert.equal(e.principal, 'grafico'); assert.equal(e.grafico.items.length, 2); assert.deepEqual(validarEscena(e, beats, []), []);
+  const mala = { beat: 1, principal: 'grafico', grafico: { items: [{ etiqueta: 'años', valor: 6, ancla: 'seis' }, { etiqueta: 'premios', valor: 9, ancla: 'nueve' }] }, extras: [] };
+  assert.ok(validarEscena(mala, beats, []).length > 0, 'una cifra o etiqueta que la frase no dice no pasa');
+});
