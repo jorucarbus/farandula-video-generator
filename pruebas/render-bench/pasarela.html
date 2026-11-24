@@ -25,43 +25,45 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 const P = new URLSearchParams(location.search), FPS = 24, W = 1080, H = 1920;
 const pal = await (await fetch('/dalia/palabras.json')).json(); const T = Number(P.get('T') || 10), NF = Math.round(T * FPS);
-const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); R.setPixelRatio(1); R.setSize(W, H); R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 1.0;
+const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); R.setPixelRatio(1); R.setSize(W, H); R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap; R.outputColorSpace = THREE.SRGBColorSpace; R.toneMapping = THREE.ACESFilmicToneMapping; R.toneMappingExposure = 0.72;
 document.getElementById('stage').appendChild(R.domElement);
 const scene = new THREE.Scene(); scene.background = new THREE.Color('#1B1322'); scene.fog = new THREE.Fog('#1B1322', 14, 34);
-const cam = new THREE.PerspectiveCamera(52, W / H, 0.1, 80);
-scene.add(new THREE.HemisphereLight(0xcfd6ff, 0x2a1a2e, 0.55));
+const cam = new THREE.PerspectiveCamera(62, W / H, 0.1, 80);
+scene.add(new THREE.HemisphereLight(0xb8c4ff, 0x3a2440, 0.45));
 // luces: focos sobre la pasarela (uno con sombra) y relleno cálido
-const spots = [[0, 7, 9], [0, 7, 3], [0, 7, -3], [0, 7, -9]].map((p, i) => { const s = new THREE.SpotLight(0xffe2bf, 360, 30, 0.42, 0.7, 1.4); s.position.set(...p); s.target.position.set(0, 0.4, p[2] - 1.5); if (i === 1) { s.castShadow = true; s.shadow.mapSize.set(2048, 2048); s.shadow.bias = -0.0004; } scene.add(s, s.target); return s; });
-const key = new THREE.DirectionalLight(0xffd9a8, 1.1); key.position.set(3, 6, 8); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 }); key.shadow.bias = -0.0005; scene.add(key);
+const spots = [[0, 7, 8], [0, 7, 3], [0, 7, -3], [0, 7, -9]].map((p, i) => { const s = new THREE.SpotLight(0xffe2bf, i === 0 ? 70 : 150, 30, 0.40, 0.9, 1.4); s.position.set(...p); s.target.position.set(0, 0.4, p[2] - 1.5); if (false) { s.castShadow = true; s.shadow.mapSize.set(2048, 2048); s.shadow.bias = -0.0004; } scene.add(s, s.target); return s; });
+const follow = new THREE.SpotLight(0xfff0d8, 95, 30, 0.34, 0.8, 1.2); follow.castShadow = true; follow.shadow.mapSize.set(2048, 2048); follow.shadow.bias = -0.0004; scene.add(follow, follow.target);
+const key = new THREE.DirectionalLight(0xffd9a8, 0.25); key.position.set(3, 6, 8); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); Object.assign(key.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 30 }); key.shadow.bias = -0.0005; scene.add(key);
 // suelo + pasarela + tira luminosa + pantalla LED de fondo
 const mk = (g, m, x, y, z) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; scene.add(o); return o; };
 mk(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ color: '#150f1a', roughness: 0.85 }), 0, 0, 0).rotation.x = -Math.PI / 2;
-mk(new THREE.BoxGeometry(2.6, 0.35, 26), new THREE.MeshStandardMaterial({ color: '#BFB29B', roughness: 0.4 }), 0, 0.175, 3);
+mk(new THREE.BoxGeometry(2.6, 0.35, 26), new THREE.MeshStandardMaterial({ color: '#7F7463', roughness: 0.5 }), 0, 0.175, 3);
 for (const sx of [-1, 1]) mk(new THREE.BoxGeometry(0.08, 0.06, 26), new THREE.MeshStandardMaterial({ color: '#F0B429', emissive: '#F0B429', emissiveIntensity: 1.6 }), sx * 1.25, 0.36, 3);
 const led = mk(new THREE.BoxGeometry(22, 8, 0.2), new THREE.MeshStandardMaterial({ color: '#3A2547', emissive: '#6A3C74', emissiveIntensity: 0.55 }), 0, 4, -11); led.castShadow = false;
-const loader = new GLTFLoader(), Q = '/assets3d/_extraido/quaternius/', [gf, gm] = await Promise.all([loader.loadAsync(Q + 'Mannequin_F.glb'), loader.loadAsync(Q + 'UAL1_Standard.glb')]);
-const clip = n => gm.animations.find(a => a.name === n), mixers = [], tint = (o, c) => o.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = false; n.material = n.material.clone(); n.material.color.set(c); } });
+const loader = new GLTFLoader(), Q = '/assets3d/_extraido/quaternius/', [gf, gm, g2] = await Promise.all([loader.loadAsync(Q + 'Mannequin_F.glb'), loader.loadAsync(Q + 'UAL1_Standard.glb'), loader.loadAsync(Q + 'UAL2_Standard.glb')]);
+const clip = n => gm.animations.find(a => a.name === n) || g2.animations.find(a => a.name === n), mixers = [], tint = (o, c) => o.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = false; n.material = n.material.clone(); n.material.color.set(c); } });
 let s = 987654; const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 // público: 3 filas por lado, colores apagados para que la protagonista pese más (saturación y luz solo en ella)
-const PAL = ['#6B5B73', '#5E6A7A', '#7A5F5A', '#5F7468', '#7A6E5A'], aud = [];
-for (const side of [-1, 1]) for (const x of [3.3, 4.4, 5.5]) for (let z = -8; z <= 5; z += 1.25) {
-  const src = rnd() < 0.5 ? gf : gm, o = SkeletonUtils.clone(src.scene), c = clip(rnd() < 0.5 ? 'Idle_Loop' : 'Idle_Talking_Loop');
-  tint(o, PAL[Math.floor(rnd() * PAL.length)]); o.position.set(side * (x + (rnd() - 0.5) * 0.35), 0, z + (rnd() - 0.5) * 0.4); o.rotation.y = side > 0 ? -Math.PI / 2 + (rnd() - 0.5) * 0.4 : Math.PI / 2 + (rnd() - 0.5) * 0.4; o.scale.setScalar(0.96 + rnd() * 0.1);
-  const mx = new THREE.AnimationMixer(o), a = mx.clipAction(c); a.play(); a.time = rnd() * c.duration; mixers.push(mx); aud.push(o); scene.add(o);
+const PAL = ['#6E5888', '#4B73A0', '#92586A', '#58926F', '#92804F', '#6A6A8A'], POSES = ['Idle_FoldArms_Loop', 'Idle_TalkingPhone_Loop', 'Idle_Talking_Loop', 'Yes', 'Idle_Torch_Loop', 'Idle_Torch_Loop', 'Dance_Loop', 'Idle_Loop', 'Interact'], aud = [], fotografos = [];
+for (const side of [-1, 1]) for (const x of [2.2, 3.2, 4.2]) for (let z = -9; z <= 7; z += 1.05) {
+  if (rnd() < 0.12) continue; const src = rnd() < 0.5 ? gf : gm, o = SkeletonUtils.clone(src.scene), nombre = POSES[Math.floor(rnd() * POSES.length)], c = clip(nombre);
+  tint(o, PAL[Math.floor(rnd() * PAL.length)]); const px = side * (x + (rnd() - 0.5) * 0.3), pz = z + (rnd() - 0.5) * 0.35; o.position.set(px, 0, pz); o.rotation.y = (side > 0 ? -Math.PI / 2 : Math.PI / 2) + (rnd() - 0.5) * 0.5; o.scale.setScalar(0.95 + rnd() * 0.12);
+  const mx = new THREE.AnimationMixer(o), a = mx.clipAction(c); a.play(); a.time = rnd() * c.duration; mixers.push({ mx, rate: 0.9 + rnd() * 0.25 }); aud.push(o); scene.add(o); if (nombre === 'Idle_Torch_Loop' && x < 3.5) fotografos.push([px - side * 0.35, 1.35, pz]);
 }
 // protagonista (maniquí femenino, dorado) caminando por la pasarela hacia la cámara
-const hero = SkeletonUtils.clone(gf.scene); tint(hero, '#F0B429'); scene.add(hero); const hm = new THREE.AnimationMixer(hero), hc = clip('Walk_Formal_Loop'); hm.clipAction(hc).play();
+const hero = SkeletonUtils.clone(gf.scene); tint(hero, '#F2A900'); scene.add(hero); const hm = new THREE.AnimationMixer(hero), hc = clip('Walk_Formal_Loop'); hm.clipAction(hc).play();
 // flashes de cámaras del público: luces puntuales que destellan en cuadros sembrados
-const flashes = [...Array(14)].map(() => { const l = new THREE.PointLight(0xffffff, 0, 14, 1.6); const side = rnd() < 0.5 ? -1 : 1; l.position.set(side * (3 + rnd() * 2), 1.5 + rnd() * 0.4, -7 + rnd() * 11); scene.add(l); return { l, f0: Math.floor(rnd() * NF), dur: 2 + Math.floor(rnd() * 2) }; });
+const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,244,214,.8)'); gr.addColorStop(1, 'rgba(255,230,180,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+const flashes = (fotografos.length ? fotografos : [[-3, 1.4, 0]]).map(p => { const l = new THREE.PointLight(0xffffff, 0, 16, 1.5); l.position.set(...p); scene.add(l); const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 })); sp.position.set(...p); sp.scale.setScalar(1.1); scene.add(sp); return { l, sp, f0: Math.floor(rnd() * NF), dur: 2, rep: 28 + Math.floor(rnd() * 40) }; });
 // subtítulos por frase (con la palabra actual resaltada, una sola)
 const W2 = pal.palabras.filter(w => w.s < T + 1), chunks = []; { let cur = []; const flush = () => { if (cur.length) { chunks.push(cur); cur = []; } }; for (const w of W2) { const len = cur.reduce((n, x) => n + x.w.length + 1, 0) + w.w.length; if (len > 36 || (cur.length >= 6 && /[,.]$/.test(cur[cur.length - 1].w))) flush(); cur.push(w); if (/[.]$/.test(w.w)) flush(); } flush(); }
 const caja = document.getElementById('caja'), card = document.getElementById('card'), ease = t => t * t * (3 - 2 * t), clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 let lastChunk = -2;
 window.setFrame = f => {
   const t = f / FPS, u = clamp(t / T);
-  const hz = -7 + 9.4 * u; hero.position.set(0, 0.35, hz); mixers.forEach(m => m.setTime(t)); hm.setTime(t * 1.0);
+  const hz = -7 + 9.4 * u; hero.position.set(0, 0.35, hz); follow.position.set(0.8, 6.5, hz + 3.2); follow.target.position.set(0, 1.0, hz); mixers.forEach(m => m.mx.setTime(t * m.rate)); hm.setTime(t * 1.0);
   const e = ease(u); cam.position.set(Math.sin(t * 0.6) * 0.15, 1.7 - 0.35 * e, 10.5 - 4.2 * e); cam.lookAt(0, 1.1, hz * 0.55 - 1.2); cam.setViewOffset(W, H, 0, 250, W, H);
-  flashes.forEach(o => { const k = f - o.f0; o.l.intensity = k >= 0 && k < o.dur ? 90 : 0; });
+  flashes.forEach(o => { const k = ((f - o.f0) % o.rep + o.rep) % o.rep, on = k < o.dur; o.l.intensity = on ? 160 : 0; o.sp.material.opacity = on ? 1 : 0; });
   // tarjeta de nombre: entra a 1,0 s (0,4 s), sale a 7,5 s
   const ci = clamp((t - 1.0) / 0.4), co = clamp((t - 7.5) / 0.4), v = ease(ci) * (1 - ease(co)); card.style.opacity = v; card.style.transform = `translateX(${-60 * (1 - v)}px)`;
   // subtítulos
