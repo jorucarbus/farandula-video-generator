@@ -73,4 +73,29 @@ function encuadreParaTarjeta(serie, ancho, alto, ss, dur) {
   return null;
 }
 
-module.exports = { radioDe, mejorRostro, fraccionConRostro, aplicar, cajaEnVentana, encuadreParaTarjeta, ZONA_TAPADA };
+// Dónde está la cara durante el tramo [ss, ss+dur] del clip, en coordenadas de la ventana 9:16: [{ t (segundo del clip), cx, cy, w, h }].
+// Sigue a UNA persona (la más cercana a la posición inicial; un salto grande se toma por otra persona y se ignora), para que el círculo/cuadro/flecha la acompañe.
+function pistaDeRostro(serie, ancho, alto, ss, dur, inicial = null) {
+  if (!serie || !ancho || !alto) return null;
+  const dist = (a, b) => Math.hypot(a.cx - b.cx, a.cy - b.cy);
+  const muestras = serie.filter(q => q.t >= ss - 0.35 && q.t <= ss + dur + 0.5).map(q => ({ t: q.t, cajas: (q.caras || []).filter(c => c.p >= 0.6).map(c => cajaEnVentana(c, ancho, alto)) })).filter(m => m.cajas.length);
+  if (!muestras.length) return null;
+  let ref = inicial ? { cx: inicial.cx, cy: inicial.cy } : null; const pista = [];
+  for (const m of muestras) {
+    const c = m.cajas.reduce((b, x) => (!ref ? (x.w * x.h > b.w * b.h ? x : b) : (dist(x, ref) < dist(b, ref) ? x : b)), m.cajas[0]);
+    if (ref && dist(c, ref) > 0.35) continue;
+    pista.push({ t: m.t, cx: c.cx, cy: c.cy, w: c.w, h: c.h }); ref = c;
+  }
+  return pista.length ? pista : null;
+}
+
+// Detección densa (8 cuadros/s) solo del tramo que se va a mostrar: mucho más fiel que las muestras de toda la biblioteca. Devuelve la serie [{ t, caras[] }] o null.
+function serieDensa(ruta, ss, dur) {
+  try {
+    const p = require('child_process').spawnSync('python', [require('path').join(__dirname, '..', 'scripts', 'rostros-ventana.py'), ruta, String(ss), String(dur)], { encoding: 'utf8', timeout: 60000, maxBuffer: 8 * 1024 * 1024 });
+    if (p.status !== 0 || !p.stdout) return null;
+    const j = JSON.parse(p.stdout.trim().split(/\r?\n/).pop()); return j.cuadros && j.cuadros.length ? j.cuadros : null;
+  } catch { return null; }
+}
+
+module.exports = { serieDensa, pistaDeRostro, radioDe, mejorRostro, fraccionConRostro, aplicar, cajaEnVentana, encuadreParaTarjeta, ZONA_TAPADA };

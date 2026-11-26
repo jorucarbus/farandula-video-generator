@@ -40,6 +40,24 @@ function retrato({ foto, nombre, cx = 0.5, cy = 0.5, r = 0.2, foco, t0, t1 }) {
   };
 }
 
+// ── Marcas sobre el video (círculo, cuadro o flecha) que siguen la cara durante la toma ──────────────────────────────────────────────
+// m.pista = [{ t (segundo del clip), cx, cy, w, h }] en coordenadas de la ventana; sin pista, la posición fija de siempre (m.cx, m.cy, m.rx, m.ry).
+function geomMarca(m, tSrc) {
+  const P = m.pista; if (!P || !P.length) return { cx: m.cx, cy: m.cy, rx: m.rx, ry: m.ry };
+  let a = P[0], b = P[P.length - 1];
+  if (tSrc <= a.t) b = a; else if (tSrc >= b.t) a = b; else for (let i = 1; i < P.length; i++) if (P[i].t >= tSrc) { a = P[i - 1]; b = P[i]; break; }
+  const k = b.t === a.t ? 0 : (tSrc - a.t) / (b.t - a.t);
+  return { cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), rx: lerp(a.w, b.w, k) * 0.8, ry: lerp(a.h, b.h, k) * 0.8 };
+}
+function trazarMarca(ctx, m, { X, Y, WW, HH, tSrc, p, estilo, u }) {
+  const opt = { color: estilo.colores.rojo, ancho: Math.max(6, u * 0.011), u };
+  if (m.tipo === 'subrayado') { B.trazar(ctx, B.puntosDeSubrayado(X + m.x0 * WW, Y + m.y0 * HH, X + m.x1 * WW, Y + m.y1 * HH, m.semilla || 5), p, opt); return; }
+  const g = geomMarca(m, tSrc), cx = X + g.cx * WW, cy = Y + g.cy * HH, rx = g.rx * WW, ry = g.ry * HH;
+  if (m.tipo === 'cuadro') B.trazar(ctx, B.puntosDeCuadro(cx, cy, rx * 1.08, ry * 1.08, m.semilla || 11), p, opt);
+  else if (m.tipo === 'flecha') { const sg = B.puntosDeFlecha(cx, cy, Math.max(rx, ry), m.lado === 'izq' ? -1 : 1, X, X + WW, m.semilla || 11); B.trazar(ctx, sg[0], Math.min(1, p / 0.75), opt); if (p > 0.75) { B.trazar(ctx, sg[1], (p - 0.75) / 0.25, opt); B.trazar(ctx, sg[2], (p - 0.75) / 0.25, opt); } }
+  else B.trazar(ctx, B.puntosDeOvalo(cx, cy, rx, ry, m.semilla || 11), p, opt);
+}
+
 // ── VS: dos círculos con foto que entran de los lados y un "VS" que cae en medio (confrontación) ─────────────────────────────────────
 function etiquetaNombre(ctx, nombre, X, y, p, u, estilo) {
   const tam = Math.round(u * 0.03); ctx.font = `${tam}px ${estilo.tipografia.texto}`;
@@ -292,8 +310,7 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.616, t0, 
       ctx.save(); B.rectRedondo(ctx, X, Y, WW, HH, u * 0.05); ctx.clip(); if (img) ctx.drawImage(img, X, Y, WW, HH); ctx.restore();
       for (const m of marcas) {
         const p = easeOutCubic((tAbs - m.t) / (m.dur || 0.7)); if (p <= 0) continue;
-        const pts = m.tipo === 'circulo' ? B.puntosDeOvalo(X + m.cx * WW, Y + m.cy * HH, m.rx * WW, m.ry * HH, m.semilla || 11) : B.puntosDeSubrayado(X + m.x0 * WW, Y + m.y0 * HH, X + m.x1 * WW, Y + m.y1 * HH, m.semilla || 5);
-        B.trazar(ctx, pts, p, { color: estilo.colores.rojo, ancho: Math.max(6, u * 0.011), u });
+        trazarMarca(ctx, m, { X, Y, WW, HH, tSrc: ss + (tAbs - t0), p, estilo, u });
       }
       ctx.restore();
     },
@@ -347,8 +364,7 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
       ctx.restore();
       for (const m of c.marcas || []) {
         const pr = easeOutCubic((tAbs - m.t) / (m.dur || 0.7)); if (pr <= 0 || tAbs > c.t1 + TRANS) continue;
-        const pts = m.tipo === 'circulo' ? B.puntosDeOvalo(X + m.cx * WW, Y + m.cy * HH, m.rx * WW, m.ry * HH, m.semilla || 11) : B.puntosDeSubrayado(X + m.x0 * WW, Y + m.y0 * HH, X + m.x1 * WW, Y + m.y1 * HH, m.semilla || 5);
-        B.trazar(ctx, pts, pr, { color: estilo.colores.rojo, ancho: Math.max(6, u * 0.011), u });
+        trazarMarca(ctx, m, { X, Y, WW, HH, tSrc: (c.ss || 0) + (tAbs - c.t0), p: pr, estilo, u });
       }
       ctx.restore();
     },

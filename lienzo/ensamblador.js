@@ -9,7 +9,10 @@ const { titereRig } = require('./titere-rig');
 const { escenario } = require('./escenarios');
 const { LUGARES, PAISES, nombreDePieza, tokens, resolverPunto } = require('../edl/director');
 const { rostroEnVentana, USO_MAX_S } = require('../edl/biblioteca');
-const { encuadreParaTarjeta } = require('../edl/rostrosLocales');
+const { encuadreParaTarjeta, pistaDeRostro } = require('../edl/rostrosLocales');
+const FORMAS_MARCA = ['circulo', 'cuadro', 'flecha']; // se alternan para que no sea siempre el mismo trazo
+// cfg.serieDe(ruta, ss, dur) (opcional) da la detección densa del tramo; sin ella se usan las muestras de la biblioteca
+const marcaDeRostro = (info, cara, ss, dur, t, k, forma, serieDe) => ({ tipo: forma === 'flecha' && cara.r > 0.24 ? 'circulo' : forma, /* una cara que ya llena el cuadro no necesita flecha */ cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), pista: pistaDeRostro((serieDe && serieDe(info.ruta, ss, dur + 0.5)) || info.caras, info.ancho, info.alto, ss, dur, cara), lado: cara.cx < 0.5 ? 'der' : 'izq', t, semilla: 11 + k });
 
 // Posiciones (fracciones del cuadro) de las piezas EXTRA según el principal de la escena.
 const SLOTS = {
@@ -40,6 +43,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   const idxEn = (k, ancla) => { const n = tokens(String(ancla))[0]; for (let i = V[k].desde; i < V[k].hasta; i++) if (tokens(palabras[i].palabra)[0] === n) return i; return V[k].desde; };
   const tPal = (k, ancla) => (ancla ? palabras[idxEn(k, ancla)].t0 : V[k].t0);
   const elementos = [], claves = new Set(), avisos = [], uso = new Map(), finClip = new Map(); // finClip: beat → segundo en que termina su clip real
+  let nMarca = 0;
   const marca = (k, ancla) => { if (ancla) claves.add(idxEn(k, ancla)); };
   const cubre = [], tarjetas = [], pedidos = [], zoomsT = []; // zoomsT: segundos de las palabras clave (anclas de insignias, mapas y gráficos): ahí se da un golpe de zoom a la toma; // cubre: intervalos con una pieza PRINCIPAL en pantalla; tarjetas: solo las que van sobre el montaje; pedidos: clips que el director pidió para una frase
   const card = iv => { cubre.push(iv); tarjetas.push(iv); };
@@ -60,7 +64,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       const marcas = [], m = e.clip.marca && marcaConSentido(info, e.clip.marca.ancla, cfg.alias) ? e.clip.marca : null, cara = m && info.rostro ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
       if (m && cara) { // círculo rojo a mano sobre el rostro, en la palabra ancla (dentro de la ventana del clip)
         const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
-        marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + k }); marca(k, m.ancla);
+        marcas.push(marcaDeRostro(info, cara, e.clip.ss, dur, tm, k, FORMAS_MARCA[nMarca++ % FORMAS_MARCA.length], cfg.serieDe)); marca(k, m.ancla);
       } else if (e.clip.marca) avisos.push('frase ' + (k + 1) + (!info.rostro ? ': sin coordenadas del rostro; el clip va sin círculo' : ': el círculo no tiene sentido (rostro pequeño o la palabra no habla de ella); el clip va sin marca'));
       elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
     }
@@ -171,7 +175,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         const ss = pedido ? pedido.ss : Math.max(0, Math.min(((info.rostro && info.rostro.t) || 0) + (ciclo ? ciclo * 1.1 : 0), Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = []; // al reutilizar un clip se toma otro tramo suyo
         if (pedido && pedido.marca && marcaConSentido(info, pedido.marca.ancla, cfg.alias)) {
           const cara = info.rostro && info.ancho ? rostroEnVentana(info.rostro, info.ancho, info.alto) : null;
-          if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
+          if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push(marcaDeRostro(info, cara, ss, dur, tm, pedido.k, FORMAS_MARCA[nMarca++ % FORMAS_MARCA.length], cfg.serieDe)); marca(pedido.k, pedido.marca.ancla); }
           else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');
         }
         const ssF = cfg.ajustarSs ? Math.min(cfg.ajustarSs(info.ruta, ss), Math.max(ss, (info.duracion || USO_MAX_S) - dur - E.TRANS)) : ss;

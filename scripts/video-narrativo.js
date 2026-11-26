@@ -106,7 +106,7 @@ function sinNegro(ruta, ss) {
   // REGLA: la protagonista no habla con la voz del narrador, solo reacciona; su boca solo se sincroniza donde el guion la CITA (comillas o beat.cita). --lipsync-total solo para pruebas.
   const citas = ventanasDeCitas(g.beats, palabras, V), voz = process.argv.includes('--lipsync-total') ? vozTotal : vozSoloEnCitas(vozTotal, citas, FPS);
   console.log(citas.length ? `CITAS (la protagonista habla): ${citas.map(c => c.t0.toFixed(1) + '-' + c.t1.toFixed(1) + 's').join(', ')}` : 'Sin citas: la protagonista solo reacciona (no hay sincronía labial).');
-  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, cola: hasta > V[V.length - 1].t1 + 0.9 ? { t0: V[V.length - 1].t1 + 0.4, t1: hasta } : null, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro, alias: require('../edl/storyboard').REACCIONES.protagonista.alias });
+  const { elementos, claves, avisos } = ensamblar(escenas, g.beats.slice(0, escenas.length), V, palabras, { ...cab, serieDe: process.argv.includes('--sin-rostros-locales') ? null : require('../edl/rostrosLocales').serieDensa, cola: hasta > V[V.length - 1].t1 + 0.9 ? { t0: V[V.length - 1].t1 + 0.4, t1: hasta } : null, proporcion: 0.30, clips: cfgClips, relleno, montaje, voz, ajustarSs: sinNegro, alias: require('../edl/storyboard').REACCIONES.protagonista.alias });
   if (avisos.length) console.log('AVISOS:', avisos.join(' | '));
   const subtitulos = crearSubtitulos({ palabras: palabras.filter(p => p.t0 < hasta), claves, w: 1080, h: 1920, estilo });
   const salida = arg('--salida', path.join(DM, 'lamina', 'video-narrativo.mp4'));

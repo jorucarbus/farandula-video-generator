@@ -82,4 +82,22 @@ function puntosDeSubrayado(x0, y0, x1, y1, semilla = 3, pasos = 30) {
 // Entrada con escala + opacidad. p = progreso 0..1 de la aparición.
 const entrada = (p, desde = 0.82) => ({ escala: desde + (1 - desde) * easeOutCubic(p), alfa: acotar(p / 0.35) });
 
-module.exports = { rng, fondo, sombraDeCapa, sinSombra, sombraDeContacto, retratoCircular, trazar, puntosDeOvalo, puntosDeSubrayado, entrada, rectRedondo };
+// Cuadro dibujado a mano alrededor de una cara: cuatro lados con esquinas algo desviadas, y vuelve casi al inicio (como un marcador).
+function puntosDeCuadro(cx, cy, rx, ry, semilla = 5) {
+  const r = rng(semilla), j = () => (r() - 0.5) * Math.min(rx, ry) * 0.12;
+  const c = [[-rx + j(), -ry + j()], [rx + j(), -ry + j()], [rx + j(), ry + j()], [-rx + j(), ry + j()], [-rx + j() * 0.5, -ry * 0.78 + j()]], pts = [];
+  for (let s = 0; s < c.length - 1; s++) for (let i = 0; i < 14; i++) { const q = i / 14; pts.push({ x: cx + c[s][0] + (c[s + 1][0] - c[s][0]) * q, y: cy + c[s][1] + (c[s + 1][1] - c[s][1]) * q }); }
+  pts.push({ x: cx + c[4][0], y: cy + c[4][1] });
+  return pts;
+}
+
+// Flecha a mano que apunta a una cara de radio R desde abajo a un lado (dir = +1 viene de la derecha, -1 de la izquierda). Devuelve 3 trazos: cuerpo y dos alas.
+function puntosDeFlecha(cx, cy, R, dir = 1, xMin = 0, xMax = 1e9, semilla = 5) {
+  const r = rng(semilla), L = Math.min(R * 2.1, (xMax - xMin) * 0.28), punta = { x: cx + dir * R * 0.8, y: cy + R * 0.5 }, ini = { x: Math.max(xMin + 12, Math.min(xMax - 12, punta.x + dir * L)), y: punta.y + L * 0.95 }; // el largo del cuerpo tiene tope: una cara muy grande no estira la flecha fuera de la tarjeta
+  const ang = Math.atan2(punta.y - ini.y, punta.x - ini.x), comba = (r() - 0.5) * R * 0.5, nx = -Math.sin(ang), ny = Math.cos(ang), cuerpo = [];
+  for (let i = 0; i <= 18; i++) { const q = i / 18, b = Math.sin(q * Math.PI) * comba; cuerpo.push({ x: ini.x + (punta.x - ini.x) * q + nx * b, y: ini.y + (punta.y - ini.y) * q + ny * b }); }
+  const ala = s => { const a = ang + Math.PI + s * 0.5, L = R * 0.6; return [punta, { x: punta.x + Math.cos(a) * L, y: punta.y + Math.sin(a) * L }]; };
+  return [cuerpo, ala(1), ala(-1)];
+}
+
+module.exports = { puntosDeCuadro, puntosDeFlecha, rng, fondo, sombraDeCapa, sinSombra, sombraDeContacto, retratoCircular, trazar, puntosDeOvalo, puntosDeSubrayado, entrada, rectRedondo };
