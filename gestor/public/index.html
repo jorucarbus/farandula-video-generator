@@ -74,7 +74,8 @@
       <div class="fila"><label style="flex:1;min-width:280px">Link de la noticia<input type="url" id="cLink" placeholder="https://…"></label></div>
       <div class="fila">
         <label>Canal<select id="cCanal"></select></label>
-        <label>Carpeta de clips<select id="cCarpeta"></select></label>
+        <label>Carpeta de clips (Drive)<input type="text" id="cCarpeta" list="dlCarpetas" value="auto" style="min-width:260px" autocomplete="off"><datalist id="dlCarpetas"></datalist></label>
+        <span class="chip gris" style="align-self:end" title="Lee las carpetas de Drive y elige la del artista más mencionado en la noticia">auto = detectar desde la noticia</span>
         <label style="flex-direction:row;align-items:center;gap:6px;margin-top:16px"><input type="checkbox" id="cGemelo"> también el gemelo (canal hermano)</label>
       </div>
       <div class="fila"><button class="b p" id="cIr">Crear video</button><span class="chip gris">usa Gemini y ElevenLabs: cuesta unos centavos por video</span></div>
@@ -123,9 +124,14 @@ async function cargarResumen() {
   for (const c of r.selector) cont.append(carpetaItem('selector', c.nombre, `${c.clips} videos`, ''));
   if (!r.selector.length) cont.append(el('div', { className: 'vacio' }, r.selectorExiste ? 'Aún no hay descargas' : 'No encuentro la carpeta del Selector'));
   cont.append(el('h3', {}, 'En Drive (sin traer)'), el('div', { id: 'drive' }, el('button', { className: 'b', textContent: 'Ver carpetas de Drive', onclick: () => cargarDrive() })));
-  const cs = $('#cCarpeta'); cs.replaceChildren(...r.biblioteca.map(c => el('option', { value: c.nombre, textContent: c.nombre })));
+  cargarOpcionesCarpeta(r.biblioteca.map(c => c.nombre));
   const cc = $('#cCanal'); cc.replaceChildren(...r.canales.map(c => el('option', { value: c.nombre, textContent: c.nombre + (c.monetiza ? '' : ' (corto)') })));
   $('#estado').textContent = `${r.biblioteca.reduce((n, c) => n + c.clips, 0)} clips · ${r.selector.reduce((n, c) => n + c.clips, 0)} sin importar`;
+}
+// Carpeta de clips para crear video: 'auto' (detecta al artista de la noticia) o cualquier carpeta de Drive. Las de la biblioteca van primero.
+async function cargarOpcionesCarpeta(locales) {
+  const dl = $('#dlCarpetas'); dl.replaceChildren(el('option', { value: 'auto', label: 'Detección automática (lee las carpetas de Drive)' }), ...locales.map(n => el('option', { value: n, label: 'biblioteca' })));
+  try { const d = await api('/api/drive/carpetas'); const ya = new Set(locales); dl.append(...d.filter(c => !ya.has(c.nombre)).map(c => el('option', { value: c.nombre, label: c.etiquetada ? 'Drive · etiquetada' : 'Drive' }))); } catch {}
 }
 let driveLista = null, driveFiltro = '';
 async function cargarDrive(refrescar) {
@@ -241,7 +247,7 @@ $('#visor').addEventListener('close', () => $('#visorVideo').pause());
 // ---------------------------------------------------------------- crear video
 $('#cIr').onclick = async () => {
   const m = $('#cMsg'); m.replaceChildren();
-  try { const r = await api('/api/crear-video', { link: $('#cLink').value.trim(), canal: $('#cCanal').value, carpeta: $('#cCarpeta').value, gemelo: $('#cGemelo').checked }); m.append(el('div', { className: 'msg' }, `Trabajo #${r.id} en marcha: ${r.salidas.join(', ')}. Tarda unos minutos; míralo en Trabajos y luego en Videos listos.`)); }
+  try { const r = await api('/api/crear-video', { link: $('#cLink').value.trim(), canal: $('#cCanal').value, carpeta: $('#cCarpeta').value.trim() || 'auto', gemelo: $('#cGemelo').checked }); m.append(el('div', { className: 'msg' }, `Trabajo #${r.id} en marcha: ${r.salidas.join(', ')}. Tarda unos minutos; míralo en Trabajos y luego en Videos listos.`)); }
   catch (e) { m.append(el('div', { className: 'msg' }, '⚠ ' + e.message)); }
 };
 

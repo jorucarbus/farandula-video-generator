@@ -115,7 +115,14 @@ const log = (...a) => console.log(...a);
   if (bandera('--hasta-guion')) { log('\nSe detiene en el guion (--hasta-guion). Revísalo/edítalo y vuelve a correr sin la bandera para seguir.\n\n' + g.script); return; }
 
   // ---- 4) voz + tiempos por palabra (ElevenLabs) — se paga una vez por guion
-  const carpeta = arg('--carpeta', null); if (!carpeta) throw new Error('Falta --carpeta (clips del protagonista en data-motor/biblioteca/)');
+  let carpeta = arg('--carpeta', null);
+  if (!carpeta || carpeta === 'auto') { // detección automática: la persona de la noticia que tiene carpeta en Drive (la más mencionada)
+    const A = require('../edl/carpetaAuto'); let nombres;
+    try { nombres = Object.keys(await require('../drive').obtenerCarpetasFamosos()); } catch (e) { throw new Error('No pude leer las carpetas de Drive para detectar al artista (' + String(e.message).slice(0, 80) + '). Elige la carpeta a mano.'); }
+    const r = A.elegir(lectura, nombres);
+    if (!r) throw new Error(`No encontré en Drive una carpeta para ninguna de las personas de la noticia (${(lectura.acta.personas || []).join(', ') || 'ninguna'}). Elige la carpeta a mano; la lectura y el guion ya hechos se reutilizan.`);
+    carpeta = r.carpeta; log(`CARPETA automática: ${carpeta} (por "${r.persona}", coincidencia ${r.confianza}, ${r.menciones} menciones${r.otras.length ? '; otras posibles: ' + r.otras.map(o => o.carpeta).join(', ') : ''})`);
+  }
   const audio = arg('--audio', path.join(DM, 'audios', `${new Date().toISOString().slice(0, 10)} ${nombre}.mp3`));
   const correr = (script, a) => { const r = spawnSync(process.execPath, [path.join(__dirname, script), ...a], { stdio: 'inherit', cwd: RAIZ, env: { ...process.env, ...(ficha && ficha.vozId ? { ELEVENLABS_VOICE_ID: ficha.vozId } : {}) } }); if (r.status !== 0) throw new Error(`${script} falló (código ${r.status})`); };
   if (fs.existsSync(audio) && fs.existsSync(fPal) && !rehacer) log('Voz ya generada; se reutiliza');

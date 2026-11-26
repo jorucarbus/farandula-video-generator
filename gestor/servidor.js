@@ -110,11 +110,12 @@ app.post('/api/preparar', (req, res) => {
 });
 
 // Crear video desde un link: uno solo o con su gemelo (canal hermano). Usa la tubería automática (Gemini + voz ElevenLabs).
-app.post('/api/crear-video', (req, res) => {
+app.post('/api/crear-video', async (req, res) => {
   try {
     const { link, canal, carpeta, gemelo } = req.body || {};
     if (!/^https?:\/\/\S+$/i.test(link || '')) throw new Error('el link debe empezar con http:// o https://');
-    if (!carpetaValida(carpeta) || !G.carpetasBiblioteca().includes(carpeta)) throw new Error('elige una carpeta de clips de la biblioteca');
+    // carpeta: 'auto' (se detecta desde la noticia leyendo las carpetas de Drive) o cualquier carpeta de Drive / de la biblioteca
+    if (carpeta !== 'auto') { const mapa = await carpetasDrive(false).catch(() => ({})); if (!carpetaValida(carpeta) || !(G.carpetasBiblioteca().includes(carpeta) || mapa[carpeta])) throw new Error('esa carpeta no existe en Drive ni en la biblioteca; elige otra o usa la detección automática'); }
     const ficha = canales.obtener(canal); if (!ficha) throw new Error('canal desconocido');
     const nombre = `gestor-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
     const pasos = [node('noticia-a-video.js', link, '--canal', ficha.nombre, '--carpeta', carpeta, '--nombre', nombre, '--salida', path.join(G.DM, 'renders', `${nombre}.mp4`))];
