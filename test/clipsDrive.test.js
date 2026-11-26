@@ -46,3 +46,25 @@ test('uso: cuenta videos y bytes de Drive por carpeta', () => {
   poner(C.rutaClip('Eva', '1'), '1234'); poner(C.rutaClip('Eva', '2'), '12');
   const u = C.uso().find(x => x.carpeta === 'Eva'); assert.deepStrictEqual([u.videos, u.bytes], [2, 6]);
 });
+
+test('recurrente automático: ≥ 3 días de uso en 30 días; los usos viejos no cuentan', () => {
+  const dia = n => Date.now() - n * 86400e3;
+  C.registrarUso('Fiona', dia(40)); // viejo: no cuenta
+  assert.strictEqual(C.usosRecientes('Fiona'), 0); assert.ok(!C.recurrentes().includes('Fiona'));
+  C.registrarUso('Fiona', dia(5)); C.registrarUso('Fiona', dia(2));
+  assert.ok(!C.recurrentes().includes('Fiona'), 'con 2 usos aún no');
+  C.registrarUso('Fiona', dia(0));
+  assert.strictEqual(C.usosRecientes('Fiona'), 3); assert.ok(C.recurrentes().includes('Fiona'));
+  assert.ok(!C.recurrentesManuales().includes('Fiona'), 'no se confunde con las marcadas a mano');
+});
+
+test('tope de espacio: lo recurrente se conserva pero se borra lo menos usado si pasa del tope', () => {
+  const a = poner(C.rutaClip('Fiona', 'viejo'), 'x'.repeat(10)), b = poner(C.rutaClip('Fiona', 'nuevo'), 'x'.repeat(10));
+  viejo(a, 10); viejo(b, 1);
+  const antes = process.env.CACHE_CLIPS_GB; // el tope se lee al cargar el módulo: se prueba la lógica con un módulo nuevo
+  process.env.CACHE_CLIPS_GB = '0.000000015'; // 15 bytes
+  delete require.cache[require.resolve('../edl/clipsDrive')];
+  const C2 = require('../edl/clipsDrive'); const r = C2.limpiarCaducados();
+  assert.ok(r.borrados >= 1); assert.ok(!fs.existsSync(a), 'se borra lo menos usado'); assert.ok(fs.existsSync(b), 'se conserva lo más reciente');
+  if (antes === undefined) delete process.env.CACHE_CLIPS_GB; else process.env.CACHE_CLIPS_GB = antes;
+});

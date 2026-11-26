@@ -111,7 +111,7 @@ PESTANAS.forEach(([k, n]) => $('#nav').append(el('button', { textContent: n, onc
 async function cargarResumen() {
   const r = estado.resumen = await api('/api/resumen'), cont = $('#carpetas'); cont.replaceChildren();
   cont.append(el('h3', {}, 'Biblioteca de clips'));
-  for (const c of r.biblioteca) cont.append(carpetaItem('biblioteca', c.nombre, `${c.clips} clips`, [c.recurrente ? '★ recurrente' : '', c.enCache ? `${c.enCache} en disco` : '', c.malos ? `${c.malos} malos` : ''].filter(Boolean).join(' · ')));
+  for (const c of r.biblioteca) cont.append(carpetaItem('biblioteca', c.nombre, `${c.clips} clips`, [c.etiquetados >= c.clips && c.clips ? '✓ etiquetada' : `${c.clips - c.etiquetados} sin etiquetar`, c.recurrente ? '★ recurrente' : '', c.enCache ? `${c.enCache} en disco` : '', c.malos ? `${c.malos} malos` : ''].filter(Boolean).join(' · ')));
   if (!r.biblioteca.length) cont.append(el('div', { className: 'vacio' }, 'Sin carpetas'));
   cont.append(el('h3', {}, 'Descargas del Selector'));
   for (const c of r.selector) cont.append(carpetaItem('selector', c.nombre, `${c.clips} videos`, ''));
@@ -129,9 +129,9 @@ async function cargarDrive(refrescar) {
 }
 function pintarDrive() {
   const cont = $('#drive'); cont.replaceChildren(); const t = driveFiltro.toLowerCase();
-  const sin = driveLista.filter(c => !c.local), l = sin.filter(c => !t || c.nombre.toLowerCase().includes(t));
+  const sin = driveLista.filter(c => !c.local), l = [...sin].sort((a, b) => Number(b.etiquetada) - Number(a.etiquetada)).filter(c => !t || c.nombre.toLowerCase().includes(t));
   cont.append(el('input', { type: 'text', id: 'buscaDrive', placeholder: `Buscar entre ${sin.length} carpetas…`, value: driveFiltro, style: 'width:100%;margin-bottom:6px', oninput: e => { driveFiltro = e.target.value; pintarDrive(); const i = $('#buscaDrive'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }));
-  for (const c of l.slice(0, 40)) cont.append(el('div', { className: 'carpeta', onclick: () => abrirDrive(c.nombre) }, el('span', {}, c.nombre), el('small', {}, 'traer')));
+  for (const c of l.slice(0, 40)) cont.append(el('div', { className: 'carpeta', onclick: () => abrirDrive(c.nombre) }, el('span', {}, c.nombre), el('small', {}, c.etiquetada ? '✓ etiquetada' : 'sin etiquetas')));
   if (l.length > 40) cont.append(el('div', { className: 'vacio' }, `…y ${l.length - 40} más: escribe para filtrar`));
   if (!l.length) cont.append(el('div', { className: 'vacio' }, 'Ninguna coincide'));
   cont.append(el('button', { className: 'b', textContent: 'Actualizar lista', onclick: () => cargarDrive(true) }));

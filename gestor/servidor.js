@@ -132,8 +132,9 @@ async function carpetasDrive(refrescar) {
 }
 app.get('/api/drive/carpetas', async (req, res) => {
   try {
-    const mapa = await carpetasDrive(req.query.refrescar === '1'), locales = new Map(G.resumenCarpetas().biblioteca.map(c => [c.nombre, c.clips]));
-    ok(res, Object.keys(mapa).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(n => ({ nombre: n, local: locales.has(n), clipsLocales: locales.get(n) || 0 })));
+    const mapa = await carpetasDrive(req.query.refrescar === '1'), locales = new Map(G.resumenCarpetas().biblioteca.map(c => [c.nombre, c]));
+    const remotos = await respaldo.listarRemotos().catch(() => new Map()); // el índice respaldado en Drive también cuenta como "ya etiquetada" (hecha desde otra PC)
+    ok(res, Object.keys(mapa).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(n => ({ nombre: n, local: locales.has(n), clipsLocales: locales.has(n) ? locales.get(n).clips : 0, etiquetada: remotos.has(respaldo.nombreRemoto(n, 'etiquetas')) || Boolean(locales.has(n) && locales.get(n).etiquetados) })));
   } catch (e) { mal(res, new Error('No pude leer Drive: ' + String(e.message).slice(0, 160)), 502); }
 });
 app.get('/api/drive/contar', async (req, res) => {
@@ -172,7 +173,7 @@ app.get('/api/tipos', (req, res) => ok(res, TIPOS_TOMA));
 app.post('/api/respaldar', async (req, res) => { try { ok(res, await respaldo.respaldarTodas()); } catch (e) { mal(res, new Error('No pude respaldar en Drive: ' + String(e.message).slice(0, 140)), 502); } });
 
 // Caché de videos en disco: ver cuánto ocupa, marcar carpetas "recurrentes" (se quedan) y liberar espacio.
-app.get('/api/cache', (req, res) => ok(res, { uso: clipsDrive.uso(), recurrentes: clipsDrive.recurrentes(), ttlHoras: clipsDrive.TTL_HORAS }));
+app.get('/api/cache', (req, res) => ok(res, { uso: clipsDrive.uso(), recurrentes: clipsDrive.recurrentes(), manuales: clipsDrive.recurrentesManuales(), ttlHoras: clipsDrive.TTL_HORAS, topeGB: clipsDrive.TOPE_GB }));
 app.post('/api/recurrente', (req, res) => { try { ok(res, { recurrentes: clipsDrive.marcarRecurrente(req.body.carpeta, Boolean(req.body.si)) }); } catch (e) { mal(res, e); } });
 app.post('/api/purgar', (req, res) => { try { if (!G.carpetasBiblioteca().includes(req.body.carpeta)) throw new Error('carpeta desconocida'); ok(res, clipsDrive.purgar(req.body.carpeta)); } catch (e) { mal(res, e); } });
 // Mandar clips a la PAPELERA DE DRIVE (recuperable ~30 días) y sacarlos del índice. Solo clips que están en el índice de la carpeta.

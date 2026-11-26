@@ -41,6 +41,9 @@ function sinNegro(ruta, ss) {
 
   // clips reales: qué clip de la biblioteca calza con cada frase (o ninguno)
   let elecciones = new Map(), etiquetas = null, rutaDe = {}; const cfgClips = {};
+  // Índice del artista al día: la primera vez que se usa un artista (o si aparecen videos nuevos en su carpeta de Drive) se etiquetan SOLO los clips sin etiqueta,
+  // una vez, y queda guardado y respaldado. Lo ya etiquetado no gasta IA. --sin-indice-auto lo salta.
+  if (!process.argv.includes('--sin-indice-auto') && !process.argv.includes('--sin-clips')) require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), carpeta], { stdio: 'inherit' });
   const rEtiq = path.join(RAIZ, `${carpeta}.etiquetas.json`), rClips = path.join(RAIZ, `${carpeta}.clips.json`);
   const protagonista = arg('--protagonista', carpeta.replace(/_/g, ' '));
   // Los videos viven en Drive: solo se bajan los que este video va a usar (y se borran solos a las 48 h, salvo las carpetas recurrentes).
