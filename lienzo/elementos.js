@@ -148,20 +148,24 @@ function avionGlifo(ctx, x, y, ang, s, color) { // silueta simple de avión, apu
   const mitad = [[1, 0], [0.25, -0.13], [-0.05, -0.8], [-0.3, -0.8], [-0.25, -0.14], [-0.8, -0.1], [-0.95, -0.38], [-1.1, -0.38], [-1.0, 0]];
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = color; ctx.beginPath(); mitad.forEach(([px, py], i) => (i ? ctx.lineTo(px * s, py * s) : ctx.moveTo(px * s, py * s))); mitad.slice(0, -1).reverse().forEach(([px, py]) => ctx.lineTo(px * s, -py * s)); ctx.closePath(); ctx.fill(); ctx.restore();
 }
-function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40, t0, t1, desde = null }) {
-  const regional = !CERCA.includes(pais), paises = regional ? mundoCompleto() : mundo().paises;
-  const destino = paises.find(f => f.properties.name === pais);
-  if (regional && destino && !lugar) { const c = geoCentroid(destino); lugar = { lon: c[0], lat: c[1], nombre: nombrePais || pais }; tPin = tPin ?? t0 + 1.0; }
-  const viaje = Boolean(desde && regional && destino && lugar), tSale = t0 + 0.45;
+// desde / hasta: { lon, lat, nombre } (ciudad) o { pais: nombre en el atlas, nombre } (el punto es el centro del país). Con los dos, el mapa es una ruta libre entre cualquier par de lugares del mundo.
+function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40, t0, t1, desde = null, hasta = null }) {
+  const libre = Boolean(desde && hasta), regional = libre || !CERCA.includes(pais), paises = regional ? mundoCompleto() : mundo().paises;
+  let destino = libre ? null : paises.find(f => f.properties.name === pais);
+  const puntoDe = p => { if (!p || !p.pais) return p; const f = paises.find(x => x.properties.name === p.pais); if (!f) return null; const c = geoCentroid(f); return { lon: c[0], lat: c[1], nombre: p.nombre || p.pais, feat: f }; };
+  if (libre) { desde = puntoDe(desde); hasta = puntoDe(hasta); if (desde && hasta) { lugar = { lon: hasta.lon, lat: hasta.lat, nombre: hasta.nombre }; destino = hasta.feat || null; tPin = tPin ?? t0 + 1.0; } else { desde = null; } }
+  else if (regional && destino && !lugar) { const c = geoCentroid(destino); lugar = { lon: c[0], lat: c[1], nombre: nombrePais || pais }; tPin = tPin ?? t0 + 1.0; }
+  const viaje = Boolean(desde && lugar && (libre || (regional && destino))), tSale = t0 + 0.45;
   if (viaje) tPin = Math.max(tSale + 1.7, (tPin ?? 0) + 0.4); // el avión sale al aparecer el mapa y llega (el pin cae) cuando se nombra el destino
-  const proyRuta = (cw, ch) => geoMercator().fitExtent([[cw * 0.14, ch * 0.22], [cw * 0.86, ch * 0.78]], { type: 'MultiPoint', coordinates: [[desde.lon, desde.lat], [lugar.lon, lugar.lat]] });
+  const mLon = viaje ? (desde.lon + lugar.lon) / 2 : 0, mLat = viaje ? (desde.lat + lugar.lat) / 2 : 0;
+  const proyRuta = (cw, ch) => geoMercator().fitExtent([[cw * 0.14, ch * 0.22], [cw * 0.86, ch * 0.78]], { type: 'MultiPoint', coordinates: [[desde.lon, desde.lat], [lugar.lon, lugar.lat], [mLon - 8, mLat - 8 * ch / cw], [mLon + 8, mLat + 8 * ch / cw]] }); // los dos puntos extra fijan un mínimo de zoom (≈16° de ancho) para rutas cortas
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(viaje ? [{ t: tSale, sonido: 'whoosh', db: -6 }] : []), ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       const cw = Math.round(w * 0.86), ch = Math.round(h * alto), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
       const ajuste = (col, pad) => { const p = geoMercator().fitExtent([[pad, pad], [cw - pad, ch - pad]], col); return { k: p.scale(), t: p.translate() }; };
       let A, Z;
-      if (regional) { // vista amplia (≈70° de longitud) → acercamiento al país (≥ 2,4 veces su ancho, mínimo 10°)
+      if (viaje) { /* la ruta usa su propia proyección */ } else if (regional) { // vista amplia (≈70° de longitud) → acercamiento al país (≥ 2,4 veces su ancho, mínimo 10°)
         const c = geoCentroid(destino), [[x0], [x1]] = geoBounds(destino), caja = span => { const hy = (span / 2) * (ch / cw); return { type: 'MultiPoint', coordinates: [[c[0] - span / 2, Math.max(-75, c[1] - hy)], [c[0] + span / 2, Math.min(75, c[1] + hy)]] }; };
         const spanZ = Math.max(Math.abs(x1 - x0) * 2.4, 10); A = ajuste(caja(Math.max(70, spanZ * 4)), 0); Z = ajuste(caja(spanZ), 0);
       } else { const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) }; A = ajuste(ampl, cw * 0.06); Z = ajuste({ type: 'FeatureCollection', features: [destino] }, cw * 0.16); }

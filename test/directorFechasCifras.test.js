@@ -29,16 +29,28 @@ test('el título de lista del modelo se limpia en vez de invalidar la dirección
   assert.strictEqual(D.normalizarEscena({ principal: 'lista', lista: { titulo: '', items: ['a b'] } }).lista.titulo, 'Lista');
 });
 
-test('viaje: ciudad de Ecuador + país con verbo de viaje → mapa con ruta de avión', () => {
-  const e = dirigir('Mara salió de Guayaquil rumbo a Tailandia para el certamen.');
-  assert.strictEqual(e.principal, 'mapa');
-  assert.strictEqual(e.mapa.desde, 'Guayaquil');
-  assert.strictEqual(e.mapa.pais, 'Tailandia');
+test('viaje: dos lugares cualesquiera con verbo de viaje -> mapa con ruta de avion', () => {
+  const casos = [
+    ['Mara salió de Guayaquil rumbo a Tailandia para el certamen.', 'Guayaquil', 'Tailandia'],
+    ['Viajó de Madrid a Miami para la gala.', 'Madrid', 'Miami'],
+    ['Aterrizó en Dubái desde Nueva York ayer.', 'Nueva York', 'Dubái'],
+    ['Voló rumbo a España desde Ecuador el lunes.', 'Ecuador', 'España'],
+  ];
+  for (const [frase, desde, hasta] of casos) {
+    const e = dirigir(frase);
+    assert.strictEqual(e.principal, 'mapa', frase);
+    assert.deepStrictEqual(e.mapa.ruta, { desde, hasta }, frase);
+  }
 });
 
-test('sin verbo de viaje, una ciudad sola sigue siendo un mapa de lugar', () => {
-  const e = dirigir('La fiesta fue en Guayaquil el sábado pasado con mucha gente conocida.');
-  assert.strictEqual(e.principal, 'mapa');
-  assert.strictEqual(e.mapa.lugar, 'Guayaquil');
-  assert.strictEqual(e.mapa.desde, undefined);
+test('un solo lugar o sin verbo de viaje sigue siendo un mapa suelto; ciudad y su pais no son una ruta', () => {
+  assert.strictEqual(dirigir('La fiesta fue en Guayaquil el sábado pasado con mucha gente conocida.').mapa.lugar, 'Guayaquil');
+  assert.strictEqual(D.rutaDeFrase('Ciudad de Panamá recibió a la reina; llegó a Panamá el martes.'), null);
+  assert.strictEqual(D.rutaDeFrase('Madrid y Miami son ciudades grandes.') !== null, true); // sin verbo la regla del director no la usa (ver arriba), pero la extracción sí ordena
+});
+
+test('resolverPunto: ciudad -> coordenadas, pais -> nombre del atlas, desconocido -> null', () => {
+  assert.ok(D.resolverPunto('Madrid').lat > 40);
+  assert.strictEqual(D.resolverPunto('Tailandia').pais, 'Thailand');
+  assert.strictEqual(D.resolverPunto('Atlantis'), null);
 });

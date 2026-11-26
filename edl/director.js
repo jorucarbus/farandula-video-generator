@@ -14,6 +14,35 @@ const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(pat
 // Países que el mapa sabe acercar (español → nombre en el atlas mundial). Ecuador y su zona usan LUGARES (ciudades).
 const PAISES = { 'Puerto Rico': 'Puerto Rico', 'Estados Unidos': 'United States of America', 'México': 'Mexico', 'España': 'Spain', 'Colombia': 'Colombia', 'Perú': 'Peru', 'Venezuela': 'Venezuela', 'Argentina': 'Argentina', 'Brasil': 'Brazil', 'Chile': 'Chile', 'República Dominicana': 'Dominican Rep.', 'Cuba': 'Cuba', 'Panamá': 'Panama', 'Francia': 'France', 'Italia': 'Italy', 'Reino Unido': 'United Kingdom', 'Canadá': 'Canada', 'Japón': 'Japan', 'China': 'China', 'Rusia': 'Russia', 'Alemania': 'Germany', 'Tailandia': 'Thailand', 'Filipinas': 'Philippines', 'Australia': 'Australia', 'India': 'India', 'Vietnam': 'Vietnam', 'Corea del Sur': 'South Korea', 'Costa Rica': 'Costa Rica', 'Bolivia': 'Bolivia', 'Paraguay': 'Paraguay', 'Uruguay': 'Uruguay', 'Guatemala': 'Guatemala', 'Honduras': 'Honduras', 'Nicaragua': 'Nicaragua', 'El Salvador': 'El Salvador', 'Jamaica': 'Jamaica', 'Haití': 'Haiti', 'Portugal': 'Portugal', 'Venezuela ': 'Venezuela' };
 delete PAISES['Venezuela '];
+const CIUDADES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'ciudades-mundo.json'), 'utf8'))).filter(([k]) => !k.startsWith('_')));
+const PAISES_RUTA = { ...PAISES, Ecuador: 'Ecuador' }; // en una ruta, Ecuador también puede ser punto de salida o llegada
+const esPuntoDeRuta = n => Boolean(n && (LUGARES[n] || CIUDADES[n] || PAISES_RUTA[n]));
+
+// Punto de una ruta para el mapa: ciudad → coordenadas; país → nombre en el atlas (el mapa usa su centro).
+function resolverPunto(nombre) {
+  const c = LUGARES[nombre] || CIUDADES[nombre];
+  if (c) return { lon: c.lon, lat: c.lat, nombre };
+  return PAISES_RUTA[nombre] ? { pais: PAISES_RUTA[nombre], nombre } : null;
+}
+
+// Lugares de la frase en orden de aparición (los nombres más largos primero para no confundir "Ciudad de Panamá" con "Panamá").
+function lugaresEnFrase(frase) {
+  let txt = ' ' + normalizar(frase).replace(/\s+/g, ' ') + ' ';
+  const nombres = [...Object.keys(LUGARES), ...Object.keys(CIUDADES), ...Object.keys(PAISES_RUTA)].filter((n, i, a) => a.indexOf(n) === i).sort((a, b) => b.length - a.length), hallados = [];
+  for (const n of nombres) { const k = ' ' + normalizar(n).replace(/\s+/g, ' ') + ' '; const i = txt.search(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '[ ,.;:!?¿¡)"»]'))); if (i >= 0) { hallados.push({ nombre: n, pos: i }); txt = txt.slice(0, i) + ' '.repeat(k.length) + txt.slice(i + k.length); } }
+  return hallados.sort((a, b) => a.pos - b.pos);
+}
+
+// Salida y llegada de un viaje contado en la frase. Llegada = el lugar que sigue a "rumbo a / hacia / con destino a / viajó a..."; si no hay marca, el último. Salida = el primero que no es la llegada.
+function rutaDeFrase(frase) {
+  let L = lugaresEnFrase(frase); if (L.some(l => LUGARES[l.nombre] || CIUDADES[l.nombre])) L = L.filter(l => l.nombre !== 'Ecuador'); // "Guayaquil, Ecuador" es un solo lugar
+  if (L.length < 2) return null;
+  const norm = ' ' + normalizar(frase).replace(/\s+/g, ' ') + ' ', marca = /(rumbo a|rumbo|hacia|con destino a|destino a|viaj\w+ a|vol\w+ a|lleg\w+ a|aterriz\w+ en|part\w+ a)\s+(el |la |los |las )?$/;
+  const llegada = L.find(l => marca.test(norm.slice(Math.max(0, l.pos - 30), l.pos + 1).replace(/\s+$/, ' '))) || L[L.length - 1], salida = L.find(l => l !== llegada);
+  const na = normalizar(salida ? salida.nombre : ""), nb = normalizar(llegada.nombre); if (!salida || na === nb || na.includes(nb) || nb.includes(na)) return null; // "Ciudad de Panamá" y "Panamá" son el mismo sitio
+  return { desde: salida.nombre, hasta: llegada.nombre };
+}
+
 const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video', 'grafico']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
 const GESTOS = Object.keys(require('../lienzo/titere-rig').GESTOS); // reacciones de las manos del muñeco (catálogo cerrado)
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste', 'duda', 'orgullo', 'asco', 'preocupacion', 'amor'], TRAJES = ['bastonera', 'gala'];
@@ -51,8 +80,9 @@ function validarEscena(e, beats, hechos, clips = null) {
   if (e.principal === 'mapa') {
     const m = e.mapa || {};
     if (m.lugar) { if (!LUGARES[m.lugar]) err(`lugar "${m.lugar}" fuera del catálogo`); else { literal(m.lugar, 'lugar'); ancla(m.ancla, 'mapa'); } }
-    else if (m.pais) { if (!PAISES[m.pais]) err(`país "${m.pais}" fuera del catálogo (${Object.keys(PAISES).join(', ')})`); else { literal(m.pais, 'país'); ancla(m.ancla, 'mapa'); } if (m.desde) { if (!LUGARES[m.desde]) err(`desde "${m.desde}" fuera del catálogo de ciudades`); else literal(m.desde, 'desde'); } }
-    else err('el mapa necesita "lugar" (ciudad de Ecuador) o "pais"');
+    else if (m.ruta) { const r = m.ruta; for (const k of ['desde', 'hasta']) { if (!esPuntoDeRuta(r[k])) err(`ruta.${k} "${r[k]}" fuera del catálogo de ciudades y países`); else literal(r[k], 'ruta.' + k); } if (r.desde && r.desde === r.hasta) err('la ruta necesita dos lugares distintos'); ancla(m.ancla, 'mapa'); }
+    else if (m.pais) { if (!PAISES[m.pais]) err(`país "${m.pais}" fuera del catálogo (${Object.keys(PAISES).join(', ')})`); else { literal(m.pais, 'país'); ancla(m.ancla, 'mapa'); } }
+    else err('el mapa necesita "lugar" (ciudad de Ecuador), "pais" o "ruta"');
   }
   if (e.principal === 'cifra') {
     const c = e.cifra || {};
@@ -138,9 +168,9 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
   }
   const fechasDe = [...new Set((frase.match(RE_FECHAS) || []).map(f => f.trim()))];
   if (!e.principal && fechasDe.length >= 2 && fechasDe.length <= 4) { e.principal = 'lista'; e.lista = { titulo: 'Fechas', items: fechasDe.map(t => ({ texto: t, ancla: tokens(t)[0] })) }; } // calendario: "el 26 de noviembre..., el 29 de noviembre... y el 12 de diciembre"
-  // viaje: una ciudad de Ecuador y un país en la misma frase con verbo de viaje → ruta de avión (la línea punteada) en vez de un mapa suelto
-  const paisViaje = lugar && Object.keys(PAISES).sort((a, b) => b.length - a.length).find(p => contiene(frase, p));
-  if (!e.principal && paisViaje && RE_VIAJE.test(normalizar(frase)) && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { pais: paisViaje, desde: lugar, ancla: normalizar(paisViaje).split(' ')[0] }; }
+  // viaje: dos lugares cualesquiera del mundo (ciudad o país) con verbo de viaje → ruta de avión (la línea punteada) en vez de un mapa suelto
+  const rutaV = !e.principal && RE_VIAJE.test(normalizar(frase)) ? rutaDeFrase(frase) : null;
+  if (rutaV && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { ruta: rutaV, ancla: normalizar(rutaV.hasta).split(' ')[0] }; }
   if (!e.principal && lugar && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { lugar, ancla: normalizar(lugar).split(' ')[0] }; }
   if (!e.principal && pais && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { pais, ancla: normalizar(pais).split(' ')[0] }; }
   if (!e.principal && cifra) { e.principal = 'cifra'; e.cifra = cifra; }
@@ -245,7 +275,7 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
     if (!errores.length) {
       // Tras los 3 s del clip la pantalla no puede quedar vacía: si el modelo no dio muñeco para una frase con clip, lo completa el código.
       const porReglas = directorPorReglas(beats, hechos, clips, { sinMuneco });
-      for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'mapa' && pr.mapa && pr.mapa.desde && e.principal === 'mapa' && e.mapa && e.mapa.pais === pr.mapa.pais && !e.mapa.desde) { e.mapa.desde = pr.mapa.desde; avisos.push(`frase ${e.beat}: viaje, se dibujó la ruta del avión`); } if (pr && !(e.extras || []).length && pr.extras.length) e.extras = pr.extras.slice(0, MAX_EXTRAS); } // más gráficos: si el modelo no dio insignias y las reglas sí (fecha, ícono), se completan
+      for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'mapa' && pr.mapa && pr.mapa.ruta && e.principal === 'mapa' && e.mapa && !e.mapa.ruta) { e.mapa = pr.mapa; avisos.push(`frase ${e.beat}: viaje, se dibujó la ruta del avión`); } if (pr && !(e.extras || []).length && pr.extras.length) e.extras = pr.extras.slice(0, MAX_EXTRAS); } // más gráficos: si el modelo no dio insignias y las reglas sí (fecha, ícono), se completan
       for (const e of escenas) if (!sinMuneco && e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
       for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'lista' && pr.lista && pr.lista.titulo === 'Fechas' && e.principal !== 'lista' && e.principal !== 'clip') { e.principal = 'lista'; e.lista = pr.lista; delete e.cifra; delete e.mapa; delete e.grafico; avisos.push(`frase ${e.beat}: varias fechas, se usó la lista de fechas`); } }
       return { escenas, origen: 'llm', avisos };
@@ -257,4 +287,4 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
   return { escenas, origen: 'respaldo', avisos };
 }
 
-module.exports = { PAISES, GESTOS, quitarMuneco, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
+module.exports = { resolverPunto, rutaDeFrase, lugaresEnFrase, CIUDADES, PAISES, GESTOS, quitarMuneco, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
