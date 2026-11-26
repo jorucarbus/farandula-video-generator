@@ -226,7 +226,14 @@ app.get('/api/render-info', (req, res) => {
   const nombre = path.basename(String(req.query.nombre || '')).replace(/\.mp4$/i, ''); if (!/^[\w.-]+$/.test(nombre)) return res.status(400).json({ error: 'nombre inválido' });
   const dir = path.join(G.DM, 'noticias', nombre), leer = f => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { return null; } };
   const g = leer('guion.json'), l = leer('lectura.json'); if (!g) return ok(res, { sinFicha: true });
-  ok(res, { titulo: g.titulo || '', descripcion: g.descripcion || '', hashtags: g.hashtags || [], canal: g.canal || '', fuente: l && l.fuente || '', palabras: g.palabras || null, guion: g.script || '', datosCubiertosPct: g.control && g.control.datosCubiertosPct });
+  const portada = fs.existsSync(path.join(G.DM, 'renders', nombre + '.portada.jpg')) || fs.existsSync(path.join(G.DM, 'renders', nombre + '.portada.png'));
+  ok(res, { portada, titulo: g.titulo || '', descripcion: g.descripcion || '', hashtags: g.hashtags || [], canal: g.canal || '', fuente: l && l.fuente || '', palabras: g.palabras || null, guion: g.script || '', datosCubiertosPct: g.control && g.control.datosCubiertosPct });
+});
+// Portada 9:16 del video (JPG para subir a mano; la misma imagen va incrustada en el primer cuadro del video).
+app.get('/portada', (req, res) => {
+  const n = path.basename(String(req.query.nombre || '')).replace(/\.mp4$/i, ''); if (!/^[\w.-]+$/.test(n)) return res.status(400).end();
+  const f = ['.portada.jpg', '.portada.png'].map(e => path.join(G.DM, 'renders', n + e)).find(x => fs.existsSync(x)); if (!f) return res.status(404).end();
+  if (req.query.descargar) res.setHeader('Content-Disposition', `attachment; filename="${n}-portada${path.extname(f)}"`); res.sendFile(f);
 });
 app.get('/render', (req, res) => { const f = path.join(G.DM, 'renders', path.basename(String(req.query.nombre || ''))); if (!/\.mp4$/i.test(f) || !fs.existsSync(f)) return res.status(404).end(); res.sendFile(f); });
 

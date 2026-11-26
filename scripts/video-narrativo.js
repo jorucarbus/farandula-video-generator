@@ -44,6 +44,7 @@ function sinNegro(ruta, ss) {
   // Índice del artista al día: la primera vez que se usa un artista (o si aparecen videos nuevos en su carpeta de Drive) se etiquetan SOLO los clips sin etiqueta,
   // una vez, y queda guardado y respaldado. Lo ya etiquetado no gasta IA. --sin-indice-auto lo salta.
   if (!process.argv.includes('--sin-indice-auto') && !process.argv.includes('--sin-clips')) require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), carpeta], { stdio: 'inherit' });
+  const canalPortada = arg('--canal', ''); let fotosPersonas = []; // fotos de las otras personas (círculos de la portada)
   const rEtiq = path.join(RAIZ, `${carpeta}.etiquetas.json`), rClips = path.join(RAIZ, `${carpeta}.clips.json`);
   const protagonista = arg('--protagonista', carpeta.replace(/_/g, ' '));
   // Los videos viven en Drive: solo se bajan los que este video va a usar (y se borran solos a las 48 h, salvo las carpetas recurrentes).
@@ -78,7 +79,7 @@ function sinNegro(ruta, ss) {
     try {
       const P2 = require('../edl/personas'), excluir = require('../edl/storyboard').REACCIONES.protagonista.alias.concat(protagonista.toLowerCase().split(' ')),
         otras = await P2.prepararPersonas(g.beats, { excluir, log: m => console.log(m), conocidas: g.personas });
-      P2.asignarPersonas(dir.escenas, g.beats, otras); console.log(`PERSONAS con foto: ${otras.map(p => p.nombre).join(', ') || 'ninguna'}`);
+      fotosPersonas = otras; P2.asignarPersonas(dir.escenas, g.beats, otras); console.log(`PERSONAS con foto: ${otras.map(p => p.nombre).join(', ') || 'ninguna'}`);
       // VS y apoyo: solo si la frase lo pide y hay fotos de las personas nombradas (la protagonista sale de su mejor cuadro de rostro, medido en local)
       if (!process.argv.includes('--sin-sociales')) {
         const figuras = otras.map(p => ({ nombre: p.nombre, foto: p.foto, alias: p.alias }));
@@ -125,6 +126,14 @@ function sinNegro(ruta, ss) {
   const ini = Date.now();
   // música de fondo de la biblioteca de Drive (por tono); --sin-musica la quita, --tono fuerza el tono, --semilla cambia de pista
   let fondo = null; if (!process.argv.includes('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'), tono = arg('--tono', mf.tonoDeGuion(g.script)); fondo = await mf.prepararFondo({ tono, duracion: hasta, jobId: 'motor' + process.pid, semilla: Number(arg('--semilla', 0)) }); console.log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { console.log('sin música de fondo:', e.message.slice(0, 160)); } }
-  await renderizar({ duracion: hasta, audio: AUDIO_VIDEO, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
+  // Portada 9:16 en el primer cuadro + JPG aparte (--sin-portada la quita). Si algo falla, el video sale igual, sin portada.
+  let portadaPng = null;
+  if (!process.argv.includes('--sin-portada')) {
+    try {
+      const PF = require('../edl/portadaFlujo'), pr = await PF.crear({ g, carpeta, canal: canalPortada, personas: fotosPersonas, estilo, salida, foto: arg('--portada-foto', null) });
+      if (pr) { portadaPng = pr.png; console.log(`PORTADA: "${pr.titular}" (resalte "${pr.resalte}", ${pr.etiqueta}) · foto ${pr.fotoDe} → ${path.relative(RAIZ, pr.jpg)}`); }
+    } catch (e) { console.log('sin portada:', String(e.message).slice(0, 140)); }
+  }
+  await renderizar({ portada: portadaPng, duracion: hasta, audio: AUDIO_VIDEO, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
   console.log(`\nLISTO ${salida} (${Math.round((Date.now() - ini) / 1000)} s, ${elementos.length} elementos)`);
 })().catch(e => { console.error('\nFALLO', e); process.exit(1); });

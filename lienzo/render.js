@@ -11,11 +11,12 @@ const path = require('path');
 const { mezclar, escribirWav } = require('./sonidos');
 
 // elementos: salida de lienzo/elementos.js; subtitulos: salida de crearSubtitulos; opciones.alCuadro(i,n) para progreso.
-async function renderizar({ musica = null, w = 1080, h = 1920, fps = 30, duracion, audio, salida, estilo, subtitulos, elementos = [], crf = 20, sonidos = true, alCuadro = null, ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') }) {
+async function renderizar({ musica = null, w = 1080, h = 1920, fps = 30, duracion, audio, salida, estilo, subtitulos, elementos = [], crf = 20, sonidos = true, alCuadro = null, portada = null, ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') }) {
   registrarFuentes(estilo);
   const u = Math.min(w, h), n = Math.ceil(duracion * fps);
   for (const el of elementos) if (el.preparar) await el.preparar({ w, h, fps });
   const canvas = createCanvas(w, h), ctx = canvas.getContext('2d');
+  const imgPortada = portada ? await require('@napi-rs/canvas').loadImage(Buffer.isBuffer(portada) ? portada : fs.readFileSync(portada)) : null; // PNG 9:16 que se incrusta en el primer cuadro
   // Efectos de sonido: cada elemento declara sus eventos; se sintetiza una pista y se mezcla bajo la voz.
   let wav = null;
   const eventos = sonidos ? elementos.flatMap(e => e.eventos || []).filter(e => e.t >= 0 && e.t < duracion) : [];
@@ -47,6 +48,7 @@ async function renderizar({ musica = null, w = 1080, h = 1920, fps = 30, duracio
         ctx.restore();
       }
       if (subtitulos) subtitulos.dibujar(ctx, t);
+      if (imgPortada && i === 0) ctx.drawImage(imgPortada, 0, 0, w, h); // frame 0: la portada tapa todo
       const buf = Buffer.from(canvas.data());
       if (!ff.stdin.write(buf)) await once(ff.stdin, 'drain');
       if (alCuadro && i % 30 === 0) alCuadro(i, n);
