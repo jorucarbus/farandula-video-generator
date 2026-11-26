@@ -28,3 +28,17 @@ test('el título de lista del modelo se limpia en vez de invalidar la dirección
   assert.ok(/^[\p{L} ]{3,20}$/u.test(x.lista.titulo));
   assert.strictEqual(D.normalizarEscena({ principal: 'lista', lista: { titulo: '', items: ['a b'] } }).lista.titulo, 'Lista');
 });
+
+test('viaje: ciudad de Ecuador + país con verbo de viaje → mapa con ruta de avión', () => {
+  const e = dirigir('Mara salió de Guayaquil rumbo a Tailandia para el certamen.');
+  assert.strictEqual(e.principal, 'mapa');
+  assert.strictEqual(e.mapa.desde, 'Guayaquil');
+  assert.strictEqual(e.mapa.pais, 'Tailandia');
+});
+
+test('sin verbo de viaje, una ciudad sola sigue siendo un mapa de lugar', () => {
+  const e = dirigir('La fiesta fue en Guayaquil el sábado pasado con mucha gente conocida.');
+  assert.strictEqual(e.principal, 'mapa');
+  assert.strictEqual(e.mapa.lugar, 'Guayaquil');
+  assert.strictEqual(e.mapa.desde, undefined);
+});

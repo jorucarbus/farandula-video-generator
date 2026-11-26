@@ -143,12 +143,20 @@ const CERCA = ['Ecuador', 'Colombia', 'Peru', 'Brazil', 'Venezuela', 'Bolivia', 
 
 // lugar: { lon, lat, nombre }; tPin: segundo ABSOLUTO en que cae el marcador (la palabra del lugar). pais: nombre del país en el atlas (inglés); nombrePais: cómo se dice en español (etiqueta del marcador).
 // Para un país fuera de Sudamérica el mapa parte de una vista amplia y acerca hasta el país, con marcador y nombre en su centro.
-function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40, t0, t1 }) {
+// desde: { lon, lat, nombre } = ruta de avión desde ese punto hasta el país (la línea punteada que dibuja el avión); el pin cae al llegar.
+function avionGlifo(ctx, x, y, ang, s, color) { // silueta simple de avión, apunta hacia +x
+  const mitad = [[1, 0], [0.25, -0.13], [-0.05, -0.8], [-0.3, -0.8], [-0.25, -0.14], [-0.8, -0.1], [-0.95, -0.38], [-1.1, -0.38], [-1.0, 0]];
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = color; ctx.beginPath(); mitad.forEach(([px, py], i) => (i ? ctx.lineTo(px * s, py * s) : ctx.moveTo(px * s, py * s))); mitad.slice(0, -1).reverse().forEach(([px, py]) => ctx.lineTo(px * s, -py * s)); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40, t0, t1, desde = null }) {
   const regional = !CERCA.includes(pais), paises = regional ? mundoCompleto() : mundo().paises;
   const destino = paises.find(f => f.properties.name === pais);
   if (regional && destino && !lugar) { const c = geoCentroid(destino); lugar = { lon: c[0], lat: c[1], nombre: nombrePais || pais }; tPin = tPin ?? t0 + 1.0; }
+  const viaje = Boolean(desde && regional && destino && lugar), tSale = t0 + 0.45;
+  if (viaje) tPin = Math.max(tSale + 1.7, (tPin ?? 0) + 0.4); // el avión sale al aparecer el mapa y llega (el pin cae) cuando se nombra el destino
+  const proyRuta = (cw, ch) => geoMercator().fitExtent([[cw * 0.14, ch * 0.22], [cw * 0.86, ch * 0.78]], { type: 'MultiPoint', coordinates: [[desde.lon, desde.lat], [lugar.lon, lugar.lat]] });
   return {
-    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, { t: t0 + 0.35, sonido: 'trazo' }, ...(viaje ? [{ t: tSale, sonido: 'whoosh', db: -6 }] : []), ...(lugar ? [{ t: tPin + 0.45, sonido: 'golpe', db: -6 }, { t: tPin + 0.62, sonido: 'clic', db: -4 }] : [])],
     dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
       const cw = Math.round(w * 0.86), ch = Math.round(h * alto), X = (w - cw) / 2, Y = h * cy - ch / 2, e = pop(t, 0.34);
       const ajuste = (col, pad) => { const p = geoMercator().fitExtent([[pad, pad], [cw - pad, ch - pad]], col); return { k: p.scale(), t: p.translate() }; };
@@ -158,13 +166,25 @@ function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40
         const spanZ = Math.max(Math.abs(x1 - x0) * 2.4, 10); A = ajuste(caja(Math.max(70, spanZ * 4)), 0); Z = ajuste(caja(spanZ), 0);
       } else { const ampl = { type: 'FeatureCollection', features: paises.filter(f => ['Ecuador', 'Colombia', 'Peru'].includes(f.properties.name)) }; A = ajuste(ampl, cw * 0.06); Z = ajuste({ type: 'FeatureCollection', features: [destino] }, cw * 0.16); }
       const z = easeOutCubic((t - 0.35) / 1.2);
-      const proy = geoMercator().scale(lerp(A.k, Z.k, z)).translate([lerp(A.t[0], Z.t[0], z), lerp(A.t[1], Z.t[1], z)]);
+      const proy = viaje ? proyRuta(cw, ch) : geoMercator().scale(lerp(A.k, Z.k, z)).translate([lerp(A.t[0], Z.t[0], z), lerp(A.t[1], Z.t[1], z)]);
       ctx.save(); ctx.globalAlpha = acotar(t / 0.12); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
       B.sombraDeCapa(ctx, u, 0.7, 0.32); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 7, Y - 7, cw + 14, ch + 14, u * 0.045); ctx.fill(); B.sinSombra(ctx);
       ctx.save(); B.rectRedondo(ctx, X, Y, cw, ch, u * 0.04); ctx.clip(); ctx.translate(X, Y);
       ctx.fillStyle = '#D7E3E8'; ctx.fillRect(0, 0, cw, ch); // océano
       const ruta = geoPath(proy, ctx);
       for (const f of paises) { ctx.beginPath(); ruta(f); ctx.fillStyle = f === destino ? estilo.colores.verde : '#EAE4D8'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+      if (viaje) { // línea punteada que dibuja el avión, del punto de salida al destino
+        const [ox, oy] = proy([desde.lon, desde.lat]), [dx, dy] = proy([lugar.lon, lugar.lat]), mx = (ox + dx) / 2, my = Math.min(oy, dy) - ch * 0.3;
+        const pt = s => { const a = 1 - s; return [a * a * ox + 2 * a * s * mx + s * s * dx, a * a * oy + 2 * a * s * my + s * s * dy]; };
+        const p = acotar((tAbs - tSale) / Math.max(0.1, tPin - tSale)), ro = u * 0.014;
+        ctx.fillStyle = estilo.colores.negro; ctx.beginPath(); ctx.arc(ox, oy, ro, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ox, oy, ro * 0.4, 0, Math.PI * 2); ctx.fill();
+        if (desde.nombre) { const tam = Math.round(u * 0.028); ctx.font = `${tam}px ${estilo.tipografia.texto}`; const tw = ctx.measureText(desde.nombre).width, pw = tw + tam * 1.3, ph = tam * 1.7; ctx.fillStyle = estilo.colores.negro; B.rectRedondo(ctx, ox - pw / 2, oy + ro * 1.6, pw, ph, ph / 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(desde.nombre, ox, oy + ro * 1.6 + ph / 2 + tam * 0.04); }
+        if (p > 0) {
+          ctx.save(); ctx.setLineDash([u * 0.016, u * 0.012]); ctx.lineWidth = Math.max(4, u * 0.007); ctx.lineCap = 'round'; ctx.strokeStyle = estilo.colores.rojo; ctx.beginPath();
+          for (let i = 0; i <= 48; i++) { const [x, y] = pt(p * i / 48); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.stroke(); ctx.restore();
+          const [hx, hy] = pt(p), [gx, gy] = pt(Math.max(0, p - 0.02)); ctx.save(); ctx.globalAlpha *= acotar(1 - (tAbs - tPin) / 0.3); B.sombraDeCapa(ctx, u, 0.35, 0.3); avionGlifo(ctx, hx, hy, Math.atan2(hy - gy, hx - gx), u * 0.042, '#1b1b1b'); B.sinSombra(ctx); ctx.restore();
+        }
+      }
       if (lugar) { // marcador que cae y rebota en la palabra
         const [px, py] = proy([lugar.lon, lugar.lat]), tp = tAbs - tPin;
         if (tp > 0) {
@@ -177,8 +197,9 @@ function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40
           ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, y - r * 1.7, r * 0.38, 0, Math.PI * 2); ctx.fill();
           if (lugar.nombre && tp > 0.35) {
             const tam = Math.round(u * 0.032); ctx.font = `${tam}px ${estilo.tipografia.texto}`; const tw = ctx.measureText(lugar.nombre).width, pw = tw + tam * 1.5, ph = tam * 1.8, a = acotar((tp - 0.35) / 0.2);
-            ctx.globalAlpha = a; B.sombraDeCapa(ctx, u, 0.3, 0.3); ctx.fillStyle = estilo.colores.negro; B.rectRedondo(ctx, px + r * 1.4, y - r * 2.7, pw, ph, ph / 2); ctx.fill(); B.sinSombra(ctx);
-            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lugar.nombre, px + r * 1.4 + pw / 2, y - r * 2.7 + ph / 2 + tam * 0.04);
+            const lx = px + r * 1.4 + pw > cw - 6 ? px - r * 1.4 - pw : px + r * 1.4; // si no cabe a la derecha del pin, va a su izquierda
+            ctx.globalAlpha = a; B.sombraDeCapa(ctx, u, 0.3, 0.3); ctx.fillStyle = estilo.colores.negro; B.rectRedondo(ctx, lx, y - r * 2.7, pw, ph, ph / 2); ctx.fill(); B.sinSombra(ctx);
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(lugar.nombre, lx + pw / 2, y - r * 2.7 + ph / 2 + tam * 0.04);
           }
         }
       }

@@ -67,10 +67,11 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     if (e.principal === 'video') { cubre.push([t0, t1]); } // solo montaje de tomas (lo arma el paso 4b): el muñeco no aporta aquí
     if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: e.muneco && e.muneco.lado === 'der' ? 0.30 : 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
     if (e.principal === 'mapa') { // sin muñeco y con tomas de fondo, el mapa se suma en la parte baja de la tarjeta del video (el video sigue debajo)
+      const dl = e.mapa.desde ? LUGARES[e.mapa.desde] : null, desde = dl ? { lon: dl.lon, lat: dl.lat, nombre: e.mapa.desde } : null; // ruta de avión: sale de una ciudad de Ecuador hacia el país
       const l = e.mapa.lugar ? LUGARES[e.mapa.lugar] : null; if (e.mapa.lugar ? !l : !PAISES[e.mapa.pais]) throw new Error(`mapa: lugar o país fuera del catálogo (${e.mapa.lugar || e.mapa.pais})`);
       const tA = tPal(k, e.mapa.ancla), t0m = Math.max(t0, tA - 1.2), t1m = Math.max(t0m + 3, Math.min(t1, tA + 4.5)); // el mapa aparece ~1 s antes de nombrar el lugar y no se queda hasta el final de una frase larga
       const base = { cy: e.muneco ? 0.375 : M ? 0.79 : 0.56, alto: e.muneco ? 0.32 : M ? 0.30 : 0.40, tPin: tA, t0: t0m, t1: t1m };
-      elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0m, t1m]); marca(k, e.mapa.ancla); zoomsT.push(tPal(k, e.mapa.ancla)); }
+      elementos.push(l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, desde, ...base })); card([t0m, t1m]); marca(k, e.mapa.ancla); zoomsT.push(tPal(k, e.mapa.ancla)); }
     if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.80 : 0.42, t0: ta, t1: Math.min(t1, ta + 4) })); card([ta, Math.min(t1, ta + 4)]); marca(k, e.cifra.ancla); }
     if (e.principal === 'grafico') { // barras que crecen, abajo sobre la tarjeta del video (o arriba con muñeco)
       const its = e.grafico.items.map(b => ({ etiqueta: b.etiqueta, valor: b.valor, t: tPal(k, b.ancla) })), ta = Math.max(0, Math.min(...its.map(b => b.t)) - 0.3);

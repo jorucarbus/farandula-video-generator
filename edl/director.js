@@ -9,6 +9,7 @@ const { disponibles } = require('../lienzo/iconos');
 const { existePieza } = require('../lienzo/recortes');
 const { numerosEnFrase } = require('./partituraVisual');
 
+const RE_VIAJE = /\b(viaj|vuel|volo|rumbo|despeg|abord|aterriz|lleg|part[ie]|rumb)/;
 const LUGARES = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'assets', 'lugares.json'), 'utf8'))).filter(([k]) => !k.startsWith('_')));
 // Países que el mapa sabe acercar (español → nombre en el atlas mundial). Ecuador y su zona usan LUGARES (ciudades).
 const PAISES = { 'Puerto Rico': 'Puerto Rico', 'Estados Unidos': 'United States of America', 'México': 'Mexico', 'España': 'Spain', 'Colombia': 'Colombia', 'Perú': 'Peru', 'Venezuela': 'Venezuela', 'Argentina': 'Argentina', 'Brasil': 'Brazil', 'Chile': 'Chile', 'República Dominicana': 'Dominican Rep.', 'Cuba': 'Cuba', 'Panamá': 'Panama', 'Francia': 'France', 'Italia': 'Italy', 'Reino Unido': 'United Kingdom', 'Canadá': 'Canada', 'Japón': 'Japan', 'China': 'China', 'Rusia': 'Russia', 'Alemania': 'Germany', 'Tailandia': 'Thailand', 'Filipinas': 'Philippines', 'Australia': 'Australia', 'India': 'India', 'Vietnam': 'Vietnam', 'Corea del Sur': 'South Korea', 'Costa Rica': 'Costa Rica', 'Bolivia': 'Bolivia', 'Paraguay': 'Paraguay', 'Uruguay': 'Uruguay', 'Guatemala': 'Guatemala', 'Honduras': 'Honduras', 'Nicaragua': 'Nicaragua', 'El Salvador': 'El Salvador', 'Jamaica': 'Jamaica', 'Haití': 'Haiti', 'Portugal': 'Portugal', 'Venezuela ': 'Venezuela' };
@@ -50,7 +51,7 @@ function validarEscena(e, beats, hechos, clips = null) {
   if (e.principal === 'mapa') {
     const m = e.mapa || {};
     if (m.lugar) { if (!LUGARES[m.lugar]) err(`lugar "${m.lugar}" fuera del catálogo`); else { literal(m.lugar, 'lugar'); ancla(m.ancla, 'mapa'); } }
-    else if (m.pais) { if (!PAISES[m.pais]) err(`país "${m.pais}" fuera del catálogo (${Object.keys(PAISES).join(', ')})`); else { literal(m.pais, 'país'); ancla(m.ancla, 'mapa'); } }
+    else if (m.pais) { if (!PAISES[m.pais]) err(`país "${m.pais}" fuera del catálogo (${Object.keys(PAISES).join(', ')})`); else { literal(m.pais, 'país'); ancla(m.ancla, 'mapa'); } if (m.desde) { if (!LUGARES[m.desde]) err(`desde "${m.desde}" fuera del catálogo de ciudades`); else literal(m.desde, 'desde'); } }
     else err('el mapa necesita "lugar" (ciudad de Ecuador) o "pais"');
   }
   if (e.principal === 'cifra') {
@@ -137,6 +138,9 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
   }
   const fechasDe = [...new Set((frase.match(RE_FECHAS) || []).map(f => f.trim()))];
   if (!e.principal && fechasDe.length >= 2 && fechasDe.length <= 4) { e.principal = 'lista'; e.lista = { titulo: 'Fechas', items: fechasDe.map(t => ({ texto: t, ancla: tokens(t)[0] })) }; } // calendario: "el 26 de noviembre..., el 29 de noviembre... y el 12 de diciembre"
+  // viaje: una ciudad de Ecuador y un país en la misma frase con verbo de viaje → ruta de avión (la línea punteada) en vez de un mapa suelto
+  const paisViaje = lugar && Object.keys(PAISES).sort((a, b) => b.length - a.length).find(p => contiene(frase, p));
+  if (!e.principal && paisViaje && RE_VIAJE.test(normalizar(frase)) && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { pais: paisViaje, desde: lugar, ancla: normalizar(paisViaje).split(' ')[0] }; }
   if (!e.principal && lugar && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { lugar, ancla: normalizar(lugar).split(' ')[0] }; }
   if (!e.principal && pais && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { pais, ancla: normalizar(pais).split(' ')[0] }; }
   if (!e.principal && cifra) { e.principal = 'cifra'; e.cifra = cifra; }
@@ -241,7 +245,7 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
     if (!errores.length) {
       // Tras los 3 s del clip la pantalla no puede quedar vacía: si el modelo no dio muñeco para una frase con clip, lo completa el código.
       const porReglas = directorPorReglas(beats, hechos, clips, { sinMuneco });
-      for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && !(e.extras || []).length && pr.extras.length) e.extras = pr.extras.slice(0, MAX_EXTRAS); } // más gráficos: si el modelo no dio insignias y las reglas sí (fecha, ícono), se completan
+      for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'mapa' && pr.mapa && pr.mapa.desde && e.principal === 'mapa' && e.mapa && e.mapa.pais === pr.mapa.pais && !e.mapa.desde) { e.mapa.desde = pr.mapa.desde; avisos.push(`frase ${e.beat}: viaje, se dibujó la ruta del avión`); } if (pr && !(e.extras || []).length && pr.extras.length) e.extras = pr.extras.slice(0, MAX_EXTRAS); } // más gráficos: si el modelo no dio insignias y las reglas sí (fecha, ícono), se completan
       for (const e of escenas) if (!sinMuneco && e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
       for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'lista' && pr.lista && pr.lista.titulo === 'Fechas' && e.principal !== 'lista' && e.principal !== 'clip') { e.principal = 'lista'; e.lista = pr.lista; delete e.cifra; delete e.mapa; delete e.grafico; avisos.push(`frase ${e.beat}: varias fechas, se usó la lista de fechas`); } }
       return { escenas, origen: 'llm', avisos };
