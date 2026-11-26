@@ -55,7 +55,7 @@ function ajustarTitular(ctx, palabras, { ancho, maxLineas, tamMax, tamMin, fuent
 async function cargar(x) { return x ? (Buffer.isBuffer(x) ? loadImage(x) : loadImage(fs.readFileSync(x))) : null; }
 
 // foto: Buffer|ruta. foco: { x, y } 0-1 (dónde está la cara en la foto). circulos: [{ foto, nombre }] (máx. 3).
-async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.35 }, titular, resalte = '', etiqueta = 'VIRAL', canal = '', circulos = [], estilo }) {
+async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.35 }, titular, resalte = '', etiqueta = '', canal = '', circulos = [], estilo }) {
   if (estilo) registrarFuentes(estilo);
   const pal = paletaDe(canal), canvas = createCanvas(w, h), ctx = canvas.getContext('2d'), u = Math.min(w, h);
   const FUENTE = '"Big Shoulders"', TEXTO = 'Outfit';
@@ -70,15 +70,15 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   } else { ctx.fillStyle = pal.degradado; ctx.fillRect(0, 0, w, h); }
 
   // 2) degradado del canal desde la mitad hacia abajo + sombra suave arriba
-  const g = ctx.createLinearGradient(0, h * 0.40, 0, h); g.addColorStop(0, hexa(pal.degradado, 0)); g.addColorStop(0.42, hexa(pal.degradado, 0.82)); g.addColorStop(1, hexa(pal.degradado, 1));
-  ctx.fillStyle = g; ctx.fillRect(0, h * 0.40, w, h * 0.60);
+  const g = ctx.createLinearGradient(0, h * 0.56, 0, h); g.addColorStop(0, hexa(pal.degradado, 0)); g.addColorStop(0.32, hexa(pal.degradado, 0.8)); g.addColorStop(0.6, hexa(pal.degradado, 0.95)); g.addColorStop(1, hexa(pal.degradado, 1));
+  ctx.fillStyle = g; ctx.fillRect(0, h * 0.56, w, h * 0.44);
   const s = ctx.createLinearGradient(0, 0, 0, h * 0.18); s.addColorStop(0, 'rgba(0,0,0,0.38)'); s.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = s; ctx.fillRect(0, 0, w, h * 0.18);
 
   // 3) titular (mayúsculas, con el resalte en amarillo)
   const margen = Math.round(w * 0.075), anchoTexto = w - margen * 2 - Math.round(w * 0.03);
   const palabras = marcarResalte(String(titular || '').toUpperCase().replace(/\s+/g, ' '), String(resalte || '').toUpperCase());
-  const { tam, lineas, espacio } = ajustarTitular(ctx, palabras, { ancho: anchoTexto, maxLineas: 4, tamMax: 150, tamMin: 84, fuente: FUENTE }); // 4 líneas como mucho: el texto queda en el 45 % de abajo y deja libre la cara
-  const interlinea = tam * 0.98, altoTexto = lineas.length * interlinea, finTexto = h * 0.83, inicioTexto = finTexto - altoTexto;
+  const { tam, lineas, espacio } = ajustarTitular(ctx, palabras, { ancho: anchoTexto, maxLineas: 4, tamMax: 122, tamMin: 80, fuente: FUENTE }); // 4 líneas como mucho: el texto queda en el 45 % de abajo y deja libre la cara
+  const interlinea = tam * 0.98, altoTexto = lineas.length * interlinea, finTexto = h * 0.86, inicioTexto = finTexto - altoTexto;
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   lineas.forEach((ln, i) => {
     let x = margen; const y = inicioTexto + (i + 1) * interlinea - interlinea * 0.12;
@@ -90,11 +90,11 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
   // 4) etiqueta con el logo del canal (encima del titular)
-  const yEt = inicioTexto - u * 0.075, rLogo = u * 0.055, logo = pal.logo ? await cargar(path.join(MARCAS_DIR, pal.logo)) : null;
-  const tamEt = Math.round(u * 0.04); ctx.font = `${tamEt}px ${TEXTO}`; const wEt = ctx.measureText(etiqueta).width + tamEt * 1.7, hEt = tamEt * 1.9, xEt = margen + (logo ? rLogo * 1.55 : 0);
+  const rLogo = u * 0.07, yEt = inicioTexto - rLogo * 1.5, logo = pal.logo ? await cargar(path.join(MARCAS_DIR, pal.logo)) : null;
+  const tamEt = Math.round(u * 0.04); ctx.font = `${tamEt}px ${TEXTO}`; const wEt = ctx.measureText(etiqueta).width + tamEt * 1.7, hEt = tamEt * 1.9, xEt = (w - wEt) / 2;
   if (etiqueta) { ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 14; ctx.fillStyle = pal.acento; B.rectRedondo(ctx, xEt, yEt - hEt / 2, wEt, hEt, hEt / 2); ctx.fill(); ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(etiqueta, xEt + tamEt * 0.85, yEt + tamEt * 0.04); }
   if (logo) {
-    const cx = margen + rLogo, cy = yEt; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rLogo + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
+    const cx = w / 2, cy = yEt; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rLogo + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rLogo, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = pal.fondoLogo; ctx.fillRect(cx - rLogo, cy - rLogo, rLogo * 2, rLogo * 2);
     const lado = Math.min(logo.width, logo.height), esc = (rLogo * 2) / lado * 1.0; ctx.drawImage(logo, cx - (logo.width * esc) / 2, cy - (logo.height * esc) / 2, logo.width * esc, logo.height * esc); ctx.restore();
   }
@@ -102,11 +102,11 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   // 5) círculos de los otros participantes (hasta 3), sobre el degradado, a la izquierda por encima de la etiqueta
   const otros = (circulos || []).slice(0, 3);
   if (otros.length) {
-    const R = u * 0.062, y = h * 0.105 + R; // arriba a la izquierda (debajo de la interfaz de TikTok): no tapan la cara ni el titular
+    const R = u * 0.095, y = h * 0.1 + R; // arriba a la izquierda (debajo de la interfaz de TikTok): no tapan la cara ni el titular
     for (const [i, c] of otros.entries()) {
-      const cx = margen + R + i * (R * 2.7), im = await cargar(c.foto); if (!im) continue; // separados: así sus nombres no se pisan
+      const cx = margen + R + i * (R * 2.55), im = await cargar(c.foto); if (!im) continue; // separados: así sus nombres no se pisan
       B.retratoCircular(ctx, im, cx, y, R, { u: R * 6 });
-      if (c.nombre) { c.nombre = nombreCorto(c.nombre); const tn = Math.round(u * 0.027); ctx.font = `${tn}px ${TEXTO}`; const wn = ctx.measureText(c.nombre).width + tn * 1.3, hn = tn * 1.7; ctx.fillStyle = 'rgba(0,0,0,0.72)'; B.rectRedondo(ctx, cx - wn / 2, y + R + 8, wn, hn, hn / 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.nombre, cx, y + R + 8 + hn / 2 + 1); ctx.textAlign = 'left'; }
+      if (c.nombre) { c.nombre = nombreCorto(c.nombre); const tn = Math.round(u * 0.034); ctx.font = `${tn}px ${TEXTO}`; const wn = ctx.measureText(c.nombre).width + tn * 1.3, hn = tn * 1.7; ctx.fillStyle = 'rgba(0,0,0,0.72)'; B.rectRedondo(ctx, cx - wn / 2, y + R + 8, wn, hn, hn / 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.nombre, cx, y + R + 8 + hn / 2 + 1); ctx.textAlign = 'left'; }
     }
   }
   return canvas.toBuffer('image/png');
