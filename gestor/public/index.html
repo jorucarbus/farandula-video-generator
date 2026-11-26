@@ -81,6 +81,11 @@
       <div id="cMsg"></div>
     </div>
   </section>
+  <section id="t-redes" class="oculto">
+    <div class="msg">Esta ventana es un Firefox propio de la superapp. Inicia sesión aquí en tus cuentas <b>secundarias</b> (nunca las de tus canales): la sesión se queda en este perfil y el Selector la usa para descargar. La superapp nunca ve tus contraseñas ni tus cookies.</div>
+    <div class="grid" id="gridRedes" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))"></div>
+    <div class="fila" style="margin-top:12px"><button class="b p" id="bSesiones">Comprobar sesiones</button><span class="chip gris">Facebook: solo para tener la sesión lista; el Selector todavía no baja de Facebook</span></div>
+  </section>
   <section id="t-videos" class="oculto"><div class="grid" id="gridVideos"></div></section>
   <section id="t-papelera" class="oculto"><div class="msg">Nada se borra de verdad: aquí puedes restaurar lo que mandaste a la papelera (<code>data-motor/papelera</code>).</div><div class="grid" id="gridPapelera"></div></section>
   <section id="t-trabajos" class="oculto"><div id="listaTrabajos"></div></section>
@@ -95,7 +100,7 @@ const api = async (url, cuerpo) => { const r = await fetch(url, cuerpo ? { metho
 const q = ruta => encodeURIComponent(ruta);
 const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch {} }, leerLS = k => { try { return localStorage.getItem(k); } catch { return null; } };
 
-const PESTANAS = [['biblioteca', 'Biblioteca'], ['descargar', 'Descargar (Selector)'], ['crear', 'Crear video'], ['videos', 'Videos listos'], ['papelera', 'Papelera'], ['trabajos', 'Trabajos']];
+const PESTANAS = [['biblioteca', 'Biblioteca'], ['descargar', 'Descargar (Selector)'], ['crear', 'Crear video'], ['videos', 'Videos listos'], ['redes', 'Redes (sesiones)'], ['papelera', 'Papelera'], ['trabajos', 'Trabajos']];
 let estado = { resumen: null, actual: null, clips: [], sel: new Set(), filtro: 'todos', texto: '' };
 
 function pestana(id) {
@@ -103,6 +108,7 @@ function pestana(id) {
   [...$('#nav').children].forEach((b, i) => b.classList.toggle('on', PESTANAS[i][0] === id));
   guardar('pestana', id);
   if (id === 'descargar' && !$('#iframeSel').src) $('#iframeSel').src = 'http://127.0.0.1:8765';
+  if (id === 'redes') pintarRedes();
   if (id === 'videos') cargarVideos(); if (id === 'papelera') cargarPapelera(); if (id === 'trabajos') cargarTrabajos();
 }
 PESTANAS.forEach(([k, n]) => $('#nav').append(el('button', { textContent: n, onclick: () => pestana(k) })));
@@ -217,6 +223,16 @@ async function editarEtiqueta(c) {
     el('div', { className: 'fila', style: 'margin:0' }, el('button', { className: 'b p', textContent: 'Guardar', onclick: async () => { try { await api('/api/etiqueta', { carpeta: estado.actual.nombre, id: c.id, cambios: { tipo: tipo.value, descripcion: desc.value, lugar: lugar.value, vestuario: vest.value, personas: pers.value } }); d.close(); abrirCarpeta('biblioteca', estado.actual.nombre); } catch (e) { msg.replaceChildren(el('div', { className: 'msg' }, '⚠ ' + e.message)); } } }), el('button', { className: 'b', textContent: 'Cancelar', onclick: () => d.close() }))));
   d.showModal();
 }
+const REDES = [['ig', 'Instagram', 'https://www.instagram.com/accounts/login/'], ['tt', 'TikTok', 'https://www.tiktok.com/login'], ['x', 'X', 'https://x.com/i/flow/login'], ['fb', 'Facebook', 'https://www.facebook.com/login']];
+let sesiones = {};
+function pintarRedes() {
+  const g = $('#gridRedes'); g.replaceChildren();
+  for (const [plat, nombre, url] of REDES) { const s = sesiones[plat];
+    g.append(el('div', { className: 'panel' }, el('strong', {}, nombre + ' '), s ? el('span', { className: 'chip ' + (s.ok ? 'ok' : 'no') }, s.ok ? 'sesión activa' : 'sin sesión') : el('span', { className: 'chip gris' }, plat === 'fb' ? 'no se comprueba' : 'sin comprobar'),
+      el('p', { style: 'color:var(--suave);margin:8px 0;font-size:12px' }, s ? s.mensaje : (plat === 'fb' ? 'Inicia sesión para tenerla lista.' : 'Pulsa “Comprobar sesiones”.')),
+      el('a', { className: 'b', href: url, target: '_blank', rel: 'noopener', textContent: 'Abrir ' + nombre + ' para iniciar sesión', style: 'display:inline-block;text-decoration:none;color:inherit;padding:7px 11px;border:1px solid var(--borde);border-radius:8px' }))); }
+}
+$('#bSesiones').onclick = async () => { $('#bSesiones').disabled = true; $('#bSesiones').textContent = 'Comprobando…'; try { for (const s of await api('/api/sesiones')) sesiones[s.plat] = s; } catch (e) { alert(e.message); } pintarRedes(); $('#bSesiones').disabled = false; $('#bSesiones').textContent = 'Comprobar sesiones'; };
 function mensaje(t) { $('#aviso').replaceChildren(el('div', { className: 'msg' }, t)); }
 function ver(url, titulo) { $('#visorVideo').src = url; $('#visorTitulo').textContent = titulo; $('#visor').showModal(); }
 $('#visorCerrar').onclick = () => { $('#visor').close(); $('#visorVideo').removeAttribute('src'); };

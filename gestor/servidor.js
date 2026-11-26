@@ -172,6 +172,21 @@ app.get('/api/tipos', (req, res) => ok(res, TIPOS_TOMA));
 // Respaldo del índice en Drive: estado y botón manual.
 app.post('/api/respaldar', async (req, res) => { try { ok(res, await respaldo.respaldarTodas()); } catch (e) { mal(res, new Error('No pude respaldar en Drive: ' + String(e.message).slice(0, 140)), 502); } });
 
+// ---------------------------------------------------------------- sesiones de las redes
+// El Selector (puerto 8765) lee las cookies del perfil de Firefox de la superapp. Aquí solo se le PREGUNTA si hay sesión iniciada (sí/no y un mensaje);
+// la superapp nunca ve ni muestra las cookies.
+const SELECTOR_URL = process.env.SELECTOR_URL || 'http://127.0.0.1:8765';
+app.get('/api/sesiones', async (req, res) => {
+  const redes = [['ig', 'Instagram'], ['tt', 'TikTok'], ['x', 'X']], out = [];
+  for (const [plat, nombre] of redes) {
+    try {
+      const r = await fetch(SELECTOR_URL + '/api/sesion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plat }), signal: AbortSignal.timeout(15000) });
+      const j = await r.json(); out.push({ plat, nombre, ok: Boolean(j.ok), mensaje: String(j.mensaje || '').slice(0, 300) });
+    } catch (e) { out.push({ plat, nombre, ok: false, mensaje: 'El Selector no responde (¿está abierto? INICIAR-SUPERAPP.bat lo arranca).' }); }
+  }
+  ok(res, out);
+});
+
 // Caché de videos en disco: ver cuánto ocupa, marcar carpetas "recurrentes" (se quedan) y liberar espacio.
 app.get('/api/cache', (req, res) => ok(res, { uso: clipsDrive.uso(), recurrentes: clipsDrive.recurrentes(), manuales: clipsDrive.recurrentesManuales(), ttlHoras: clipsDrive.TTL_HORAS, topeGB: clipsDrive.TOPE_GB }));
 app.post('/api/recurrente', (req, res) => { try { ok(res, { recurrentes: clipsDrive.marcarRecurrente(req.body.carpeta, Boolean(req.body.si)) }); } catch (e) { mal(res, e); } });
