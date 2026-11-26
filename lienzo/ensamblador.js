@@ -9,6 +9,7 @@ const { titereRig } = require('./titere-rig');
 const { escenario } = require('./escenarios');
 const { LUGARES, PAISES, nombreDePieza, tokens } = require('../edl/director');
 const { rostroEnVentana, USO_MAX_S } = require('../edl/biblioteca');
+const { encuadreParaTarjeta } = require('../edl/rostrosLocales');
 
 // Posiciones (fracciones del cuadro) de las piezas EXTRA según el principal de la escena.
 const SLOTS = {
@@ -166,7 +167,10 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
           if (cara) { const tm = Math.min(cur + dur - 0.6, Math.max(cur + 0.3, tPal(pedido.k, pedido.marca.ancla))); marcas.push({ tipo: 'circulo', cx: cara.cx, cy: cara.cy, rx: cara.r * 1.7, ry: cara.r * 1.7 * (9 / 16), t: tm, semilla: 11 + pedido.k }); marca(pedido.k, pedido.marca.ancla); }
           else avisos.push('frase ' + (pedido.k + 1) + ': sin coordenadas del rostro; la toma va sin círculo');
         }
-        cortes.push({ clip: info.ruta, ss: cfg.ajustarSs ? Math.min(cfg.ajustarSs(info.ruta, ss), Math.max(ss, (info.duracion || USO_MAX_S) - dur - E.TRANS)) : ss, t0: cur, t1: cur + dur, marcas }); cur += dur;
+        const ssF = cfg.ajustarSs ? Math.min(cfg.ajustarSs(info.ruta, ss), Math.max(ss, (info.duracion || USO_MAX_S) - dur - E.TRANS)) : ss;
+        // Reencuadre: si una tarjeta tapa la parte baja del video mientras sale este tramo y la cara queda debajo, la toma se sube dentro de su tarjeta (sin círculo de por medio: las marcas van en coordenadas fijas)
+        let enc = null; if (!marcas.length && info.caras && tarjetas.some(([a, b]) => a < cur + dur + E.TRANS && b > cur)) { enc = encuadreParaTarjeta(info.caras, info.ancho, info.alto, ssF, dur + E.TRANS); if (enc) avisos.push('reencuadre de la toma a los ' + cur.toFixed(1) + ' s (una tarjeta tapaba la cara)'); }
+        cortes.push({ clip: info.ruta, ss: ssF, t0: cur, t1: cur + dur, marcas, enc }); cur += dur;
       }
       if (cortes.length) { // un resto mínimo se absorbe en la última toma; el montaje de este tramo termina donde termina el dato
         const ult = cortes[cortes.length - 1]; if (tr.b - ult.t1 > 0 && tr.b - ult.t1 < 0.5) ult.t1 = Math.min(tr.b, ult.t0 + MAXC);

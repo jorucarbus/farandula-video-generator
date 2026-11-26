@@ -124,6 +124,7 @@ const log = (...a) => console.log(...a);
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];
+  try { const p = require('child_process').spawnSync('python', [path.join(__dirname, 'rostros-clips.py'), carpeta], { stdio: 'inherit', cwd: RAIZ }); if (p.status !== 0) log('(rostros locales no disponibles: se usan los del modelo)'); } catch { log('(sin python: se usan los rostros del modelo)'); }
   correr('calidad-clips.js', [carpeta]); // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
   correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
   log(`\nListo: ${salida}\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion || ''}\n${(g.hashtags || []).join(' ')}`);

@@ -252,12 +252,13 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
       ctx.save(); ctx.globalAlpha = acotar(t / 0.12) * acotar((t1 - tAbs) / 0.2); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
       B.sombraDeCapa(ctx, u, 1.0, 0.42); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 10, Y - 10, WW + 20, HH + 20, u * 0.06); ctx.fill(); B.sinSombra(ctx);
       ctx.save(); B.rectRedondo(ctx, X, Y, WW, HH, u * 0.05); ctx.clip();
-      const zm = zoomEn(tAbs), pon = (img, dx, dy, s = 1, a = 1) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy); ctx.scale(s * zm, s * zm); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); };
-      if (!enTrans) pon(imgA, 0, 0);
-      else if (c.trans === 'empuja') { pon(imgP, -p * WW, 0); pon(imgA, (1 - p) * WW, 0); }
-      else if (c.trans === 'abajo') { pon(imgP, 0, p * HH); pon(imgA, 0, -(1 - p) * HH); }
-      else if (c.trans === 'zoom') { pon(imgP, 0, 0); pon(imgA, 0, 0, lerp(1.28, 1, p), p); }
-      else { pon(imgP, 0, 0); pon(imgA, 0, 0, 1, p); }
+      const zm = zoomEn(tAbs), pon = (img, dx, dy, s = 1, a = 1, enc = null) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy + (enc ? enc.dy * HH : 0)); ctx.scale(s * zm * (enc ? enc.s : 1), s * zm * (enc ? enc.s : 1)); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); }; // enc: reencuadre de la toma para que una tarjeta encima no tape la cara
+      const eA = c.enc || null, eP = i > 0 ? cola[i - 1].enc || null : null;
+      if (!enTrans) pon(imgA, 0, 0, 1, 1, eA);
+      else if (c.trans === 'empuja') { pon(imgP, -p * WW, 0, 1, 1, eP); pon(imgA, (1 - p) * WW, 0, 1, 1, eA); }
+      else if (c.trans === 'abajo') { pon(imgP, 0, p * HH, 1, 1, eP); pon(imgA, 0, -(1 - p) * HH, 1, 1, eA); }
+      else if (c.trans === 'zoom') { pon(imgP, 0, 0, 1, 1, eP); pon(imgA, 0, 0, lerp(1.28, 1, p), p, eA); }
+      else { pon(imgP, 0, 0, 1, 1, eP); pon(imgA, 0, 0, 1, p, eA); }
       ctx.fillStyle = `rgba(20,16,12,${(velo(tAbs) || 0).toFixed(3)})`; ctx.fillRect(X, Y, WW, HH); // velo: más oscuro donde hay tarjetas
       ctx.restore();
       for (const m of c.marcas || []) {

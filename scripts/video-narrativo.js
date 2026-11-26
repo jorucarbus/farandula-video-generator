@@ -43,7 +43,8 @@ function sinNegro(ruta, ss) {
   let elecciones = new Map(), etiquetas = null, rutaDe = {}; const cfgClips = {};
   const rEtiq = path.join(RAIZ, `${carpeta}.etiquetas.json`), rClips = path.join(RAIZ, `${carpeta}.clips.json`);
   const protagonista = arg('--protagonista', carpeta.replace(/_/g, ' '));
-  const infoClip = id => { const t = etiquetas[id]; return { ruta: rutaDe[id], ...dimensiones(rutaDe[id]), rostro: t.rostro, duracion: t.duracion }; };
+  let rostrosSerie = {}; // detección local por cuadro (para reencuadrar cuando una tarjeta tapa la cara)
+  const infoClip = id => { const t = etiquetas[id]; return { ruta: rutaDe[id], ...dimensiones(rutaDe[id]), rostro: t.rostro, duracion: t.duracion, caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }; };
   if (!process.argv.includes('--sin-clips') && fs.existsSync(rEtiq) && fs.existsSync(rClips)) {
     etiquetas = JSON.parse(fs.readFileSync(rEtiq, 'utf8'));
     const nac = arg('--nacimiento', null); // YYYY-MM-DD: solo clips de cuando ya era mayor de edad (no se muestra a la persona siendo menor)
@@ -51,6 +52,9 @@ function sinNegro(ruta, ss) {
     // Puerta de calidad: los clips que no se ven bien a pantalla completa (resolución, barras, oscuros...) no se eligen. --sin-calidad la salta.
     const rCal = path.join(RAIZ, `${carpeta}.calidad.json`);
     if (!process.argv.includes('--sin-calidad') && fs.existsSync(rCal)) { const fa = require('../edl/calidadClip').filtrarAptos(etiquetas, JSON.parse(fs.readFileSync(rCal, 'utf8'))); etiquetas = fa.etiquetas; console.log(`CALIDAD: ${fa.descartados.length} clip(s) descartados por calidad${fa.aviso ? ' — ' + fa.aviso : ''}`); }
+    // Rostros medidos en local: corrigen la posición/tamaño/momento que había adivinado el modelo (de ahí salían los círculos "aleatorios"). --sin-rostros-locales los salta.
+    const rRos = path.join(RAIZ, `${carpeta}.rostros.json`);
+    if (!process.argv.includes('--sin-rostros-locales') && fs.existsSync(rRos)) { rostrosSerie = JSON.parse(fs.readFileSync(rRos, 'utf8')); const ap = require('../edl/rostrosLocales').aplicar(etiquetas, rostrosSerie); etiquetas = ap.etiquetas; console.log(`ROSTROS LOCALES: ${ap.corregidos} clips corregidos, ${ap.sinCara} sin cara detectada`); }
     const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones;
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
@@ -72,7 +76,7 @@ function sinNegro(ruta, ss) {
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
   const lista = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id]))) : []; // relleno con criterio: tomas donde sale ella (≤ 2 personas, rostro visible)
-  const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion }) } : null;
+  const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion, ...dimensiones(rutaDe[id]), caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
   // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos, lados, nunca parado; video que ilustra cuando el muñeco no aporta)
   const sb = process.argv.includes('--sin-storyboard') || SIN_MUNECO ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS, hayVideo: Boolean(montaje) });
