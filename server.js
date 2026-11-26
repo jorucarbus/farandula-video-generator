@@ -34,6 +34,7 @@ const exportar = require('./exportar');
 const portada = require('./portada');
 const materiales = require('./materiales');
 const colaRender = require('./colaRender');
+const motorServicio = require('./motorServicio');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -2782,6 +2783,25 @@ app.post('/api/generate-video', async (req, res) => {
   }
 });
 
+// Motor EDL (sin muñeco): de un link a un MP4 con la tubería automática. Encola igual que el motor legado.
+// Body: { link | texto, canal, carpetaClips, destFolder?, etiqueta?, jobId?, protagonista? }
+app.post('/api/generate-video-edl', (req, res) => {
+  try {
+    const { link, texto, canal, carpetaClips, destFolder, etiqueta, jobId, protagonista, nombre } = req.body || {};
+    if (!link && !texto) return res.status(400).json({ error: 'Falta el link o el texto de la noticia' });
+    if (!carpetaClips || !/^[\w .-]+$/.test(carpetaClips)) return res.status(400).json({ error: 'Falta carpetaClips (nombre de la carpeta de clips del protagonista)' });
+    const tarea = colaRender.encolar({
+      jobId: jobId || null, variante: 'A', etiqueta: etiqueta || 'Video (motor nuevo)', canal: canal || '',
+      params: { motor: 'edl', link, texto, canal, carpetaClips, destFolder, jobId, protagonista, etiqueta, nombre: nombre && /^[\w-]+$/.test(nombre) ? nombre : undefined },
+    });
+    console.log(`📋 [${tarea.renderId}] Encolado motor nuevo (${tarea.etiqueta})`);
+    res.json({ status: 'encolado', ...colaRender.obtener(tarea.renderId) });
+  } catch (error) {
+    console.error('Error encolando video (motor nuevo):', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Estado de UN render (el que sondea la ventana que lo pidió). Cuando termina, `resultado` trae
 // exactamente el mismo objeto que este endpoint devolvía antes de existir la cola.
 app.get('/api/render/:renderId', (req, res) => {
@@ -3036,7 +3056,7 @@ driveCache.restaurar(path.join(__dirname, 'data', 'cola.json'), 'cola.json')
   .catch(() => {})
   .then(() => {
     colaRender.rehidratar();
-    colaRender.configurar(renderizarVideo);
+    colaRender.configurar(motorServicio.despachador(renderizarVideo, motorServicio.crearEjecutor({ colaRender, driveHelper, sheets, video })));
   });
 
 // Las carpetas de insumos en Drive crecían sin límite (nadie las borraba). Al ser
