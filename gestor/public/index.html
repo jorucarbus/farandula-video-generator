@@ -115,9 +115,33 @@ async function cargarResumen() {
   cont.append(el('h3', {}, 'Descargas del Selector'));
   for (const c of r.selector) cont.append(carpetaItem('selector', c.nombre, `${c.clips} videos`, ''));
   if (!r.selector.length) cont.append(el('div', { className: 'vacio' }, r.selectorExiste ? 'Aún no hay descargas' : 'No encuentro la carpeta del Selector'));
+  cont.append(el('h3', {}, 'En Drive (sin traer)'), el('div', { id: 'drive' }, el('button', { className: 'b', textContent: 'Ver carpetas de Drive', onclick: () => cargarDrive() })));
   const cs = $('#cCarpeta'); cs.replaceChildren(...r.biblioteca.map(c => el('option', { value: c.nombre, textContent: c.nombre })));
   const cc = $('#cCanal'); cc.replaceChildren(...r.canales.map(c => el('option', { value: c.nombre, textContent: c.nombre + (c.monetiza ? '' : ' (corto)') })));
   $('#estado').textContent = `${r.biblioteca.reduce((n, c) => n + c.clips, 0)} clips · ${r.selector.reduce((n, c) => n + c.clips, 0)} sin importar`;
+}
+let driveLista = null, driveFiltro = '';
+async function cargarDrive(refrescar) {
+  const cont = $('#drive'); cont.replaceChildren(el('div', { className: 'vacio' }, 'Leyendo Drive…'));
+  try { driveLista = await api('/api/drive/carpetas' + (refrescar === true ? '?refrescar=1' : '')); } catch (e) { cont.replaceChildren(el('div', { className: 'msg' }, e.message)); return; }
+  pintarDrive();
+}
+function pintarDrive() {
+  const cont = $('#drive'); cont.replaceChildren(); const t = driveFiltro.toLowerCase();
+  const sin = driveLista.filter(c => !c.local), l = sin.filter(c => !t || c.nombre.toLowerCase().includes(t));
+  cont.append(el('input', { type: 'text', id: 'buscaDrive', placeholder: `Buscar entre ${sin.length} carpetas…`, value: driveFiltro, style: 'width:100%;margin-bottom:6px', oninput: e => { driveFiltro = e.target.value; pintarDrive(); const i = $('#buscaDrive'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }));
+  for (const c of l.slice(0, 40)) cont.append(el('div', { className: 'carpeta', onclick: () => abrirDrive(c.nombre) }, el('span', {}, c.nombre), el('small', {}, 'traer')));
+  if (l.length > 40) cont.append(el('div', { className: 'vacio' }, `…y ${l.length - 40} más: escribe para filtrar`));
+  if (!l.length) cont.append(el('div', { className: 'vacio' }, 'Ninguna coincide'));
+  cont.append(el('button', { className: 'b', textContent: 'Actualizar lista', onclick: () => cargarDrive(true) }));
+}
+async function abrirDrive(nombre) {
+  estado.actual = null; $('#barra').replaceChildren(el('strong', {}, nombre + ' (en Drive)')); $('#grid').replaceChildren(); mensaje('Contando videos…');
+  try {
+    const r = await api('/api/drive/contar?carpeta=' + q(nombre)), min = Math.round(r.segundos / 60);
+    $('#aviso').replaceChildren(el('div', { className: 'msg' }, `${nombre}: ${r.videos} videos (${min} min en total). Al traerla se descargan a este equipo y se mide su calidad y rostros (gratis). Etiquetar con Gemini va aparte.`, ' ',
+      el('button', { className: 'b p', textContent: `Traer ${r.videos} videos`, disabled: !r.videos, onclick: async () => { const x = await api('/api/drive/traer', { carpeta: nombre }); mensaje(`Trabajo #${x.id} en marcha: míralo en la pestaña Trabajos. Al terminar, la carpeta aparece arriba en la biblioteca.`); } })));
+  } catch (e) { mensaje(e.message); }
 }
 function carpetaItem(tipo, nombre, cuenta, extra) {
   const on = estado.actual && estado.actual.tipo === tipo && estado.actual.nombre === nombre;

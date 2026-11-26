@@ -98,6 +98,35 @@ app.post('/api/crear-video', (req, res) => {
   } catch (e) { mal(res, e); }
 });
 
+// ---------------------------------------------------------------- carpetas de Drive (las mismas que usa la app de farándula)
+// Se detectan solas: GOOGLE_DRIVE_FOLDER_ID del .env es la carpeta de famosos; cada subcarpeta es una persona. Lista en caché 10 min.
+let cacheDrive = null;
+async function carpetasDrive(refrescar) {
+  if (!refrescar && cacheDrive && Date.now() - cacheDrive.t < 600000) return cacheDrive.mapa;
+  const mapa = await require('../drive').obtenerCarpetasFamosos(); cacheDrive = { t: Date.now(), mapa }; return mapa;
+}
+app.get('/api/drive/carpetas', async (req, res) => {
+  try {
+    const mapa = await carpetasDrive(req.query.refrescar === '1'), locales = new Map(G.resumenCarpetas().biblioteca.map(c => [c.nombre, c.clips]));
+    ok(res, Object.keys(mapa).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(n => ({ nombre: n, local: locales.has(n), clipsLocales: locales.get(n) || 0 })));
+  } catch (e) { mal(res, new Error('No pude leer Drive: ' + String(e.message).slice(0, 160)), 502); }
+});
+app.get('/api/drive/contar', async (req, res) => {
+  try {
+    const mapa = await carpetasDrive(false), id = mapa[req.query.carpeta]; if (!id) throw new Error('carpeta desconocida');
+    const v = await require('../drive').listarVideos(id); ok(res, { videos: v.length, segundos: Math.round(v.reduce((s, x) => s + (x.duracion || 0), 0)) });
+  } catch (e) { mal(res, e); }
+});
+// Traer una carpeta de Drive a disco y medir calidad y rostros (gratis). Etiquetar con Gemini es un paso aparte (cuesta).
+app.post('/api/drive/traer', async (req, res) => {
+  try {
+    const { carpeta, max } = req.body || {}; const mapa = await carpetasDrive(false);
+    if (!carpetaValida(carpeta) || !mapa[carpeta]) throw new Error('carpeta desconocida');
+    const pasos = [node('biblioteca-traer.js', carpeta, ...(Number(max) > 0 ? ['--max', String(Number(max))] : [])), node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta)];
+    ok(res, { id: encolar(`Traer de Drive: ${carpeta}`, pasos).id });
+  } catch (e) { mal(res, e); }
+});
+
 // Videos ya renderizados (para verlos desde la misma ventana).
 app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []);
