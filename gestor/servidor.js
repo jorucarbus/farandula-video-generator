@@ -9,6 +9,8 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const G = require('./biblioteca');
 const clipsDrive = require('../edl/clipsDrive');
+const respaldo = require('../edl/respaldoIndice');
+const { TIPOS: TIPOS_TOMA } = require('../edl/biblioteca');
 const canales = require('../canales');
 
 const PUERTO = Number(process.env.GESTOR_PUERTO) || 3100, RAIZ = G.RAIZ, MINIS = path.join(G.DM, 'gestor', 'minis');
@@ -92,7 +94,7 @@ async function bombear() {
 // Índice de una carpeta: baja de Drive lo que falte (temporal), mide calidad y rostros, etiqueta (opcional), guarda miniaturas y libera el disco (salvo carpetas recurrentes).
 function pasosDeIndice(carpeta, etiquetar, opcionalTraer) {
   const traer = node('biblioteca-traer.js', carpeta); if (opcionalTraer) traer.opcional = true; // carpetas que no son de Drive (importadas del Selector) no se bajan
-  return [traer, ...(etiquetar ? [node('biblioteca-etiquetar-local.js', carpeta)] : []), node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta), node('biblioteca-minis.js', carpeta), node('biblioteca-purgar.js', carpeta, '--si-no-recurrente')];
+  return [traer, ...(etiquetar ? [node('biblioteca-etiquetar-local.js', carpeta)] : []), node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta), node('biblioteca-minis.js', carpeta), node('biblioteca-purgar.js', carpeta, '--si-no-recurrente'), { ...node('biblioteca-respaldar.js', carpeta), opcional: true }];
 }
 const node = (script, ...args) => ({ cmd: process.execPath, args: [path.join(RAIZ, 'scripts', script), ...args], titulo: `${script} ${args.join(' ')}` });
 const py = (script, ...args) => ({ cmd: 'python', args: [path.join(RAIZ, 'scripts', script), ...args], titulo: `${script} ${args.join(' ')}`, opcional: true });
@@ -149,6 +151,26 @@ app.post('/api/drive/indexar', async (req, res) => {
   } catch (e) { mal(res, e); }
 });
 
+// Corregir una etiqueta a mano (tipo, descripción, lugar, vestuario, personas). Queda marcada como editada: en una fusión con Drive gana sobre la automática.
+app.post('/api/etiqueta', async (req, res) => {
+  try {
+    const { carpeta, id, cambios } = req.body || {}; if (!G.carpetasBiblioteca().includes(carpeta) || !/^[\w-]+$/.test(id || '')) throw new Error('carpeta o clip desconocido');
+    const f = respaldo.rutaLocal(carpeta, 'etiquetas'), todas = JSON.parse(fs.readFileSync(f, 'utf8')), t = todas[id]; if (!t) throw new Error('ese clip todavía no tiene etiqueta');
+    const c = cambios || {}, n = { ...t };
+    if (c.tipo !== undefined) { if (!TIPOS_TOMA.includes(c.tipo)) throw new Error('tipo no válido: ' + TIPOS_TOMA.join(', ')); n.tipo = c.tipo; }
+    if (c.descripcion !== undefined) n.descripcion = String(c.descripcion).slice(0, 300);
+    if (c.lugar !== undefined) n.lugar = String(c.lugar).slice(0, 80);
+    if (c.vestuario !== undefined) n.vestuario = (Array.isArray(c.vestuario) ? c.vestuario : String(c.vestuario).split(',')).map(x => String(x).trim()).filter(Boolean).slice(0, 6);
+    if (c.personas !== undefined) { const p = Math.round(Number(c.personas)); if (!Number.isFinite(p) || p < 0 || p > 50) throw new Error('personas debe ser un número de 0 a 50'); n.personas = p; }
+    n.editado = new Date().toISOString(); todas[id] = n; respaldo.escribirSeguro(f, todas);
+    respaldo.respaldarCarpeta(carpeta).catch(() => {}); // a Drive, sin esperar
+    ok(res, { etiqueta: n });
+  } catch (e) { mal(res, e); }
+});
+app.get('/api/tipos', (req, res) => ok(res, TIPOS_TOMA));
+// Respaldo del índice en Drive: estado y botón manual.
+app.post('/api/respaldar', async (req, res) => { try { ok(res, await respaldo.respaldarTodas()); } catch (e) { mal(res, new Error('No pude respaldar en Drive: ' + String(e.message).slice(0, 140)), 502); } });
+
 // Caché de videos en disco: ver cuánto ocupa, marcar carpetas "recurrentes" (se quedan) y liberar espacio.
 app.get('/api/cache', (req, res) => ok(res, { uso: clipsDrive.uso(), recurrentes: clipsDrive.recurrentes(), ttlHoras: clipsDrive.TTL_HORAS }));
 app.post('/api/recurrente', (req, res) => { try { ok(res, { recurrentes: clipsDrive.marcarRecurrente(req.body.carpeta, Boolean(req.body.si)) }); } catch (e) { mal(res, e); } });
@@ -173,6 +195,7 @@ app.get('/api/renders', (req, res) => {
 app.get('/render', (req, res) => { const f = path.join(G.DM, 'renders', path.basename(String(req.query.nombre || ''))); if (!/\.mp4$/i.test(f) || !fs.existsSync(f)) return res.status(404).end(); res.sendFile(f); });
 
 const limpiarCaducadosYa = () => { try { const r = clipsDrive.limpiarCaducados(); if (r.borrados) console.log(`Caché: ${r.borrados} videos viejos liberados (${(r.bytes / 1e6).toFixed(0)} MB)`); } catch (e) { console.log('Caché: no pude limpiar:', e.message); } };
-const iniciar = () => { limpiarCaducadosYa(); setInterval(limpiarCaducadosYa, 3600e3).unref(); return app.listen(PUERTO, '127.0.0.1', () => console.log(`Superapp lista: http://127.0.0.1:${PUERTO}  (Selector en http://127.0.0.1:8765)`)); };
+const respaldarYa = () => respaldo.respaldarTodas().then(r => { if (r.subidos) console.log(`Índice respaldado en Drive: ${r.subidos} archivos`); }).catch(e => console.log('Respaldo del índice: no pude (', String(e.message).slice(0, 80), ')'));
+const iniciar = () => { respaldo.restaurarFaltantes().then(t => { if (t.length) console.log(`Índice restaurado de Drive: ${t.length} archivos`); }).catch(() => {}).then(respaldarYa); setInterval(respaldarYa, 3600e3).unref(); limpiarCaducadosYa(); setInterval(limpiarCaducadosYa, 3600e3).unref(); return app.listen(PUERTO, '127.0.0.1', () => console.log(`Superapp lista: http://127.0.0.1:${PUERTO}  (Selector en http://127.0.0.1:8765)`)); };
 if (require.main === module) iniciar();
 module.exports = { app, iniciar, encolar, trabajos };

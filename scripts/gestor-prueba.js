@@ -11,6 +11,7 @@ fs.writeFileSync(path.join(bib, carpeta + '.clips.json'), JSON.stringify(copia))
 for (const ext of ['etiquetas', 'calidad', 'rostros']) { const f = path.join(real, `${carpeta}.${ext}.json`); if (fs.existsSync(f)) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); fs.writeFileSync(path.join(bib, `${carpeta}.${ext}.json`), JSON.stringify(Object.fromEntries(copia.map(c => [c.id, j[c.id]]).filter(([, v]) => v)))); } }
 const des = path.join(sel, 'Descargas', '@usuario_prueba'); fs.mkdirSync(des, { recursive: true });
 clips.slice(0, 3).forEach((c, i) => fs.copyFileSync(c.ruta, path.join(des, `2026031${i}_${7000 + i}_video_de_prueba_${i}.mp4`)));
+process.env.RESPALDO_DRIVE = '0'; // la prueba nunca toca el respaldo real en Drive
 process.env.DATA_MOTOR_DIR = dm; process.env.SELECTOR_DIR = sel; process.env.GESTOR_PUERTO = process.env.PORT || '3101';
 console.log('Datos de prueba en', tmp);
 require('../gestor/servidor').iniciar();

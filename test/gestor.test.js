@@ -6,7 +6,7 @@ const path = require('path');
 
 // El gestor lee sus rutas del entorno al cargarse: se apunta a una carpeta temporal ANTES de requerirlo.
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gestor-test-'));
-process.env.DATA_MOTOR_DIR = path.join(tmp, 'dm'); process.env.SELECTOR_DIR = path.join(tmp, 'sel');
+process.env.RESPALDO_DRIVE = '0'; process.env.DATA_MOTOR_DIR = path.join(tmp, 'dm'); process.env.SELECTOR_DIR = path.join(tmp, 'sel');
 const G = require('../gestor/biblioteca');
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
@@ -59,4 +59,12 @@ test('resumen: cuenta clips, medidos y malos por carpeta', () => {
   assert.deepStrictEqual([r.clips, r.medidos, r.malos], [1, 1, 1]); // el otro clip se quitó con limpiarFaltantes
   assert.strictEqual(G.clipsDeBiblioteca('Mara_Prueba')[0].calidad.apto, false);
   assert.throws(() => G.clipsDeBiblioteca('../../etc'), /desconocida/);
+});
+
+test('limpiarFaltantes: solo quita lo que no se puede recuperar; lo que está en Drive se queda aunque falte el archivo', () => {
+  const f = path.join(G.BIB, 'Solo_Drive.clips.json');
+  fs.mkdirSync(G.BIB, { recursive: true });
+  fs.writeFileSync(f, JSON.stringify([{ id: '1AbCdriveId', name: 'a.mp4', ruta: path.join(G.BIB, 'Solo_Drive', 'src_1AbCdriveId.mp4') }, { id: 'loc_zzz', name: 'b.mp4', ruta: path.join(G.BIB, 'Solo_Drive', 'src_loc_zzz.mp4') }]));
+  assert.strictEqual(G.limpiarFaltantes('Solo_Drive').quitados, 1);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).map(c => c.id), ['1AbCdriveId']);
 });

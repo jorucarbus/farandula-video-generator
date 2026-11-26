@@ -71,7 +71,7 @@ function clipsDeBiblioteca(carpeta) {
     const conRostro = r && r.cuadros && r.cuadros.length ? r.cuadros.filter(x => (x.caras || []).length).length / r.cuadros.length : null;
     const existe = Boolean(c.ruta && fs.existsSync(c.ruta)), mini = path.join(BIB, `${carpeta}.minis`, `${c.id}.jpg`);
     return { id: c.id, nombre: c.name, ruta: c.ruta, existe, soloDrive: !existe && !/^loc_/.test(c.id), mini: fs.existsSync(mini) ? `/mini?carpeta=${encodeURIComponent(carpeta)}&id=${encodeURIComponent(c.id)}` : null, fecha: c.fecha || (t && t.fecha) || fechaDeArchivo(c.name), duracion: c.duracion || (t && t.duracion) || null,
-      tipo: t ? t.tipo : null, descripcion: t ? t.descripcion : null, personas: t ? t.personas : null, textoEnPantalla: t ? t.texto_en_pantalla : null,
+      etiqueta: t, editada: Boolean(t && t.editado), tipo: t ? t.tipo : null, descripcion: t ? t.descripcion : null, personas: t ? t.personas : null, textoEnPantalla: t ? t.texto_en_pantalla : null,
       calidad: q ? { puntaje: q.puntaje, apto: q.apto, motivos: q.motivos || [], avisos: q.avisos || [], ancho: q.ancho, alto: q.alto } : null,
       fraccionRostro: conRostro == null ? null : +conRostro.toFixed(2) };
   });
@@ -117,7 +117,7 @@ function restaurar(rutasPapelera) {
 
 // Quita de la carpeta (clips.json) los clips cuyo archivo ya no está, para que el motor no los elija. Guarda copia del json anterior.
 function limpiarFaltantes(carpeta) {
-  const f = path.join(BIB, `${carpeta}.clips.json`), clips = leer(f, []), vivos = clips.filter(c => c.ruta && fs.existsSync(c.ruta));
+  const f = path.join(BIB, `${carpeta}.clips.json`), clips = leer(f, []), vivos = clips.filter(c => (c.ruta && fs.existsSync(c.ruta)) || !/^loc_/.test(c.id)); // lo que está en Drive no se quita aunque su archivo no esté en disco
   if (vivos.length === clips.length) return { quitados: 0 };
   fs.copyFileSync(f, f + '.bak'); escribir(f, vivos);
   return { quitados: clips.length - vivos.length };

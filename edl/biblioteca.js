@@ -83,7 +83,7 @@ async function etiquetarClips(clips, { cache, etiquetador = (process.env.ETIQUET
       try { guardadas[c.id] = limpiarEtiqueta(await etiquetador(c.ruta, c), c); break; } catch (e) { if (intento) fallos.push({ id: c.id, name: c.name, error: e.message }); }
     }
     if (progreso) progreso(++hechas, pendientes.length);
-    if (cache) fs.writeFileSync(cache, JSON.stringify(guardadas, null, 1));
+    if (cache) require('./respaldoIndice').escribirSeguro(cache, guardadas); // escritura segura: nunca a medias y con copia .bak
   };
   const cola = [...pendientes];
   await Promise.all(Array.from({ length: Math.min(concurrencia, cola.length) }, async () => { while (cola.length) await trabajar(cola.shift()); }));

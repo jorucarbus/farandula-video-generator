@@ -50,7 +50,7 @@
 <header>
   <h1>Superapp de videos</h1>
   <nav id="nav"></nav>
-  <span style="flex:1"></span><span id="estado" class="chip gris">…</span>
+  <span style="flex:1"></span><button class="b" id="bResp" title="Guarda en Drive las etiquetas, la calidad y los rostros de todas las carpetas">Respaldar etiquetas en Drive</button> <span id="estado" class="chip gris">…</span>
 </header>
 <main>
   <section id="t-biblioteca">
@@ -85,6 +85,7 @@
   <section id="t-papelera" class="oculto"><div class="msg">Nada se borra de verdad: aquí puedes restaurar lo que mandaste a la papelera (<code>data-motor/papelera</code>).</div><div class="grid" id="gridPapelera"></div></section>
   <section id="t-trabajos" class="oculto"><div id="listaTrabajos"></div></section>
 </main>
+<dialog id="dEtiqueta"></dialog>
 <dialog id="visor"><video id="visorVideo" controls autoplay></video><div class="fila" style="padding:8px 12px;margin:0"><span id="visorTitulo" style="flex:1"></span><button class="b" id="visorCerrar">Cerrar</button></div></dialog>
 
 <script>
@@ -178,6 +179,7 @@ function pintarGrid() {
     const cal = c.calidad, chip = cal ? el('span', { className: 'chip ' + (cal.apto ? (cal.puntaje >= 85 ? 'ok' : 'med') : 'no'), title: [...cal.motivos, ...cal.avisos].join('\n') || 'sin observaciones' }, `${cal.puntaje}`) : el('span', { className: 'chip gris' }, 'sin medir');
     const caja = el('div', { className: 'clip' + (estado.sel.has(c.ruta) ? ' sel' : '') },
       el('input', { type: 'checkbox', checked: estado.sel.has(c.ruta), onchange: e => { e.target.checked ? estado.sel.add(c.ruta) : estado.sel.delete(c.ruta); caja.classList.toggle('sel', e.target.checked); pintarBarra(); } }),
+      el('button', { className: 'b', textContent: '✎', title: 'Ver y corregir la etiqueta', style: 'position:absolute;top:4px;right:4px;padding:1px 7px', onclick: () => editarEtiqueta(c) }),
       el('img', { loading: 'lazy', src: c.mini || (c.existe ? '/miniatura?ruta=' + q(c.ruta) : ''), alt: '', title: c.descripcion || c.nombre, onclick: () => (c.existe ? ver('/video?ruta=' + q(c.ruta), c.nombre) : c.soloDrive ? ver(`/video-drive?carpeta=${q(estado.actual.nombre)}&id=${q(c.id)}`, c.nombre) : 0) }),
       el('div', { className: 'info' }, el('div', { className: 'nom', title: c.nombre }, c.nombre), el('div', {}, chip, ' ', c.tipo ? el('span', { className: 'chip gris' }, c.tipo) : '', c.fraccionRostro != null ? el('span', { className: 'chip gris', title: 'fracción de cuadros con rostro' }, '☺ ' + Math.round(c.fraccionRostro * 100) + '%') : '', c.soloDrive ? el('span', { className: 'chip gris', title: 'el video está en Drive; se baja solo cuando hace falta' }, 'en Drive') : (c.existe && !/^loc_/.test(c.id) ? el('span', { className: 'chip gris', title: 'copia temporal en disco' }, 'en disco') : ''))));
     g.append(caja);
@@ -203,6 +205,17 @@ async function importar() {
 async function preparar(etiquetar) {
   if (etiquetar && !confirm('Etiquetar usa Gemini (unos centavos por clip nuevo; no repite los ya etiquetados). Los videos se bajan de Drive solo mientras se analizan y luego se borran del disco. ¿Seguir?')) return;
   const r = await api('/api/preparar', { carpeta: estado.actual.nombre, etiquetar }); mensaje(`Trabajo #${r.id} en marcha. Míralo en la pestaña Trabajos.`);
+}
+async function editarEtiqueta(c) {
+  if (!c.etiqueta) return mensaje('Este clip todavía no tiene etiqueta. Usa “Etiquetar con Gemini” en la carpeta.');
+  const tipos = await api('/api/tipos'), t = c.etiqueta, d = $('#dEtiqueta'); d.replaceChildren();
+  const campo = (rot, ctl) => el('label', {}, rot, ctl), tipo = el('select', {}, ...tipos.map(x => el('option', { value: x, textContent: x, selected: x === t.tipo }))), desc = el('textarea', { rows: 3, value: t.descripcion || '', style: 'width:100%' });
+  const lugar = el('input', { type: 'text', value: t.lugar || '' }), vest = el('input', { type: 'text', value: (t.vestuario || []).join(', ') }), pers = el('input', { type: 'text', value: t.personas ?? '' });
+  const msg = el('div', {});
+  d.append(el('div', { style: 'padding:16px;min-width:min(520px,88vw);display:grid;gap:10px' }, el('strong', {}, c.nombre), t.editado ? el('span', { className: 'chip med' }, 'corregida a mano') : '', campo('Tipo de toma', tipo), campo('Descripción', desc), campo('Lugar', lugar), campo('Vestuario (separado por comas)', vest), campo('Personas en la toma', pers),
+    t.texto_en_pantalla ? el('div', { className: 'chip gris' }, 'Texto en pantalla: ' + t.texto_en_pantalla) : '', msg,
+    el('div', { className: 'fila', style: 'margin:0' }, el('button', { className: 'b p', textContent: 'Guardar', onclick: async () => { try { await api('/api/etiqueta', { carpeta: estado.actual.nombre, id: c.id, cambios: { tipo: tipo.value, descripcion: desc.value, lugar: lugar.value, vestuario: vest.value, personas: pers.value } }); d.close(); abrirCarpeta('biblioteca', estado.actual.nombre); } catch (e) { msg.replaceChildren(el('div', { className: 'msg' }, '⚠ ' + e.message)); } } }), el('button', { className: 'b', textContent: 'Cancelar', onclick: () => d.close() }))));
+  d.showModal();
 }
 function mensaje(t) { $('#aviso').replaceChildren(el('div', { className: 'msg' }, t)); }
 function ver(url, titulo) { $('#visorVideo').src = url; $('#visorTitulo').textContent = titulo; $('#visor').showModal(); }
@@ -232,6 +245,7 @@ async function cargarTrabajos() {
   if (!l.length) c.append(el('div', { className: 'vacio' }, 'Sin trabajos todavía.'));
   for (const t of l) c.append(el('div', { className: 'panel trabajo' }, el('strong', {}, `#${t.id} ${t.titulo} `), el('span', { className: 'chip ' + ({ listo: 'ok', falló: 'no', corriendo: 'med' }[t.estado] || 'gris') }, t.estado), el('pre', {}, t.log.trim() || '…')));
 }
+$('#bResp').onclick = async () => { $('#bResp').disabled = true; try { const r = await api('/api/respaldar', {}); mensaje(`Índice respaldado en Drive: ${r.carpetas} carpetas, ${r.subidos} archivos subidos${r.traidos ? `, ${r.traidos} entradas traídas de Drive` : ''}.`); } catch (e) { mensaje('⚠ ' + e.message); } $('#bResp').disabled = false; };
 setInterval(() => { if (!$('#t-trabajos').classList.contains('oculto')) cargarTrabajos(); }, 3000);
 
 (async () => {
