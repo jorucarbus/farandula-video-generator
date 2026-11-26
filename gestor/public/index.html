@@ -87,7 +87,10 @@
     <div class="grid" id="gridRedes" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))"></div>
     <div class="fila" style="margin-top:12px"><button class="b p" id="bSesiones">Comprobar sesiones</button><span class="chip gris">Facebook: se bajan videos y reels pegando sus links (en el Selector); las historias no</span></div>
   </section>
-  <section id="t-videos" class="oculto"><div class="grid" id="gridVideos"></div></section>
+  <section id="t-videos" class="oculto">
+    <div class="fila"><div id="subVideos" style="display:flex;gap:4px"></div><span class="chip gris">Se agrupan por canal; marca cada video como publicado cuando lo subas</span></div>
+    <div id="gridVideos"></div>
+  </section>
   <section id="t-papelera" class="oculto"><div class="msg">Nada se borra de verdad: aquí puedes restaurar lo que mandaste a la papelera (<code>data-motor/papelera</code>).</div><div class="grid" id="gridPapelera"></div></section>
   <section id="t-trabajos" class="oculto"><div id="listaTrabajos"></div></section>
 </main>
@@ -262,7 +265,23 @@ $('#cIr').onclick = async () => {
 };
 
 // ---------------------------------------------------------------- videos, papelera, trabajos
+let verPublicados = false;
 async function cargarVideos() {
+  const l = await api('/api/renders'), sub = $('#subVideos'), cont = $('#gridVideos'); cont.replaceChildren(); sub.replaceChildren();
+  const por = l.filter(v => !v.publicado), pub = l.filter(v => v.publicado);
+  for (const [txt, val] of [['Por publicar (' + por.length + ')', false], ['Ya publicados (' + pub.length + ')', true]]) sub.append(el('button', { className: 'b' + (verPublicados === val ? ' p' : ''), textContent: txt, onclick: () => { verPublicados = val; cargarVideos(); } }));
+  const lista = verPublicados ? pub : por; if (!lista.length) cont.append(el('div', { className: 'vacio' }, verPublicados ? 'Todavía no marcaste ningún video como publicado.' : 'No hay videos por publicar.'));
+  const canales = [...new Set(lista.map(v => v.canal))].sort((a, b) => a.localeCompare(b, 'es'));
+  for (const canal of canales) {
+    const vs = lista.filter(v => v.canal === canal); cont.append(el('h3', {}, `${canal} · ${vs.length}`));
+    const g = el('div', { className: 'grid' }); cont.append(g);
+    for (const v of vs) g.append(el('div', { className: 'clip' },
+      el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
+      el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB'),
+        el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }))));
+  }
+}
+async function cargarVideosViejo() {
   const g = $('#gridVideos'); g.replaceChildren(); const l = await api('/api/renders');
   if (!l.length) g.append(el('div', { className: 'vacio' }, 'Todavía no hay videos renderizados.'));
   for (const v of l) g.append(el('div', { className: 'clip' }, el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.nombre, v.nombre) }), el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.nombre), el('div', {}, new Date(v.fecha).toLocaleString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB'))));

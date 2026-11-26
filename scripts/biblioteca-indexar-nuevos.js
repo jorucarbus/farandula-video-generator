@@ -21,8 +21,10 @@ const correr = (script, ...a) => spawnSync(script.endsWith('.py') ? 'python' : p
   const videos = await drive.listarVideos(id), clips = leer(fClips, []), etiquetas = leer(fEt, {}), conocidos = new Set(clips.map(c => c.id));
   const dir = path.join(RAIZ, nombre); fs.mkdirSync(dir, { recursive: true });
   for (const v of videos) if (!conocidos.has(v.id)) clips.push({ id: v.id, name: v.name, ruta: path.join(dir, `src_${v.id}.mp4`), duracion: v.duracion, fecha: fechaDeNombre(v.name) });
-  const pendientes = clips.filter(c => !etiquetas[c.id] && videos.some(v => v.id === c.id));
-  console.log(`ÍNDICE ${nombre}: ${videos.length} videos en Drive, ${Object.keys(etiquetas).length} ya etiquetados, ${pendientes.length} por etiquetar`);
+  const maxArg = Number(process.argv[process.argv.indexOf('--max') + 1]) || Infinity; // tope por corrida (carpetas enormes); se toman primero los más recientes
+  const sinEtiqueta = clips.filter(c => !etiquetas[c.id] && videos.some(v => v.id === c.id)).sort((x, y) => String(y.fecha || '').localeCompare(String(x.fecha || '')));
+  const pendientes = sinEtiqueta.slice(0, maxArg);
+  console.log(`ÍNDICE ${nombre}: ${videos.length} videos en Drive, ${Object.keys(etiquetas).length} ya etiquetados, ${pendientes.length} por etiquetar${sinEtiqueta.length > pendientes.length ? ' (de ' + sinEtiqueta.length + ', tope ' + maxArg + ')' : ''}`);
   if (!pendientes.length) { if (clips.length !== conocidos.size) R.escribirSeguro(fClips, clips); return; }
 
   // 1) bajar SOLO los pendientes (temporal)

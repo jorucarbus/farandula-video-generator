@@ -24,7 +24,7 @@ const escribir = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true });
 const idDe = ruta => 'loc_' + crypto.createHash('sha1').update(path.resolve(ruta).toLowerCase()).digest('hex').slice(0, 16);
 
 // Una ruta es "permitida" si está dentro de la biblioteca, de las descargas del Selector o de la papelera.
-function rutaPermitida(ruta, raices = [BIB, path.join(SELECTOR_DIR, 'Descargas'), PAPELERA]) {
+function rutaPermitida(ruta, raices = [BIB, path.join(SELECTOR_DIR, 'Descargas'), PAPELERA, path.join(DM, 'renders')]) {
   const r = path.resolve(String(ruta || ''));
   return raices.some(b => { const x = path.resolve(b) + path.sep; return (r + path.sep).toLowerCase().startsWith(x.toLowerCase()) && r.length > x.length - 1; });
 }

@@ -205,9 +205,21 @@ app.post('/api/drive/papelera', async (req, res) => {
 });
 
 // Videos ya renderizados (para verlos desde la misma ventana).
+// Estado de publicación de los videos listos: data-motor/renders/estado-publicacion.json { "<nombre>.mp4": { publicado, fecha, linkPost } }
+const F_PUBLICADOS = path.join(G.DM, 'renders', 'estado-publicacion.json');
+const leerPublicados = () => { try { return JSON.parse(fs.readFileSync(F_PUBLICADOS, 'utf8')); } catch { return {}; } };
 app.get('/api/renders', (req, res) => {
-  const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []);
-  ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/^prueba/.test(f)).map(f => ({ nombre: f, ruta: path.join(dir, f), tam: fs.statSync(path.join(dir, f)).size, fecha: fs.statSync(path.join(dir, f)).mtime })).sort((a, b) => b.fecha - a.fecha).slice(0, 30));
+  const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []); const est = leerPublicados();
+  const guion = n => { try { return JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'guion.json'), 'utf8')); } catch { return null; } };
+  ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
+    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '' }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
+});
+app.post('/api/render-publicado', (req, res) => {
+  try {
+    const { nombre, publicado, linkPost } = req.body || {}; const n = path.basename(String(nombre || '')); if (!/^[\w.-]+\.mp4$/i.test(n) || !fs.existsSync(path.join(G.DM, 'renders', n))) throw new Error('video desconocido');
+    const est = leerPublicados(); est[n] = publicado ? { publicado: true, fecha: new Date().toISOString(), linkPost: String(linkPost || '').slice(0, 300) } : { publicado: false };
+    require('../edl/respaldoIndice').escribirSeguro(F_PUBLICADOS, est); ok(res, est[n]);
+  } catch (e) { mal(res, e); }
 });
 // Ficha de publicación de un video listo: lo que se pega en las redes (título, descripción, hashtags) y de dónde salió. Sale del guion guardado junto al render.
 app.get('/api/render-info', (req, res) => {
