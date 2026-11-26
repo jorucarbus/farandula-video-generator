@@ -177,7 +177,7 @@ app.post('/api/respaldar', async (req, res) => { try { ok(res, await respaldo.re
 // la superapp nunca ve ni muestra las cookies.
 const SELECTOR_URL = process.env.SELECTOR_URL || 'http://127.0.0.1:8765';
 app.get('/api/sesiones', async (req, res) => {
-  const redes = [['ig', 'Instagram'], ['tt', 'TikTok'], ['x', 'X']], out = [];
+  const redes = [['ig', 'Instagram'], ['tt', 'TikTok'], ['x', 'X'], ['fb', 'Facebook']], out = [];
   for (const [plat, nombre] of redes) {
     try {
       const r = await fetch(SELECTOR_URL + '/api/sesion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plat }), signal: AbortSignal.timeout(15000) });

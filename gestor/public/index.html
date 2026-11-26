@@ -84,7 +84,7 @@
   <section id="t-redes" class="oculto">
     <div class="msg">Esta ventana es un Firefox propio de la superapp. Inicia sesión aquí en tus cuentas <b>secundarias</b> (nunca las de tus canales): la sesión se queda en este perfil y el Selector la usa para descargar. La superapp nunca ve tus contraseñas ni tus cookies.</div>
     <div class="grid" id="gridRedes" style="grid-template-columns:repeat(auto-fill,minmax(250px,1fr))"></div>
-    <div class="fila" style="margin-top:12px"><button class="b p" id="bSesiones">Comprobar sesiones</button><span class="chip gris">Facebook: solo para tener la sesión lista; el Selector todavía no baja de Facebook</span></div>
+    <div class="fila" style="margin-top:12px"><button class="b p" id="bSesiones">Comprobar sesiones</button><span class="chip gris">Facebook: se bajan videos y reels pegando sus links (en el Selector); las historias no</span></div>
   </section>
   <section id="t-videos" class="oculto"><div class="grid" id="gridVideos"></div></section>
   <section id="t-papelera" class="oculto"><div class="msg">Nada se borra de verdad: aquí puedes restaurar lo que mandaste a la papelera (<code>data-motor/papelera</code>).</div><div class="grid" id="gridPapelera"></div></section>
@@ -228,8 +228,8 @@ let sesiones = {};
 function pintarRedes() {
   const g = $('#gridRedes'); g.replaceChildren();
   for (const [plat, nombre, url] of REDES) { const s = sesiones[plat];
-    g.append(el('div', { className: 'panel' }, el('strong', {}, nombre + ' '), s ? el('span', { className: 'chip ' + (s.ok ? 'ok' : 'no') }, s.ok ? 'sesión activa' : 'sin sesión') : el('span', { className: 'chip gris' }, plat === 'fb' ? 'no se comprueba' : 'sin comprobar'),
-      el('p', { style: 'color:var(--suave);margin:8px 0;font-size:12px' }, s ? s.mensaje : (plat === 'fb' ? 'Inicia sesión para tenerla lista.' : 'Pulsa “Comprobar sesiones”.')),
+    g.append(el('div', { className: 'panel' }, el('strong', {}, nombre + ' '), s ? el('span', { className: 'chip ' + (s.ok ? 'ok' : 'no') }, s.ok ? 'sesión activa' : 'sin sesión') : el('span', { className: 'chip gris' }, 'sin comprobar'),
+      el('p', { style: 'color:var(--suave);margin:8px 0;font-size:12px' }, s ? s.mensaje : 'Pulsa “Comprobar sesiones”.'),
       el('a', { className: 'b', href: url, target: '_blank', rel: 'noopener', textContent: 'Abrir ' + nombre + ' para iniciar sesión', style: 'display:inline-block;text-decoration:none;color:inherit;padding:7px 11px;border:1px solid var(--borde);border-radius:8px' }))); }
 }
 $('#bSesiones').onclick = async () => { $('#bSesiones').disabled = true; $('#bSesiones').textContent = 'Comprobando…'; try { for (const s of await api('/api/sesiones')) sesiones[s.plat] = s; } catch (e) { alert(e.message); } pintarRedes(); $('#bSesiones').disabled = false; $('#bSesiones').textContent = 'Comprobar sesiones'; };
