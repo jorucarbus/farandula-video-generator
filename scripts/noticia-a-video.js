@@ -124,6 +124,7 @@ const log = (...a) => console.log(...a);
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];
+  correr('calidad-clips.js', [carpeta]); // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
   correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
   log(`\nListo: ${salida}\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion || ''}\n${(g.hashtags || []).join(' ')}`);
 })().catch(e => { console.error('FALLO', e.message); process.exit(1); });

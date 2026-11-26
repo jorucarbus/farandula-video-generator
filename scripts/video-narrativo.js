@@ -48,6 +48,9 @@ function sinNegro(ruta, ss) {
     etiquetas = JSON.parse(fs.readFileSync(rEtiq, 'utf8'));
     const nac = arg('--nacimiento', null); // YYYY-MM-DD: solo clips de cuando ya era mayor de edad (no se muestra a la persona siendo menor)
     if (nac) { const mayor = String(Number(nac.slice(0, 4)) + 18) + nac.slice(4), antes = Object.keys(etiquetas).length; etiquetas = Object.fromEntries(Object.entries(etiquetas).filter(([, t]) => t.fecha >= mayor)); console.log('MAYOR DE EDAD desde ' + mayor + ': ' + Object.keys(etiquetas).length + ' de ' + antes + ' clips'); } rutaDe = Object.fromEntries(JSON.parse(fs.readFileSync(rClips, 'utf8')).map(c => [c.id, c.ruta]));
+    // Puerta de calidad: los clips que no se ven bien a pantalla completa (resolución, barras, oscuros...) no se eligen. --sin-calidad la salta.
+    const rCal = path.join(RAIZ, `${carpeta}.calidad.json`);
+    if (!process.argv.includes('--sin-calidad') && fs.existsSync(rCal)) { const fa = require('../edl/calidadClip').filtrarAptos(etiquetas, JSON.parse(fs.readFileSync(rCal, 'utf8'))); etiquetas = fa.etiquetas; console.log(`CALIDAD: ${fa.descartados.length} clip(s) descartados por calidad${fa.aviso ? ' — ' + fa.aviso : ''}`); }
     const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones;
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
