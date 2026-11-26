@@ -131,6 +131,11 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     const e = porBeat.get(k); if (!e || !e.personas) continue;
     e.personas.forEach((pr) => { const ta = Math.max(0, tPal(k, pr.ancla) - 0.15); elementos.push(E.retrato({ foto: pr.foto, nombre: pr.nombre, cx: pr.lado === 'der' ? 0.84 : 0.16, cy: 0.27, r: 0.115, t0: ta, t1: Math.min(fin(k) + 0.6, ta + 3.4) })); });
   }
+  // 3c) VS y apoyo (ver edl/graficosSociales.js): esquinas de arriba del recuadro; la escena ya trae `social` solo si la frase lo pide
+  for (let k = 0; k < beats.length; k++) {
+    const e = porBeat.get(k); if (!e || !e.social) continue; const so = e.social, ta = Math.max(0, tPal(k, so.ancla) - 0.2), tf = Math.min(fin(k) + 0.4, ta + 3.2);
+    elementos.push(so.tipo === 'vs' ? E.vs({ a: so.a, b: so.b, t0: ta, t1: tf }) : E.apoyo({ fotos: so.fotos, icono: so.icono, t0: ta, t1: tf })); marca(k, so.ancla);
+  }
   // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
   // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }
   if (M) {

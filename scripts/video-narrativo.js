@@ -70,6 +70,19 @@ function sinNegro(ruta, ss) {
       const P2 = require('../edl/personas'), excluir = require('../edl/storyboard').REACCIONES.protagonista.alias.concat(protagonista.toLowerCase().split(' ')),
         otras = await P2.prepararPersonas(g.beats, { excluir, log: m => console.log(m), conocidas: g.personas });
       P2.asignarPersonas(dir.escenas, g.beats, otras); console.log(`PERSONAS con foto: ${otras.map(p => p.nombre).join(', ') || 'ninguna'}`);
+      // VS y apoyo: solo si la frase lo pide y hay fotos de las personas nombradas (la protagonista sale de su mejor cuadro de rostro, medido en local)
+      if (!process.argv.includes('--sin-sociales')) {
+        const figuras = otras.map(p => ({ nombre: p.nombre, foto: p.foto, alias: p.alias }));
+        const mejor = etiquetas ? Object.values(etiquetas).filter(t => t.rostroLocal && rutaDe[t.id] && fs.existsSync(rutaDe[t.id]) && (t.carasEnTomaPrincipal || 1) <= 1).sort((x, y) => y.rostro.r - x.rostro.r)[0] : null;
+        if (mejor) {
+          try {
+            const fr = path.join(require('os').tmpdir(), 'protag_' + process.pid + '.jpg'); require('child_process').execFileSync(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-v', 'error', '-ss', String(mejor.rostro.t), '-i', rutaDe[mejor.id], '-frames:v', '1', fr]);
+            const pc = await P2.prepararCirculo(fr, { rostro: mejor.rostro, mira: 'frente' }, { lado: 'izq', salida: path.join(__dirname, '..', 'data-motor', 'personas', P2.slug(protagonista) + '_protagonista.jpg') });
+            figuras.push({ nombre: protagonista, foto: pc.foto, alias: protagonista.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/s+/).filter(w => w.length >= 4).concat(require('../edl/storyboard').REACCIONES.protagonista.alias) });
+          } catch (e) { console.log('sin foto de la protagonista para VS/apoyo:', e.message.slice(0, 100)); }
+        }
+        const so = require('../edl/graficosSociales').asignarSociales(dir.escenas, g.beats, figuras); so.avisos.forEach(x => console.log('SOCIAL:', x));
+      }
     } catch (e) { console.log('sin fotos de personas:', e.message.slice(0, 140)); }
   }
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));

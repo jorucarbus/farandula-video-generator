@@ -40,6 +40,65 @@ function retrato({ foto, nombre, cx = 0.5, cy = 0.5, r = 0.2, foco, t0, t1 }) {
   };
 }
 
+// ── VS: dos círculos con foto que entran de los lados y un "VS" que cae en medio (confrontación) ─────────────────────────────────────
+function etiquetaNombre(ctx, nombre, X, y, p, u, estilo) {
+  const tam = Math.round(u * 0.03); ctx.font = `${tam}px ${estilo.tipografia.texto}`;
+  const pw = ctx.measureText(nombre).width + tam * 1.5, ph = tam * 1.8;
+  ctx.save(); ctx.globalAlpha *= p; B.sombraDeCapa(ctx, u, 0.35, 0.28); ctx.fillStyle = estilo.colores.negro; B.rectRedondo(ctx, X - pw / 2, y, pw, ph, ph / 2); ctx.fill(); B.sinSombra(ctx);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(nombre, X, y + ph / 2 + tam * 0.04); ctx.restore();
+}
+function vs({ a, b, cy = 0.27, r = 0.105, t0, t1 }) {
+  let ia = null, ib = null;
+  return {
+    t0, t1, eventos: [{ t: t0, sonido: 'whoosh', db: -8 }, { t: t0 + 0.38, sonido: 'golpe', db: -4 }],
+    async preparar() { [ia, ib] = await Promise.all([imagen(a.foto), imagen(b.foto)]); },
+    dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
+      const R = u * r, Y = h * cy, s = easeOutCubic(acotar(t / 0.38)), salida = acotar((t1 - tAbs) / 0.25), XA = lerp(-R, w * 0.27, s), XB = lerp(w + R, w * 0.73, s);
+      ctx.save(); ctx.globalAlpha = salida;
+      B.retratoCircular(ctx, ia, XA, Y, R, { u }); B.retratoCircular(ctx, ib, XB, Y, R, { u });
+      const tv = t - 0.3; if (tv > 0) { // el VS cae con rebote y tiembla un instante
+        const e = pop(tv, 0.3), temblor = Math.sin(tv * 60) * Math.exp(-tv * 7) * 0.12, Rv = R * 0.6;
+        ctx.save(); ctx.translate(w / 2, Y); ctx.rotate(temblor); ctx.scale(e, e);
+        B.sombraDeCapa(ctx, u, 0.5, 0.35); ctx.fillStyle = estilo.colores.rojo; ctx.beginPath(); ctx.arc(0, 0, Rv, 0, Math.PI * 2); ctx.fill(); B.sinSombra(ctx);
+        ctx.lineWidth = Rv * 0.12; ctx.strokeStyle = '#fff'; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = `${Math.round(Rv * 1.05)}px ${estilo.tipografia.texto}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('VS', 0, Rv * 0.05); ctx.restore();
+      }
+      const p = acotar((t - 0.4) / 0.25); if (p > 0) { etiquetaNombre(ctx, a.nombre, XA, Y + R + u * 0.02, p, u, estilo); etiquetaNombre(ctx, b.nombre, XB, Y + R + u * 0.02, p, u, estilo); }
+      ctx.restore();
+    },
+  };
+}
+
+// ── Apoyo: fotos con un corazón (o siluetas del público si nadie en particular) ────────────────────────────────────────────────────
+function apoyo({ fotos = [], icono = 'heart', cy = 0.27, r = 0.1, t0, t1 }) {
+  let imgs = [], ico = null; const { cargarIcono } = require('./iconos');
+  return {
+    t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...(fotos.length ? fotos : [0, 1, 2, 3, 4]).map((_, i) => ({ t: t0 + 0.12 + i * 0.14, sonido: 'clic', db: -12 }))],
+    async preparar() { imgs = await Promise.all(fotos.map(f => imagen(f.foto))); ico = await cargarIcono(icono, { color: '#FFFFFF', grosor: 1.8 }); },
+    dibujar(ctx, { t, tAbs, w, h, u, estilo }) {
+      const salida = acotar((t1 - tAbs) / 0.25); ctx.save(); ctx.globalAlpha = salida;
+      const corazon = (x, y, R, e) => { ctx.save(); ctx.translate(x, y); ctx.scale(e, e); B.sombraDeCapa(ctx, u, 0.35, 0.3); ctx.fillStyle = estilo.colores.rojo; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); B.sinSombra(ctx); if (ico) ctx.drawImage(ico, -R * 0.62, -R * 0.62, R * 1.24, R * 1.24); ctx.restore(); };
+      if (fotos.length) {
+        const R = u * r, n = fotos.length, sep = R * 2.5;
+        fotos.forEach((f, i) => { const tt = t - i * 0.15; if (tt <= 0) return; const e = pop(tt), X = w / 2 + (i - (n - 1) / 2) * sep, Y = h * cy;
+          ctx.save(); ctx.translate(X, Y); ctx.scale(e, e); ctx.translate(-X, -Y); B.retratoCircular(ctx, imgs[i], X, Y, R, { u }); ctx.restore();
+          const te = tt - 0.25; if (te > 0) corazon(X + R * 0.78, Y + R * 0.78, R * 0.34, pop(te, 0.3)); if (f.nombre && tt > 0.3) etiquetaNombre(ctx, f.nombre, X, Y + R + u * 0.02, acotar((tt - 0.3) / 0.25), u, estilo); });
+      } else { // siluetas simples del público, con corazones que suben
+        const n = 5, base = h * (cy + 0.07), tam = u * 0.095;
+        for (let i = 0; i < n; i++) {
+          const tt = t - i * 0.12; if (tt <= 0) continue; const e = pop(tt, 0.3), x = w / 2 + (i - (n - 1) / 2) * tam * 1.55, k = 1 - Math.abs(i - (n - 1) / 2) * 0.1, s = tam * k;
+          ctx.save(); ctx.translate(x, base); ctx.scale(e, e); ctx.fillStyle = i % 2 ? '#8E9BA6' : '#A5B1BB'; ctx.strokeStyle = '#fff'; ctx.lineWidth = s * 0.07;
+          ctx.beginPath(); ctx.arc(0, -s * 0.95, s * 0.36, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // cabeza
+          ctx.beginPath(); ctx.ellipse(0, 0, s * 0.62, s * 0.78, 0, Math.PI, 0, false); ctx.closePath(); ctx.fill(); ctx.stroke(); // hombros
+          ctx.restore();
+          const ph = ((t * 0.7 + i * 0.37) % 1.4); if (tt > 0.3 && ph < 1.1) { const q = ph / 1.1; ctx.save(); ctx.globalAlpha *= (1 - q) * acotar(q * 8); corazon(x + Math.sin(q * 5 + i) * s * 0.2, base - s * 1.6 - q * s * 1.8, s * 0.3, 1); ctx.restore(); }
+        }
+      }
+      ctx.restore();
+    },
+  };
+}
+
 // ── Cifra en píldora (reusa el componente del estilo) ───────────────────────────────────────────
 function cifra({ valor, sufijo, prefijo, agrupar, conteo, cy = 0.46, t0, t1 }) {
   const datos = { valor, sufijo, prefijo, agrupar, conteo, ancla: 'centro' };
@@ -297,4 +356,4 @@ function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base 
   };
 }
 
-module.exports = { retrato, cifra, grafico, listaNumerada, mapa, ventanaClip, montaje, TRANS };
+module.exports = { vs, apoyo, retrato, cifra, grafico, listaNumerada, mapa, ventanaClip, montaje, TRANS };
