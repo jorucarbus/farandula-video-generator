@@ -117,3 +117,10 @@ Selector (Python) queda tal cual; el gestor indexa clips de famosos y videos edi
 - Pocos clips buenos por carpeta → tomas repetidas (Mara: 12 buenos de 22).
 - `drive.js` y `sheets.js` hacen llamadas reales: las pruebas locales usan el cliente falso, instalado ANTES de cargar `driveCache` (lección del vaciado de `jobs.json`).
 - No se toca la carpeta de la app viva; todo se hace en el clon `C:\Users\jorucarbus\proyectos\farandula-motor-edl`.
+
+## 7. Estado (2026-11-25)
+
+- **A** (link → MP4 automático): hecha. **B** (motor en la cola del servidor, `POST /api/generate-video-edl`): hecha, probada con falsos y proceso real; falta botón en la interfaz vieja.
+- **C** (`canales.json`, gemelos con lectura compartida): hecha. **D** (calidad por clip, rostros locales, reencuadre): hecha; falta censura de texto/logos.
+- **E** (ruta de avión, VS/apoyo, resaltes de rostro que siguen la cara): hecha. Fondos por canal: descartados por la dueña por ahora. Resaltes de objetos: pendientes (necesitan Gemini).
+- **F** (superapp): primera versión en `gestor/` (`INICIAR-SUPERAPP.bat`): biblioteca unificada con miniaturas y filtros de calidad, acciones en grupo (papelera con restauración, importar desde el Selector, medir calidad y rostros, etiquetar con Gemini), Selector incrustado, crear video (con gemelo) y videos listos. El Selector vive en `..\selector-videos` (copia local sin cookies) y sigue siendo un proceso Python aparte.
