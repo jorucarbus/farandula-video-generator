@@ -43,6 +43,12 @@ function sinNegro(ruta, ss) {
   let elecciones = new Map(), etiquetas = null, rutaDe = {}; const cfgClips = {};
   const rEtiq = path.join(RAIZ, `${carpeta}.etiquetas.json`), rClips = path.join(RAIZ, `${carpeta}.clips.json`);
   const protagonista = arg('--protagonista', carpeta.replace(/_/g, ' '));
+  // Los videos viven en Drive: solo se bajan los que este video va a usar (y se borran solos a las 48 h, salvo las carpetas recurrentes).
+  const hidratar = async ids => {
+    const faltan = [...new Set(ids)].filter(id => rutaDe[id] && !fs.existsSync(rutaDe[id])); if (!faltan.length) return;
+    try { const h = await require('../edl/clipsDrive').asegurar(carpeta, faltan, { log: m => console.log('  ' + m) }); console.log(`DRIVE: ${h.bajados} clip(s) bajados para editar${h.fallos.length ? ', fallaron ' + h.fallos.length + ' (' + h.fallos[0].error + ')' : ''}`); }
+    catch (e) { console.log('no pude bajar clips de Drive:', String(e.message).slice(0, 120)); }
+  };
   let rostrosSerie = {}; // detección local por cuadro (para reencuadrar cuando una tarjeta tapa la cara)
   const infoClip = id => { const t = etiquetas[id]; return { ruta: rutaDe[id], ...dimensiones(rutaDe[id]), rostro: t.rostro, duracion: t.duracion, caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }; };
   if (!process.argv.includes('--sin-clips') && fs.existsSync(rEtiq) && fs.existsSync(rClips)) {
@@ -55,7 +61,7 @@ function sinNegro(ruta, ss) {
     // Rostros medidos en local: corrigen la posición/tamaño/momento que había adivinado el modelo (de ahí salían los círculos "aleatorios"). --sin-rostros-locales los salta.
     const rRos = path.join(RAIZ, `${carpeta}.rostros.json`);
     if (!process.argv.includes('--sin-rostros-locales') && fs.existsSync(rRos)) { rostrosSerie = JSON.parse(fs.readFileSync(rRos, 'utf8')); const ap = require('../edl/rostrosLocales').aplicar(etiquetas, rostrosSerie); etiquetas = ap.etiquetas; console.log(`ROSTROS LOCALES: ${ap.corregidos} clips corregidos, ${ap.sinCara} sin cara detectada`); }
-    const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones;
+    const r = await elegirClips(g.beats, etiquetas, { protagonista }); elecciones = r.elecciones; await hidratar([...elecciones.values()].map(c => c.id));
     console.log(`CLIPS REALES de ${carpeta}: ${Object.keys(etiquetas).length} etiquetados, ${elecciones.size} frases con clip ${r.avisos.join(' || ')}`);
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
@@ -88,7 +94,8 @@ function sinNegro(ruta, ss) {
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
-  const lista = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id] && fs.existsSync(rutaDe[t.id]))) : []; // relleno con criterio: tomas donde sale ella (≤ 2 personas, rostro visible)
+  const cand = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id])) : []; await hidratar(cand.slice(0, 16)); // solo se bajan los 16 mejores candidatos de relleno
+  const lista = cand.filter(id => fs.existsSync(rutaDe[id])); // relleno con criterio: tomas donde sale ella (≤ 2 personas, rostro visible)
   const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion, ...dimensiones(rutaDe[id]), caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
   // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos, lados, nunca parado; video que ilustra cuando el muñeco no aporta)

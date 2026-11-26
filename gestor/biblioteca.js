@@ -18,6 +18,7 @@ const MANIFIESTO = path.join(PAPELERA, 'manifiesto.json');
 const SELECTOR_DIR = process.env.SELECTOR_DIR || path.join(RAIZ, '..', 'selector-videos');
 const EXT_VIDEO = /\.(mp4|mov|m4v|webm|mkv)$/i;
 
+const clipsDrive = require('../edl/clipsDrive');
 const leer = (f, def) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return def; } };
 const escribir = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(o, null, 1)); };
 const idDe = ruta => 'loc_' + crypto.createHash('sha1').update(path.resolve(ruta).toLowerCase()).digest('hex').slice(0, 16);
@@ -55,7 +56,7 @@ function resumenCarpetas() {
   const lib = carpetasBiblioteca().map(c => {
     const clips = leer(path.join(BIB, `${c}.clips.json`), []), et = leer(path.join(BIB, `${c}.etiquetas.json`), {}), cal = leer(path.join(BIB, `${c}.calidad.json`), {});
     const medidos = clips.filter(x => cal[x.id]).length, malos = clips.filter(x => cal[x.id] && cal[x.id].apto === false).length;
-    return { tipo: 'biblioteca', nombre: c, clips: clips.length, etiquetados: clips.filter(x => et[x.id]).length, medidos, malos };
+    return { tipo: 'biblioteca', nombre: c, clips: clips.length, etiquetados: clips.filter(x => et[x.id]).length, medidos, malos, enCache: clips.filter(x => x.ruta && fs.existsSync(x.ruta)).length, recurrente: clipsDrive.recurrentes().includes(c) };
   });
   const sel = carpetasSelector().map(c => ({ tipo: 'selector', nombre: c.nombre, red: c.red, clips: videosDe(c.dir).length }));
   return { biblioteca: lib, selector: sel, selectorDir: SELECTOR_DIR, selectorExiste: fs.existsSync(SELECTOR_DIR) };
@@ -68,7 +69,8 @@ function clipsDeBiblioteca(carpeta) {
   return clips.map(c => {
     const t = et[c.id] || null, q = cal[c.id] || null, r = ros[c.id];
     const conRostro = r && r.cuadros && r.cuadros.length ? r.cuadros.filter(x => (x.caras || []).length).length / r.cuadros.length : null;
-    return { id: c.id, nombre: c.name, ruta: c.ruta, existe: fs.existsSync(c.ruta), fecha: c.fecha || (t && t.fecha) || fechaDeArchivo(c.name), duracion: c.duracion || (t && t.duracion) || null,
+    const existe = Boolean(c.ruta && fs.existsSync(c.ruta)), mini = path.join(BIB, `${carpeta}.minis`, `${c.id}.jpg`);
+    return { id: c.id, nombre: c.name, ruta: c.ruta, existe, soloDrive: !existe && !/^loc_/.test(c.id), mini: fs.existsSync(mini) ? `/mini?carpeta=${encodeURIComponent(carpeta)}&id=${encodeURIComponent(c.id)}` : null, fecha: c.fecha || (t && t.fecha) || fechaDeArchivo(c.name), duracion: c.duracion || (t && t.duracion) || null,
       tipo: t ? t.tipo : null, descripcion: t ? t.descripcion : null, personas: t ? t.personas : null, textoEnPantalla: t ? t.texto_en_pantalla : null,
       calidad: q ? { puntaje: q.puntaje, apto: q.apto, motivos: q.motivos || [], avisos: q.avisos || [], ancho: q.ancho, alto: q.alto } : null,
       fraccionRostro: conRostro == null ? null : +conRostro.toFixed(2) };

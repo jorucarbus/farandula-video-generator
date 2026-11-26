@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const G = require('./biblioteca');
+const clipsDrive = require('../edl/clipsDrive');
 const canales = require('../canales');
 
 const PUERTO = Number(process.env.GESTOR_PUERTO) || 3100, RAIZ = G.RAIZ, MINIS = path.join(G.DM, 'gestor', 'minis');
@@ -41,6 +42,24 @@ app.get('/miniatura', (req, res) => {
   });
 });
 
+// Miniatura guardada en el índice (sirve aunque el video ya no esté en disco).
+app.get('/mini', (req, res) => {
+  const { carpeta, id } = req.query; if (!/^[\w .-]+$/.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
+  const f = path.join(G.BIB, `${carpeta}.minis`, `${id}.jpg`); if (!fs.existsSync(f)) return res.status(404).end();
+  res.sendFile(f, { maxAge: '30d' });
+});
+
+// Reproducir un clip que está solo en Drive: se transmite desde Drive, con rangos, sin guardarlo en el disco.
+app.get('/video-drive', async (req, res) => {
+  try {
+    const { carpeta, id } = req.query; if (!/^[\w .-]+$/.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
+    if (!G.clipsDeBiblioteca(carpeta).some(c => c.id === id && !/^loc_/.test(c.id))) return res.status(404).end();
+    const r = await require('../drive').streamArchivo(id, req.headers.range || null);
+    res.status(r.status || 200); const cab = h => (r.headers && typeof r.headers.get === 'function' ? r.headers.get(h) : r.headers && r.headers[h]); for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) { const v = cab(h); if (v) res.setHeader(h, v); }
+    r.data.on('error', () => res.end()); req.on('close', () => r.data.destroy && r.data.destroy()); r.data.pipe(res);
+  } catch (e) { if (!res.headersSent) res.status(502).end(); }
+});
+
 // Reproducción del clip (con rangos, para poder avanzar en el video).
 app.get('/video', (req, res) => {
   const ruta = String(req.query.ruta || '');
@@ -70,6 +89,11 @@ async function bombear() {
   } catch (e) { t.estado = 'falló'; t.log += String(e); }
   t.fin = new Date().toISOString(); corriendo = false; bombear();
 }
+// Índice de una carpeta: baja de Drive lo que falte (temporal), mide calidad y rostros, etiqueta (opcional), guarda miniaturas y libera el disco (salvo carpetas recurrentes).
+function pasosDeIndice(carpeta, etiquetar, opcionalTraer) {
+  const traer = node('biblioteca-traer.js', carpeta); if (opcionalTraer) traer.opcional = true; // carpetas que no son de Drive (importadas del Selector) no se bajan
+  return [traer, ...(etiquetar ? [node('biblioteca-etiquetar-local.js', carpeta)] : []), node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta), node('biblioteca-minis.js', carpeta), node('biblioteca-purgar.js', carpeta, '--si-no-recurrente')];
+}
 const node = (script, ...args) => ({ cmd: process.execPath, args: [path.join(RAIZ, 'scripts', script), ...args], titulo: `${script} ${args.join(' ')}` });
 const py = (script, ...args) => ({ cmd: 'python', args: [path.join(RAIZ, 'scripts', script), ...args], titulo: `${script} ${args.join(' ')}`, opcional: true });
 
@@ -79,8 +103,7 @@ app.get('/api/trabajos', (req, res) => ok(res, trabajos.map(({ pasos, ...t }) =>
 app.post('/api/preparar', (req, res) => {
   try {
     const { carpeta, etiquetar } = req.body || {}; if (!carpetaValida(carpeta) || !G.carpetasBiblioteca().includes(carpeta)) throw new Error('carpeta desconocida');
-    const pasos = []; if (etiquetar) pasos.push(node('biblioteca-etiquetar-local.js', carpeta)); pasos.push(node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta));
-    ok(res, { id: encolar(`Preparar ${carpeta}${etiquetar ? ' (con etiquetas de Gemini)' : ''}`, pasos).id });
+    ok(res, { id: encolar(`Actualizar índice de ${carpeta}${etiquetar ? ' (con etiquetas de Gemini)' : ''}`, pasosDeIndice(carpeta, etiquetar, true)).id });
   } catch (e) { mal(res, e); }
 });
 
@@ -118,12 +141,27 @@ app.get('/api/drive/contar', async (req, res) => {
   } catch (e) { mal(res, e); }
 });
 // Traer una carpeta de Drive a disco y medir calidad y rostros (gratis). Etiquetar con Gemini es un paso aparte (cuesta).
-app.post('/api/drive/traer', async (req, res) => {
+app.post('/api/drive/indexar', async (req, res) => {
   try {
-    const { carpeta, max } = req.body || {}; const mapa = await carpetasDrive(false);
+    const { carpeta, etiquetar } = req.body || {}; const mapa = await carpetasDrive(false);
     if (!carpetaValida(carpeta) || !mapa[carpeta]) throw new Error('carpeta desconocida');
-    const pasos = [node('biblioteca-traer.js', carpeta, ...(Number(max) > 0 ? ['--max', String(Number(max))] : [])), node('calidad-clips.js', carpeta), py('rostros-clips.py', carpeta)];
-    ok(res, { id: encolar(`Traer de Drive: ${carpeta}`, pasos).id });
+    ok(res, { id: encolar(`Indexar de Drive: ${carpeta}${etiquetar ? ' (con etiquetas de Gemini)' : ''}`, pasosDeIndice(carpeta, Boolean(etiquetar), false)).id });
+  } catch (e) { mal(res, e); }
+});
+
+// Caché de videos en disco: ver cuánto ocupa, marcar carpetas "recurrentes" (se quedan) y liberar espacio.
+app.get('/api/cache', (req, res) => ok(res, { uso: clipsDrive.uso(), recurrentes: clipsDrive.recurrentes(), ttlHoras: clipsDrive.TTL_HORAS }));
+app.post('/api/recurrente', (req, res) => { try { ok(res, { recurrentes: clipsDrive.marcarRecurrente(req.body.carpeta, Boolean(req.body.si)) }); } catch (e) { mal(res, e); } });
+app.post('/api/purgar', (req, res) => { try { if (!G.carpetasBiblioteca().includes(req.body.carpeta)) throw new Error('carpeta desconocida'); ok(res, clipsDrive.purgar(req.body.carpeta)); } catch (e) { mal(res, e); } });
+// Mandar clips a la PAPELERA DE DRIVE (recuperable ~30 días) y sacarlos del índice. Solo clips que están en el índice de la carpeta.
+app.post('/api/drive/papelera', async (req, res) => {
+  try {
+    const { carpeta, ids } = req.body || {}; if (!G.carpetasBiblioteca().includes(carpeta)) throw new Error('carpeta desconocida');
+    const clips = G.clipsDeBiblioteca(carpeta), validos = (Array.isArray(ids) ? ids : []).filter(id => clips.some(c => c.id === id && !/^loc_/.test(c.id)));
+    const drive = require('../drive'), hechos = [], fallos = [];
+    for (const id of validos) { try { await drive.enviarAPapelera(id); hechos.push(id); } catch (e) { fallos.push({ id, error: String(e.message).slice(0, 100) }); } }
+    if (hechos.length) { const f = path.join(G.BIB, `${carpeta}.clips.json`), act = JSON.parse(fs.readFileSync(f, 'utf8')); fs.copyFileSync(f, f + '.bak'); fs.writeFileSync(f, JSON.stringify(act.filter(c => !hechos.includes(c.id)), null, 1)); for (const id of hechos) { const p = clipsDrive.rutaClip(carpeta, id); try { fs.unlinkSync(p); } catch {} } }
+    ok(res, { hechos: hechos.length, fallos });
   } catch (e) { mal(res, e); }
 });
 
@@ -134,6 +172,7 @@ app.get('/api/renders', (req, res) => {
 });
 app.get('/render', (req, res) => { const f = path.join(G.DM, 'renders', path.basename(String(req.query.nombre || ''))); if (!/\.mp4$/i.test(f) || !fs.existsSync(f)) return res.status(404).end(); res.sendFile(f); });
 
-const iniciar = () => app.listen(PUERTO, '127.0.0.1', () => console.log(`Superapp lista: http://127.0.0.1:${PUERTO}  (Selector en http://127.0.0.1:8765)`));
+const limpiarCaducadosYa = () => { try { const r = clipsDrive.limpiarCaducados(); if (r.borrados) console.log(`Caché: ${r.borrados} videos viejos liberados (${(r.bytes / 1e6).toFixed(0)} MB)`); } catch (e) { console.log('Caché: no pude limpiar:', e.message); } };
+const iniciar = () => { limpiarCaducadosYa(); setInterval(limpiarCaducadosYa, 3600e3).unref(); return app.listen(PUERTO, '127.0.0.1', () => console.log(`Superapp lista: http://127.0.0.1:${PUERTO}  (Selector en http://127.0.0.1:8765)`)); };
 if (require.main === module) iniciar();
 module.exports = { app, iniciar, encolar, trabajos };

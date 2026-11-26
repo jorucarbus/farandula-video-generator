@@ -110,7 +110,7 @@ PESTANAS.forEach(([k, n]) => $('#nav').append(el('button', { textContent: n, onc
 async function cargarResumen() {
   const r = estado.resumen = await api('/api/resumen'), cont = $('#carpetas'); cont.replaceChildren();
   cont.append(el('h3', {}, 'Biblioteca de clips'));
-  for (const c of r.biblioteca) cont.append(carpetaItem('biblioteca', c.nombre, `${c.clips} clips`, c.malos ? `${c.malos} malos` : ''));
+  for (const c of r.biblioteca) cont.append(carpetaItem('biblioteca', c.nombre, `${c.clips} clips`, [c.recurrente ? '★ recurrente' : '', c.enCache ? `${c.enCache} en disco` : '', c.malos ? `${c.malos} malos` : ''].filter(Boolean).join(' · ')));
   if (!r.biblioteca.length) cont.append(el('div', { className: 'vacio' }, 'Sin carpetas'));
   cont.append(el('h3', {}, 'Descargas del Selector'));
   for (const c of r.selector) cont.append(carpetaItem('selector', c.nombre, `${c.clips} videos`, ''));
@@ -135,12 +135,13 @@ function pintarDrive() {
   if (!l.length) cont.append(el('div', { className: 'vacio' }, 'Ninguna coincide'));
   cont.append(el('button', { className: 'b', textContent: 'Actualizar lista', onclick: () => cargarDrive(true) }));
 }
+async function indexarDrive(nombre, etiquetar) { const x = await api('/api/drive/indexar', { carpeta: nombre, etiquetar }); mensaje(`Trabajo #${x.id} en marcha: míralo en la pestaña Trabajos. Al terminar, la carpeta aparece arriba en la biblioteca.`); }
 async function abrirDrive(nombre) {
   estado.actual = null; $('#barra').replaceChildren(el('strong', {}, nombre + ' (en Drive)')); $('#grid').replaceChildren(); mensaje('Contando videos…');
   try {
     const r = await api('/api/drive/contar?carpeta=' + q(nombre)), min = Math.round(r.segundos / 60);
-    $('#aviso').replaceChildren(el('div', { className: 'msg' }, `${nombre}: ${r.videos} videos (${min} min en total). Al traerla se descargan a este equipo y se mide su calidad y rostros (gratis). Etiquetar con Gemini va aparte.`, ' ',
-      el('button', { className: 'b p', textContent: `Traer ${r.videos} videos`, disabled: !r.videos, onclick: async () => { const x = await api('/api/drive/traer', { carpeta: nombre }); mensaje(`Trabajo #${x.id} en marcha: míralo en la pestaña Trabajos. Al terminar, la carpeta aparece arriba en la biblioteca.`); } })));
+    $('#aviso').replaceChildren(el('div', { className: 'msg' }, `${nombre}: ${r.videos} videos (${min} min en Drive). Los videos NO se guardan: se bajan de a ratos para analizarlos (calidad, rostros y miniaturas, gratis) y se borran del disco; queda solo el índice. Los vuelves a ver desde Drive y se bajan solos cuando los uses para editar.`, ' ',
+      el('button', { className: 'b', textContent: 'Indexar (gratis)', disabled: !r.videos, onclick: () => indexarDrive(nombre, false) }), ' ', el('button', { className: 'b p', textContent: `Indexar y etiquetar con Gemini (${r.videos} videos)`, disabled: !r.videos, onclick: () => { if (confirm('Etiquetar usa Gemini (unos centavos por video). ¿Seguir?')) indexarDrive(nombre, true); } })));
   } catch (e) { mensaje(e.message); }
 }
 function carpetaItem(tipo, nombre, cuenta, extra) {
@@ -154,20 +155,20 @@ async function abrirCarpeta(tipo, nombre) {
 }
 function visibles() {
   const t = estado.texto.toLowerCase();
-  return estado.clips.filter(c => (estado.filtro === 'todos' || (estado.filtro === 'malos' && c.calidad && !c.calidad.apto) || (estado.filtro === 'buenos' && c.calidad && c.calidad.apto) || (estado.filtro === 'sinmedir' && !c.calidad) || (estado.filtro === 'faltan' && !c.existe))
+  return estado.clips.filter(c => (estado.filtro === 'todos' || (estado.filtro === 'malos' && c.calidad && !c.calidad.apto) || (estado.filtro === 'buenos' && c.calidad && c.calidad.apto) || (estado.filtro === 'sinmedir' && !c.calidad) || (estado.filtro === 'faltan' && c.soloDrive))
     && (!t || [c.nombre, c.descripcion, c.tipo].some(x => String(x || '').toLowerCase().includes(t))));
 }
 function pintarBarra() {
   const b = $('#barra'); b.replaceChildren(); if (!estado.actual) return;
   const esBib = estado.actual.tipo === 'biblioteca', n = estado.sel.size;
-  const filtro = el('select', { onchange: e => { estado.filtro = e.target.value; pintarGrid(); } }, ...[['todos', 'Todos'], ['malos', 'Calidad mala'], ['buenos', 'Calidad buena'], ['sinmedir', 'Sin medir'], ['faltan', 'Archivo faltante']].map(([v, t]) => el('option', { value: v, textContent: t, selected: estado.filtro === v })));
+  const filtro = el('select', { onchange: e => { estado.filtro = e.target.value; pintarGrid(); } }, ...[['todos', 'Todos'], ['malos', 'Calidad mala'], ['buenos', 'Calidad buena'], ['sinmedir', 'Sin medir'], ['faltan', 'Solo en Drive (sin copia en disco)']].map(([v, t]) => el('option', { value: v, textContent: t, selected: estado.filtro === v })));
   const buscar = el('input', { type: 'text', placeholder: 'Buscar…', value: estado.texto, oninput: e => { estado.texto = e.target.value; pintarGrid(); } });
   b.append(el('strong', {}, estado.actual.nombre), filtro, buscar,
     el('button', { className: 'b', textContent: 'Seleccionar visibles', onclick: () => { visibles().forEach(c => estado.sel.add(c.ruta)); pintarGrid(); pintarBarra(); } }),
     el('button', { className: 'b', textContent: 'Ninguno', onclick: () => { estado.sel.clear(); pintarGrid(); pintarBarra(); } }),
     el('button', { className: 'b', textContent: 'Seleccionar los de calidad mala', onclick: () => { estado.clips.filter(c => c.calidad && !c.calidad.apto).forEach(c => estado.sel.add(c.ruta)); pintarGrid(); pintarBarra(); } }),
     el('button', { className: 'b r', textContent: `A la papelera (${n})`, disabled: !n, onclick: papelera }));
-  if (esBib) b.append(el('button', { className: 'b', textContent: 'Medir calidad y rostros (gratis)', onclick: () => preparar(false) }), el('button', { className: 'b', textContent: 'Etiquetar con Gemini', onclick: () => preparar(true) }), el('button', { className: 'b', textContent: 'Quitar archivos que ya no existen', onclick: limpiar }));
+  if (esBib) { const rec = (estado.resumen.biblioteca.find(x => x.nombre === estado.actual.nombre) || {}).recurrente; b.append(el('button', { className: 'b', textContent: 'Actualizar índice: medir calidad y rostros (gratis)', title: 'baja de Drive lo que falte, lo analiza y libera el disco', onclick: () => preparar(false) }), el('button', { className: 'b', textContent: 'Etiquetar con Gemini', onclick: () => preparar(true) }), el('button', { className: 'b', textContent: rec ? '★ Se mantiene en disco (quitar)' : '☆ Mantener en disco (artista recurrente)', onclick: async () => { await api('/api/recurrente', { carpeta: estado.actual.nombre, si: !rec }); await cargarResumen(); pintarBarra(); } }), el('button', { className: 'b', textContent: 'Liberar espacio en disco', onclick: liberar })); }
   else b.append(el('input', { type: 'text', id: 'destImp', placeholder: 'Carpeta de la biblioteca (p. ej. Mara_Topic)', value: leerLS('destImp') || '' }), el('button', { className: 'b p', textContent: `Importar (${n})`, disabled: !n, onclick: importar }));
 }
 function pintarGrid() {
@@ -177,24 +178,30 @@ function pintarGrid() {
     const cal = c.calidad, chip = cal ? el('span', { className: 'chip ' + (cal.apto ? (cal.puntaje >= 85 ? 'ok' : 'med') : 'no'), title: [...cal.motivos, ...cal.avisos].join('\n') || 'sin observaciones' }, `${cal.puntaje}`) : el('span', { className: 'chip gris' }, 'sin medir');
     const caja = el('div', { className: 'clip' + (estado.sel.has(c.ruta) ? ' sel' : '') },
       el('input', { type: 'checkbox', checked: estado.sel.has(c.ruta), onchange: e => { e.target.checked ? estado.sel.add(c.ruta) : estado.sel.delete(c.ruta); caja.classList.toggle('sel', e.target.checked); pintarBarra(); } }),
-      el('img', { loading: 'lazy', src: c.existe ? '/miniatura?ruta=' + q(c.ruta) : '', alt: '', title: c.descripcion || c.nombre, onclick: () => c.existe && ver('/video?ruta=' + q(c.ruta), c.nombre) }),
-      el('div', { className: 'info' }, el('div', { className: 'nom', title: c.nombre }, c.nombre), el('div', {}, chip, ' ', c.tipo ? el('span', { className: 'chip gris' }, c.tipo) : '', c.fraccionRostro != null ? el('span', { className: 'chip gris', title: 'fracción de cuadros con rostro' }, '☺ ' + Math.round(c.fraccionRostro * 100) + '%') : '', !c.existe ? el('span', { className: 'chip no' }, 'falta') : '')));
+      el('img', { loading: 'lazy', src: c.mini || (c.existe ? '/miniatura?ruta=' + q(c.ruta) : ''), alt: '', title: c.descripcion || c.nombre, onclick: () => (c.existe ? ver('/video?ruta=' + q(c.ruta), c.nombre) : c.soloDrive ? ver(`/video-drive?carpeta=${q(estado.actual.nombre)}&id=${q(c.id)}`, c.nombre) : 0) }),
+      el('div', { className: 'info' }, el('div', { className: 'nom', title: c.nombre }, c.nombre), el('div', {}, chip, ' ', c.tipo ? el('span', { className: 'chip gris' }, c.tipo) : '', c.fraccionRostro != null ? el('span', { className: 'chip gris', title: 'fracción de cuadros con rostro' }, '☺ ' + Math.round(c.fraccionRostro * 100) + '%') : '', c.soloDrive ? el('span', { className: 'chip gris', title: 'el video está en Drive; se baja solo cuando hace falta' }, 'en Drive') : (c.existe && !/^loc_/.test(c.id) ? el('span', { className: 'chip gris', title: 'copia temporal en disco' }, 'en disco') : ''))));
     g.append(caja);
   }
 }
 async function papelera() {
-  const n = estado.sel.size; if (!n || !confirm(`¿Mandar ${n} clip(s) a la papelera? Se pueden restaurar después.`)) return;
-  const r = await api('/api/papelera', { rutas: [...estado.sel], motivo: 'gestor' }); mensaje(`${r.hechos.length} a la papelera${r.fallos.length ? `, ${r.fallos.length} con error: ${r.fallos[0].error}` : ''}`);
+  const n = estado.sel.size; if (!n) return;
+  const elegidos = estado.clips.filter(c => estado.sel.has(c.ruta)), deDrive = elegidos.filter(c => estado.actual.tipo === 'biblioteca' && !/^loc_/.test(c.id)), locales = elegidos.filter(c => !deDrive.includes(c));
+  if (!confirm(`¿Mandar ${n} clip(s) a la papelera?` + (deDrive.length ? `\n\n${deDrive.length} están en Drive: irán a la papelera de Drive (se recuperan desde Drive durante unos 30 días) y saldrán de esta biblioteca.` : '') + (locales.length ? `\n${locales.length} son copias locales: van a la papelera de la superapp (se restauran aquí).` : ''))) return;
+  let txt = '';
+  if (deDrive.length) { const d = await api('/api/drive/papelera', { carpeta: estado.actual.nombre, ids: deDrive.map(c => c.id) }); txt += `${d.hechos} a la papelera de Drive${d.fallos.length ? ` (${d.fallos.length} con error: ${d.fallos[0].error})` : ''}. `; }
+  if (locales.length) { const r = await api('/api/papelera', { rutas: locales.map(c => c.ruta), motivo: 'gestor' }); txt += `${r.hechos.length} a la papelera local${r.fallos.length ? `, ${r.fallos.length} con error: ${r.fallos[0].error}` : ''}.`; }
+  mensaje(txt);
   if (estado.actual.tipo === 'biblioteca') await api('/api/limpiar-faltantes', { carpeta: estado.actual.nombre }).catch(() => {});
   abrirCarpeta(estado.actual.tipo, estado.actual.nombre);
 }
+async function liberar() { if (!confirm('Se borran de este equipo los videos de esta carpeta que vienen de Drive (el índice, las etiquetas y las miniaturas se quedan; se vuelven a bajar solos cuando se editen). ¿Seguir?')) return; const r = await api('/api/purgar', { carpeta: estado.actual.nombre }); mensaje(`${r.borrados} videos liberados (${(r.bytes / 1e6).toFixed(0)} MB).`); abrirCarpeta('biblioteca', estado.actual.nombre); }
 async function limpiar() { const r = await api('/api/limpiar-faltantes', { carpeta: estado.actual.nombre }); mensaje(`${r.quitados} entrada(s) sin archivo quitadas de la carpeta`); abrirCarpeta('biblioteca', estado.actual.nombre); }
 async function importar() {
   const dest = $('#destImp').value.trim(); if (!dest) return mensaje('Escribe la carpeta de destino.'); guardar('destImp', dest);
   const r = await api('/api/importar', { rutas: [...estado.sel], carpeta: dest }); mensaje(`${r.hechos.length} importados a ${dest}${r.fallos.length ? `; ${r.fallos.length} con error: ${r.fallos[0].error}` : ''}. Ahora pulsa “Medir calidad y rostros” y “Etiquetar con Gemini” en esa carpeta.`); abrirCarpeta('selector', estado.actual.nombre);
 }
 async function preparar(etiquetar) {
-  if (etiquetar && !confirm('Etiquetar usa Gemini (unos centavos por clip nuevo; no repite los ya etiquetados). ¿Seguir?')) return;
+  if (etiquetar && !confirm('Etiquetar usa Gemini (unos centavos por clip nuevo; no repite los ya etiquetados). Los videos se bajan de Drive solo mientras se analizan y luego se borran del disco. ¿Seguir?')) return;
   const r = await api('/api/preparar', { carpeta: estado.actual.nombre, etiquetar }); mensaje(`Trabajo #${r.id} en marcha. Míralo en la pestaña Trabajos.`);
 }
 function mensaje(t) { $('#aviso').replaceChildren(el('div', { className: 'msg' }, t)); }
