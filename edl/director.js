@@ -110,6 +110,8 @@ function quitarMuneco(e) { if (e.principal === 'muneco') e.principal = 'video'; 
 const ICONO_DE = { bastonera: 'wand', corona: 'crown', reina: 'crown', educativa: 'school', colegio: 'school', escuela: 'school', musical: 'music', grupo: 'music', tiktok: 'brand-tiktok', instagram: 'brand-instagram', youtube: 'brand-youtube', titulos: 'trophy', titulo: 'trophy', premio: 'trophy', virreina: 'award', finalista: 'medal', coliseo: 'building-stadium', desfiles: 'flag', desfile: 'flag', respaldo: 'heart', agradecio: 'heart' };
 const COLOR_DE = { crown: 'rojo', trophy: 'verde', heart: 'rojo', award: 'verde', medal: 'verde', school: 'verde', music: 'rojo', 'brand-instagram': 'rojo' };
 const RE_FECHA = /\b\d{1,2} de [a-záéíóúñ]+(?: de \d{4})?/i;
+const RE_FECHAS = new RegExp(RE_FECHA.source, 'gi'); // todas las fechas de la frase
+const CONECTORES = new Set(['y', 'e', 'o', 'u', 'de', 'del', 'en', 'a', 'al', 'la', 'el', 'los', 'las', 'con', 'por', 'para', 'que', 'se', 'su', 'sus', 'un', 'una', 'como', 'pero', 'mas', 'tras', 'ante', 'sin', 'sobre', 'entre', 'hacia', 'desde']);
 const RE_VERBO_LISTA = /^(?:Antes,?\s*|Despu[eé]s,?\s*)?(?:gan[oó] (?:los )?(?:t[ií]tulos? de )?|obtuvo (?:los )?(?:t[ií]tulos? de )?)/i; // quita el verbo que antecede al primer elemento
 const RE_ESCENARIO = [/Unidad Educativa \p{Lu}\p{L}+/u, /Coliseo La California/u, /Escuela \p{Lu}\p{L}+/u];
 
@@ -123,16 +125,18 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
   if (cand) { e.principal = 'clip'; e.clip = { id: cand.id, ss: cand.ss, marca: { tipo: 'circulo', ancla: toks.find(t => t.length >= 6) || toks[0] } }; }
   const anios = frase.match(/\b(19|20)\d{2}\b/g) || [];
   const lugar = Object.keys(LUGARES).find(l => contiene(frase, l)), pais = !lugar && Object.keys(PAISES).sort((a, b) => b.length - a.length).find(p => contiene(frase, p));
-  const cifra = (() => { const m = frase.replace(RE_FECHA, '').match(/(\d[\d.]*)\s+([a-záéíóúñ]+)?/i); if (!m) return null; const v = parseInt(m[1].replace(/\./g, ''), 10); return Number.isFinite(v) && v > 1 && !(v >= 1900 && v <= 2100) ? { valor: v, sufijo: m[2] && m[2].length <= 11 ? m[2] : undefined, ancla: normalizar(m[1].replace(/\./g, '')) } : null; })();
+  const cifra = (() => { const m = frase.replace(RE_FECHAS, '').match(/(\d[\d.]*)\s+([a-záéíóúñ]+)?/i); if (!m) return null; const v = parseInt(m[1].replace(/\./g, ''), 10); return Number.isFinite(v) && v > 1 && !(v >= 1900 && v <= 2100) ? { valor: v, sufijo: m[2] && m[2].length <= 11 && !CONECTORES.has(normalizar(m[2])) ? m[2] : undefined, ancla: normalizar(m[1].replace(/\./g, '')) } : null; })();
   const escen = RE_ESCENARIO.map(re => frase.match(re)).find(Boolean);
   if (!e.principal) { // 2 a 5 cifras con su palabra ("6 años ... 3 títulos"): gráfico de barras
-    const pares = [...frase.replace(RE_FECHA, '').matchAll(/(?<![\d,.])(\d[\d.]*)\s+([a-záéíóúñ]{3,})/gi)].map(m => ({ valor: parseInt(m[1].replace(/\./g, ''), 10), etiqueta: m[2], ancla: normalizar(m[1].replace(/\./g, '')) })).filter(p => Number.isFinite(p.valor) && p.valor > 1 && !(p.valor >= 1900 && p.valor <= 2100));
+    const pares = [...frase.replace(RE_FECHAS, '').matchAll(/(?<![\d,.])(\d[\d.]*)\s+([a-záéíóúñ]{3,})/gi)].map(m => ({ valor: parseInt(m[1].replace(/\./g, ''), 10), etiqueta: m[2], ancla: normalizar(m[1].replace(/\./g, '')) })).filter(p => Number.isFinite(p.valor) && p.valor > 1 && !(p.valor >= 1900 && p.valor <= 2100));
     if (pares.length >= 2 && pares.length <= 5) { e.principal = 'grafico'; e.grafico = { items: pares }; }
   }
   if (!e.principal && anios.length >= 3) {
     const partes = frase.split(/,\s*| y /).map(p => p.trim()).filter(p => /\b(19|20)\d{2}\b/.test(p));
     if (partes.length >= 2) { e.principal = 'lista'; e.lista = { titulo: 'Títulos', items: partes.slice(0, 4).map(p => { const t = p.replace(RE_VERBO_LISTA, '').replace(/[.]$/, ''); return { texto: t, ancla: tokens(t)[0] }; }) }; }
   }
+  const fechasDe = [...new Set((frase.match(RE_FECHAS) || []).map(f => f.trim()))];
+  if (!e.principal && fechasDe.length >= 2 && fechasDe.length <= 4) { e.principal = 'lista'; e.lista = { titulo: 'Fechas', items: fechasDe.map(t => ({ texto: t, ancla: tokens(t)[0] })) }; } // calendario: "el 26 de noviembre..., el 29 de noviembre... y el 12 de diciembre"
   if (!e.principal && lugar && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { lugar, ancla: normalizar(lugar).split(' ')[0] }; }
   if (!e.principal && pais && !(previa && previa.principal === 'mapa')) { e.principal = 'mapa'; e.mapa = { pais, ancla: normalizar(pais).split(' ')[0] }; }
   if (!e.principal && cifra) { e.principal = 'cifra'; e.cifra = cifra; }
@@ -221,7 +225,8 @@ function normalizarEscena(e) {
   const x = { ...e, extras: e.extras || [] };
   if (x.principal === 'lista') {
     const l = x.lista || {}, crudos = l.items || l.elementos || x.items || x.elementos || [];
-    x.lista = { titulo: l.titulo || x.titulo || 'Lista', items: crudos.map(t => (typeof t === 'string' ? { texto: t, ancla: tokens(t)[0] } : t)) };
+    const limpio = String(l.titulo || x.titulo || '').replace(/[^\p{L} ]/gu, ' ').replace(/\s+/g, ' ').trim(), corto = limpio.length > 20 ? limpio.slice(0, 20).replace(/ \S*$/, '') : limpio; // el título del modelo se limpia en vez de tumbar toda la dirección
+    x.lista = { titulo: corto.length >= 3 ? corto : 'Lista', items: crudos.map(t => (typeof t === 'string' ? { texto: t, ancla: tokens(t)[0] } : t)) };
   }
   return x;
 }
@@ -238,6 +243,7 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
       const porReglas = directorPorReglas(beats, hechos, clips, { sinMuneco });
       for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && !(e.extras || []).length && pr.extras.length) e.extras = pr.extras.slice(0, MAX_EXTRAS); } // más gráficos: si el modelo no dio insignias y las reglas sí (fecha, ícono), se completan
       for (const e of escenas) if (!sinMuneco && e.principal === 'clip' && !e.muneco && porReglas[e.beat - 1] && porReglas[e.beat - 1].muneco) e.muneco = porReglas[e.beat - 1].muneco;
+      for (const e of escenas) { const pr = porReglas[e.beat - 1]; if (pr && pr.principal === 'lista' && pr.lista && pr.lista.titulo === 'Fechas' && e.principal !== 'lista' && e.principal !== 'clip') { e.principal = 'lista'; e.lista = pr.lista; delete e.cifra; delete e.mapa; delete e.grafico; avisos.push(`frase ${e.beat}: varias fechas, se usó la lista de fechas`); } }
       return { escenas, origen: 'llm', avisos };
     }
   }

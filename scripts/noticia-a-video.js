@@ -92,12 +92,15 @@ const log = (...a) => console.log(...a);
     b.avisos.forEach(a => log('  puente:', a));
     const desc = String(lectura.cronica.descripcion || ''), tags = desc.match(/#\S+/g) || [];
     g = { hechos: b.hechos, beats: b.beats, script, origen: `automático: grafo + pauta de datos + revisión + puente (${b.origen})`, canal, objetivo: objetivo.id, palabras: contarPalabras(script),
-      titulo: lectura.cronica.titulo, descripcion: desc.replace(/#\S+/g, '').trim(), hashtags: tags, cambiosRevision: rev.cambios || [],
+      personas: (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })), titulo: lectura.cronica.titulo, descripcion: desc.replace(/#\S+/g, '').trim(), hashtags: tags, cambiosRevision: rev.cambios || [],
       control: { datosCubiertosPct: Math.round(final.cobertura.pct * 100), faltan: final.cobertura.faltan.map(f => f.texto), posiblesInventos: [...final.inventados.numeros, ...final.inventados.nombres] } };
     if (final.lista.length) log('  ATENCIÓN tras la revisión:', final.lista.join(' ; '));
     fs.writeFileSync(fGuion, JSON.stringify(g, null, 2));
     log(`Guion: ${g.palabras} palabras, ${g.beats.length} frases → ${path.relative(RAIZ, fGuion)}`);
-  } else log(`Guion ya escrito (${g.palabras} palabras); se reutiliza`);
+  } else {
+    log(`Guion ya escrito (${g.palabras} palabras); se reutiliza`);
+    if (!g.personas && lectura.acta) { g.personas = (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })); fs.writeFileSync(fGuion, JSON.stringify(g, null, 2)); }
+  }
   if (bandera('--hasta-guion')) { log('\nSe detiene en el guion (--hasta-guion). Revísalo/edítalo y vuelve a correr sin la bandera para seguir.\n\n' + g.script); return; }
 
   // ---- 4) voz + tiempos por palabra (ElevenLabs) — se paga una vez por guion

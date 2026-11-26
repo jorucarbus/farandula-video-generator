@@ -97,7 +97,12 @@ function listaNumerada({ titulo, items, cy = 0.5, t0, t1 }) { // items: [{ texto
         ctx.save(); ctx.globalAlpha = acotar(p); ctx.translate(dx, 0);
         const rr = tam * 0.62; B.sombraDeCapa(ctx, u, 0.2, 0.3); ctx.fillStyle = estilo.colores.negro; ctx.beginPath(); ctx.arc(x + pad + rr, cyF, rr, 0, Math.PI * 2); ctx.fill(); B.sinSombra(ctx);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = `${Math.round(tam * 0.95)}px ${estilo.tipografia.numero}`; ctx.fillText(String(i + 1), x + pad + rr, cyF + tam * 0.03);
-        ctx.fillStyle = estilo.colores.negro; ctx.textAlign = 'left'; ctx.font = `${tam}px ${estilo.tipografia.texto}`; ctx.fillText(it.texto, x + pad + rr * 2 + tam * 0.6, cyF + tam * 0.03);
+        ctx.fillStyle = estilo.colores.negro; ctx.textAlign = 'left';
+        // el texto nunca se sale de la tarjeta: primero se achica la letra (hasta 68 %) y, si aún no cabe, se corta con puntos suspensivos
+        const maxW = ancho - pad * 2 - rr * 2 - tam * 0.6; let fs2 = tam; ctx.font = `${fs2}px ${estilo.tipografia.texto}`;
+        while (ctx.measureText(it.texto).width > maxW && fs2 > tam * 0.68) { fs2 -= tam * 0.04; ctx.font = `${Math.round(fs2)}px ${estilo.tipografia.texto}`; }
+        let txt = it.texto; if (ctx.measureText(txt).width > maxW) { while (txt.length > 4 && ctx.measureText(txt + '…').width > maxW) txt = txt.slice(0, -1); txt = txt.trimEnd() + '…'; }
+        ctx.fillText(txt, x + pad + rr * 2 + tam * 0.6, cyF + tam * 0.03);
         ctx.restore();
       });
       ctx.restore();

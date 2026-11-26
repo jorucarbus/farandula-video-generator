@@ -61,7 +61,7 @@ function sinNegro(ruta, ss) {
   if (!process.argv.includes('--sin-personas')) {
     try {
       const P2 = require('../edl/personas'), excluir = require('../edl/storyboard').REACCIONES.protagonista.alias.concat(protagonista.toLowerCase().split(' ')),
-        otras = await P2.prepararPersonas(g.beats, { excluir, log: m => console.log(m) });
+        otras = await P2.prepararPersonas(g.beats, { excluir, log: m => console.log(m), conocidas: g.personas });
       P2.asignarPersonas(dir.escenas, g.beats, otras); console.log(`PERSONAS con foto: ${otras.map(p => p.nombre).join(', ') || 'ninguna'}`);
     } catch (e) { console.log('sin fotos de personas:', e.message.slice(0, 140)); }
   }

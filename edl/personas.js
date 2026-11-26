@@ -84,8 +84,11 @@ async function prepararCirculo(ruta, an, { lado = null, salida }) {
 }
 
 // 5) todo junto → [{ nombre, foto, lado, alias[] }] (las que no tienen foto utilizable se omiten sin romper el video)
-async function prepararPersonas(beats, { excluir = [], log = () => {} } = {}) {
-  const lista = await detectarPersonas(beats, { excluir }), out = [];
+async function prepararPersonas(beats, { excluir = [], log = () => {}, conocidas = null } = {}) {
+  // `conocidas`: personas con su NOMBRE COMPLETO ya extraído de la noticia ([{nombre, rol}]); así "Nawat" se busca como "Nawat Itsaragrisil" y no se gasta la llamada de detección.
+  const ex = new Set(excluir.map(normalizar)), lista = Array.isArray(conocidas) && conocidas.length
+    ? conocidas.filter(p => p && p.nombre && !normalizar(p.nombre).split(' ').some(w => ex.has(w))).slice(0, 6)
+    : await detectarPersonas(beats, { excluir }), out = [];
   let alterna = 0;
   for (const p of lista) {
     try {
