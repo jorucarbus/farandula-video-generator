@@ -12,7 +12,9 @@ const { execFile } = require('child_process');
 
 const FFMPEG = process.env.FFMPEG_BIN || require('ffmpeg-static');
 const FFPROBE = require('ffprobe-static').path;
-const SALIDA = { ancho: 1080, alto: 1920 };
+// El clip NO ocupa toda la pantalla: va dentro de la tarjeta de video, que mide el 61,6 % del ancho del lienzo (1080 → 665 px) y es 9:16 (665x1183).
+// La resolución que hace falta es la de la TARJETA, no la del lienzo. (Antes se medía contra 1080x1920 y se descartaban de más los clips de 540x960 y 576x1024.)
+const SALIDA = { ancho: 665, alto: 1183 };
 
 const UMBRALES = {
   ampliacionMax: 1.6,      // el clip no se amplía más de 1,6× para cubrir la pantalla (más de eso se ve pastoso)
@@ -65,7 +67,7 @@ function nitidezDe(blur, ancho) {
 // Reglas puras (se prueban sin ffmpeg): recibe lo medido y devuelve { puntaje, apto, motivos, avisos }.
 function evaluar(info, m, umbrales = UMBRALES) {
   const motivos = [], avisos = [];
-  const cubre = Math.max(SALIDA.ancho / info.ancho, SALIDA.alto / info.alto); // ampliación para cubrir 1080x1920 (recorte "cover")
+  const cubre = Math.max(SALIDA.ancho / info.ancho, SALIDA.alto / info.alto); // ampliación para llenar la tarjeta (recorte "cover")
   const ampliacion = Math.max(1, cubre);
   let puntaje = 100;
   if (ampliacion > umbrales.ampliacionMax) { motivos.push(`resolución baja (${info.ancho}x${info.alto}: se amplía ${ampliacion.toFixed(1)}×)`); puntaje -= 45; }
@@ -99,6 +101,20 @@ async function analizarClip(ruta, umbrales = UMBRALES) {
   return { ...evaluar(info, m, umbrales), ancho: info.ancho, alto: info.alto, fps: info.fps ? Math.round(info.fps) : null, bitrate: info.bitrate, duracion: info.duracion, medido: new Date().toISOString().slice(0, 10) };
 }
 
+// Recalcula la parte de RESOLUCIÓN de una medición ya guardada (sin necesitar el video): sirve cuando cambia el tamaño de la tarjeta o los umbrales.
+// Se conservan los demás motivos (nitidez, barras, brillo, duración) tal como se midieron.
+function reevaluarGuardado(q, umbrales = UMBRALES) {
+  if (!q || !q.ancho || !q.alto) return q;
+  const ampliacion = Math.max(1, Math.max(SALIDA.ancho / q.ancho, SALIDA.alto / q.alto)), sinRes = s => !/^resolución baja|^se amplía/.test(s);
+  const motivos = (q.motivos || []).filter(sinRes), avisos = (q.avisos || []).filter(sinRes);
+  let puntaje = 100;
+  if (ampliacion > umbrales.ampliacionMax) { motivos.unshift(`resolución baja (${q.ancho}x${q.alto}: se amplía ${ampliacion.toFixed(1)}×)`); puntaje -= 45; }
+  else if (ampliacion > umbrales.ampliacionAviso) { avisos.unshift(`se amplía ${ampliacion.toFixed(2)}×`); puntaje -= 10; }
+  for (const m of motivos) if (!/^resolución baja/.test(m)) puntaje -= /borroso/.test(m) ? 35 : /barras/.test(m) ? 25 : /oscuro|quemado/.test(m) ? 25 : 30;
+  for (const a of avisos) if (!/^se amplía/.test(a)) puntaje -= /suave/.test(a) ? 8 : /compresión/.test(a) ? 15 : 10;
+  return { ...q, motivos, avisos, apto: motivos.length === 0, ampliacion: +ampliacion.toFixed(2), puntaje: Math.max(0, Math.min(100, Math.round(puntaje))) };
+}
+
 // Analiza una carpeta de la biblioteca (usa <carpeta>.clips.json) y guarda <carpeta>.calidad.json. Reanuda: no repite lo ya medido.
 async function analizarBiblioteca(raiz, carpeta, { rehacer = false, concurrencia = 3, progreso = null } = {}) {
   const rClips = path.join(raiz, `${carpeta}.clips.json`), rCal = path.join(raiz, `${carpeta}.calidad.json`);
@@ -124,4 +140,4 @@ function filtrarAptos(etiquetas, calidad, { minimo = 6 } = {}) {
   return { etiquetas: Object.fromEntries(aptos.map(id => [id, etiquetas[id]])), descartados, aviso: '' };
 }
 
-module.exports = { UMBRALES, sondear, medir, nitidezDe, evaluar, analizarClip, analizarBiblioteca, filtrarAptos };
+module.exports = { SALIDA, reevaluarGuardado, UMBRALES, sondear, medir, nitidezDe, evaluar, analizarClip, analizarBiblioteca, filtrarAptos };

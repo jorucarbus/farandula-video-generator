@@ -10,11 +10,21 @@ test('un clip 1080x1920 nítido y bien expuesto es apto con puntaje alto', () =>
   assert.ok(r.puntaje >= 90);
 });
 
-test('720x1280 se amplía 1,5×: apto con aviso; 576x1024 (1,9×) se descarta', () => {
-  const a = C.evaluar({ ...bueno, ancho: 720, alto: 1280 }, { blur: 3, brillo: 110 });
-  assert.strictEqual(a.apto, true); assert.ok(a.avisos.some(x => /amplía/.test(x)));
-  const b = C.evaluar({ ...bueno, ancho: 576, alto: 1024 }, { blur: 3, brillo: 110 });
-  assert.strictEqual(b.apto, false); assert.ok(b.motivos.some(x => /resolución baja/.test(x)));
+test('la resolución se mide contra la TARJETA (665x1183), no contra la pantalla: 576x1024 y 540x960 sirven; 400x711 no', () => {
+  const m = { blur: 3, brillo: 110 };
+  const a = C.evaluar({ ...bueno, ancho: 720, alto: 1280 }, m); assert.strictEqual(a.apto, true); assert.strictEqual(a.ampliacion, 1); assert.deepStrictEqual(a.avisos.filter(x => /amplía/.test(x)), []);
+  const b = C.evaluar({ ...bueno, ancho: 576, alto: 1024 }, m); assert.strictEqual(b.apto, true); assert.ok(b.ampliacion < 1.2);
+  const c = C.evaluar({ ...bueno, ancho: 540, alto: 960 }, m); assert.strictEqual(c.apto, true); assert.ok(c.avisos.some(x => /amplía/.test(x)) === (c.ampliacion > 1.25));
+  const d = C.evaluar({ ...bueno, ancho: 400, alto: 711 }, m); assert.strictEqual(d.apto, false); assert.ok(d.motivos.some(x => /resolución baja/.test(x)));
+});
+
+test('reevaluarGuardado: rehace solo la resolución de una medición vieja y conserva los demás motivos', () => {
+  const vieja = { ancho: 576, alto: 1024, puntaje: 20, apto: false, motivos: ['resolución baja (576x1024: se amplía 1.9×)', 'borroso (nitidez 0.05)'], avisos: ['se amplía 1.88×', 'compresión pesada (0.020 bits/píxel)'] };
+  const r = C.reevaluarGuardado(vieja);
+  assert.ok(!r.motivos.some(x => /resolución/.test(x)), 'ya no es de resolución baja'); assert.ok(r.motivos.some(x => /borroso/.test(x))); assert.strictEqual(r.apto, false);
+  const solo = C.reevaluarGuardado({ ancho: 576, alto: 1024, puntaje: 55, apto: false, motivos: ['resolución baja (576x1024: se amplía 1.9×)'], avisos: [] });
+  assert.strictEqual(solo.apto, true); assert.ok(solo.puntaje >= 90);
+  assert.strictEqual(C.reevaluarGuardado(null), null);
 });
 
 test('barras negras, oscuro, quemado y cortísimo se descartan', () => {

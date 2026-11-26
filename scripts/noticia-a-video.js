@@ -131,8 +131,12 @@ const log = (...a) => console.log(...a);
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];
-  try { const p = require('child_process').spawnSync('python', [path.join(__dirname, 'rostros-clips.py'), carpeta], { stdio: 'inherit', cwd: RAIZ }); if (p.status !== 0) log('(rostros locales no disponibles: se usan los del modelo)'); } catch { log('(sin python: se usan los rostros del modelo)'); }
-  correr('calidad-clips.js', [carpeta]); // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
+  // Índice del artista (primera vez: baja, etiqueta con Gemini y mide SOLO los clips sin etiqueta; después no hace nada). Va ANTES de medir: una carpeta nueva todavía no tiene lista de clips.
+  spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), carpeta], { stdio: 'inherit', cwd: RAIZ });
+  if (fs.existsSync(path.join(DM, 'biblioteca', carpeta + '.clips.json'))) { // si el índice no se pudo armar (sin Drive), se sigue sin medir en vez de caerse
+    try { const p = require('child_process').spawnSync('python', [path.join(__dirname, 'rostros-clips.py'), carpeta], { stdio: 'inherit', cwd: RAIZ }); if (p.status !== 0) log('(rostros locales no disponibles: se usan los del modelo)'); } catch { log('(sin python: se usan los rostros del modelo)'); }
+    try { correr('calidad-clips.js', [carpeta]); } catch (e) { log('(no se pudo medir la calidad: ' + e.message + ')'); } // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
+  }
   correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
   log(`\nListo: ${salida}\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion || ''}\n${(g.hashtags || []).join(' ')}`);
 })().catch(e => { console.error('FALLO', e.message); process.exit(1); });
