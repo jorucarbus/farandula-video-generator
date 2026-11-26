@@ -22,7 +22,7 @@ const log = (...a) => console.log(...a);
 
 (async () => {
   const largos = require('../largos'), gemini = require('../gemini'), ajustes = require('../ajustes').obtener();
-  const canal = arg('--canal', 'Chismex Picante'), objetivo = largos.objetivoPara(canal, ajustes.videosCortos);
+  const canal = arg('--canal', 'Chismex Picante'), ficha = require('../canales').obtener(canal), objetivo = largos.objetivoPara(canal, ajustes.videosCortos);
   const dosTiempos = Boolean(ajustes.guionDosTiempos) && objetivo.id === 'normal';
   log(`Canal "${canal}" → guion ${objetivo.id} (${objetivo.min}-${objetivo.max} palabras${dosTiempos ? ', en dos tiempos' : ''})`);
 
@@ -30,7 +30,17 @@ const log = (...a) => console.log(...a);
   let nombre = arg('--nombre', null);
   const carpetaTmp = nombre ? path.join(DM, 'noticias', nombre) : null;
   const rehacer = bandera('--rehacer');
-  let lectura = carpetaTmp && fs.existsSync(path.join(carpetaTmp, 'lectura.json')) && !rehacer ? JSON.parse(fs.readFileSync(path.join(carpetaTmp, 'lectura.json'), 'utf8')) : null;
+  // Gemelos: --desde <nombre> reutiliza la lectura de la noticia que ya se hizo para el canal hermano (se paga una sola vez) y
+  // le pasa su guion al modelo como "no te le parezcas".
+  const desde = arg('--desde', null); let evitar = null;
+  if (desde) {
+    if (!nombre) throw new Error('--desde necesita --nombre (la carpeta de este canal)');
+    const o = path.join(DM, 'noticias', desde), d = carpetaTmp;
+    if (rehacer || !fs.existsSync(path.join(d, 'lectura.json'))) { if (!fs.existsSync(path.join(o, 'lectura.json'))) throw new Error(`--desde: no existe la lectura de "${desde}"`); fs.mkdirSync(d, { recursive: true }); fs.copyFileSync(path.join(o, 'lectura.json'), path.join(d, 'lectura.json')); log(`Lectura copiada de "${desde}" (gemelo)`); }
+    if (fs.existsSync(path.join(o, 'guion.json'))) evitar = JSON.parse(fs.readFileSync(path.join(o, 'guion.json'), 'utf8')).script;
+  }
+  if (ficha) log(`Ficha de canal: ${ficha.nombre}${ficha.sesgo ? ' (con sesgo propio)' : ''}${ficha.vozId ? ' (voz propia)' : ''}`);
+  let lectura = carpetaTmp && fs.existsSync(path.join(carpetaTmp, 'lectura.json')) && (!rehacer || desde) ? JSON.parse(fs.readFileSync(path.join(carpetaTmp, 'lectura.json'), 'utf8')) : null;
 
   // ---- 2) lectura + crónica (la parte que más tokens gastaba escribiéndola a mano)
   if (!lectura) {
@@ -68,15 +78,16 @@ const log = (...a) => console.log(...a);
       objUsado = { ...largos.NORMAL, min: 165, max: 185, minAceptable: 158 }; dos = false;
       log(`Pocos datos (${palabrasDatos} palabras): guion de ${objUsado.min}-${objUsado.max} palabras, de un solo pase, para no rellenar`);
     }
+    const corto = objUsado.id === 'corto'; // los canales cortos eligen los datos más fuertes en vez de cubrirlos todos
     const maxPalabras = Math.round(objUsado.max * 1.15); // por encima de esto el guion es demasiado largo
     const escribir = async nota => {
-      const material = pauta.bloqueMaterial(cronica, lectura.hechos, nota);
-      return dos ? gemini.escribirGuionEnDosTiempos(material, null, null, [], null, 'grafo', '') : gemini.escribirGuion(material, null, null, [], null, 'grafo', '', objUsado);
+      const material = pauta.bloqueMaterial(cronica, lectura.hechos, nota, { corto });
+      return dos ? gemini.escribirGuionEnDosTiempos(material, null, null, [], evitar, 'grafo', ficha ? ficha.sesgo : '') : gemini.escribirGuion(material, null, null, [], evitar, 'grafo', ficha ? ficha.sesgo : '', objUsado);
     };
-    let script = await escribir(''), prob = pauta.problemas(script, lectura.hechos, base, { maxPalabras });
+    let script = await escribir(''), prob = pauta.problemas(script, lectura.hechos, base, { maxPalabras, corto });
     log(`Guion 1: ${contarPalabras(script)} palabras · datos cubiertos ${Math.round(prob.cobertura.pct * 100)}% · ${prob.ok ? 'sin invenciones' : 'PROBLEMAS: ' + prob.lista.join(' ; ')}`);
     if (!prob.ok) {
-      const script2 = await escribir(pauta.notaDeCorreccion(prob)), prob2 = pauta.problemas(script2, lectura.hechos, base, { maxPalabras });
+      const script2 = await escribir(pauta.notaDeCorreccion(prob)), prob2 = pauta.problemas(script2, lectura.hechos, base, { maxPalabras, corto });
       log(`Guion 2: ${contarPalabras(script2)} palabras · datos cubiertos ${Math.round(prob2.cobertura.pct * 100)}% · ${prob2.ok ? 'sin invenciones' : 'PROBLEMAS: ' + prob2.lista.join(' ; ')}`);
       const largo2 = contarPalabras(script2) <= Math.round(objUsado.max * 1.25); // un reintento que revienta el largo no sirve aunque cubra todo
       if (largo2 && prob2.lista.length <= prob.lista.length && prob2.cobertura.pct >= prob.cobertura.pct - 0.05) { script = script2; prob = prob2; } else log('  se conserva el guion 1 (el 2 no mejoró o se pasó de largo)');
@@ -86,13 +97,13 @@ const log = (...a) => console.log(...a);
     (rev.avisos || []).forEach(a => log('  AVISO de revisión:', typeof a === 'string' ? a : JSON.stringify(a)));
     script = rev.guion;
     if ((rev.cambios || []).length) { const rev2 = await require('../revisionGuion').revisar(script, base); script = rev2.guion; rev.cambios = [...rev.cambios, ...(rev2.cambios || [])]; log(`  segunda pasada de revisión: ${(rev2.cambios || []).length} cambio(s)`); }
-    const final = pauta.problemas(script, lectura.hechos, base, { maxPalabras });
+    const final = pauta.problemas(script, lectura.hechos, base, { maxPalabras, corto });
     // 3d) frases con rol y hechos para el director
     const { guionABeats } = require('../edl/guionABeats'), b = await guionABeats(script, cronica, { hechosDados: lectura.hechos });
     b.avisos.forEach(a => log('  puente:', a));
     const desc = String(lectura.cronica.descripcion || ''), tags = desc.match(/#\S+/g) || [];
     g = { hechos: b.hechos, beats: b.beats, script, origen: `automático: grafo + pauta de datos + revisión + puente (${b.origen})`, canal, objetivo: objetivo.id, palabras: contarPalabras(script),
-      personas: (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })), titulo: lectura.cronica.titulo, descripcion: desc.replace(/#\S+/g, '').trim(), hashtags: tags, cambiosRevision: rev.cambios || [],
+      personas: (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })), titulo: lectura.cronica.titulo, descripcion: desc.replace(/#\S+/g, '').trim(), hashtags: require('../canales').sumarHashtags(tags, ficha), cambiosRevision: rev.cambios || [],
       control: { datosCubiertosPct: Math.round(final.cobertura.pct * 100), faltan: final.cobertura.faltan.map(f => f.texto), posiblesInventos: [...final.inventados.numeros, ...final.inventados.nombres] } };
     if (final.lista.length) log('  ATENCIÓN tras la revisión:', final.lista.join(' ; '));
     fs.writeFileSync(fGuion, JSON.stringify(g, null, 2));
@@ -106,13 +117,13 @@ const log = (...a) => console.log(...a);
   // ---- 4) voz + tiempos por palabra (ElevenLabs) — se paga una vez por guion
   const carpeta = arg('--carpeta', null); if (!carpeta) throw new Error('Falta --carpeta (clips del protagonista en data-motor/biblioteca/)');
   const audio = arg('--audio', path.join(DM, 'audios', `${new Date().toISOString().slice(0, 10)} ${nombre}.mp3`));
-  const correr = (script, a) => { const r = spawnSync(process.execPath, [path.join(__dirname, script), ...a], { stdio: 'inherit', cwd: RAIZ }); if (r.status !== 0) throw new Error(`${script} falló (código ${r.status})`); };
+  const correr = (script, a) => { const r = spawnSync(process.execPath, [path.join(__dirname, script), ...a], { stdio: 'inherit', cwd: RAIZ, env: { ...process.env, ...(ficha && ficha.vozId ? { ELEVENLABS_VOICE_ID: ficha.vozId } : {}) } }); if (r.status !== 0) throw new Error(`${script} falló (código ${r.status})`); };
   if (fs.existsSync(audio) && fs.existsSync(fPal) && !rehacer) log('Voz ya generada; se reutiliza');
   else { log(`Voz: ${g.script.length} caracteres…`); correr('noticia-voz.js', ['--guion', fGuion, '--audio', audio, '--palabras', fPal]); }
 
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];
-  correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--sin-muneco', '--salida', salida, ...minimo, ...extra]);
+  correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
   log(`\nListo: ${salida}\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion || ''}\n${(g.hashtags || []).join(' ')}`);
 })().catch(e => { console.error('FALLO', e.message); process.exit(1); });

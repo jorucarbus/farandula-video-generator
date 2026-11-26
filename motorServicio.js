@@ -39,6 +39,7 @@ function argumentosDe(params, nombre, salida) {
   else if (params.texto) a.push('--texto', params.texto);
   else throw new Error('Falta el link o el texto de la noticia');
   a.push('--canal', params.canal || 'Chismex Picante', '--carpeta', params.carpetaClips, '--nombre', nombre, '--salida', salida);
+  if (params.desdeNombre) a.push('--desde', params.desdeNombre);
   if (params.hastaGuion) a.push('--hasta-guion');
   return a;
 }

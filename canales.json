@@ -1,0 +1,43 @@
+{
+  "_nota": "Una ficha por canal. Clave = nombre normalizado (minúsculas, sin tildes ni espacios). Campos vacíos (null) = usar el valor de siempre. 'monetiza:false' = guion corto de ~30 s (solo si el interruptor videosCortos está encendido).",
+  "chismexpicante": {
+    "nombre": "Chismex Picante",
+    "hermano": "supelupe",
+    "monetiza": true,
+    "vozId": null,
+    "tonoMusica": "auto",
+    "hashtags": [],
+    "sesgo": "",
+    "fondo": null
+  },
+  "supelupe": {
+    "nombre": "Supe Lupe",
+    "hermano": "chismexpicante",
+    "monetiza": false,
+    "vozId": null,
+    "tonoMusica": "auto",
+    "hashtags": [],
+    "sesgo": "",
+    "fondo": null
+  },
+  "embajadoresdelchisme": {
+    "nombre": "Embajadores del Chisme",
+    "hermano": "lanaple",
+    "monetiza": true,
+    "vozId": null,
+    "tonoMusica": "auto",
+    "hashtags": [],
+    "sesgo": "",
+    "fondo": null
+  },
+  "lanaple": {
+    "nombre": "La Naple",
+    "hermano": "embajadoresdelchisme",
+    "monetiza": false,
+    "vozId": null,
+    "tonoMusica": "auto",
+    "hashtags": [],
+    "sesgo": "",
+    "fondo": null
+  }
+}

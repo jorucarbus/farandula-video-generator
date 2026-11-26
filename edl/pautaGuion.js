@@ -36,8 +36,10 @@ PARA LLENAR ESPACIO no inventes: vuelve sobre los mismos DATOS desde otro ángul
 PROHIBIDO: agregar hechos, intenciones, motivos, reacciones, resultados, citas o cifras que no estén en los DATOS; decir qué hará, piensa o siente alguien si los DATOS no lo dicen; metáforas que afirmen algo nuevo (p. ej. que alguien va a quitarle algo a otra persona). Una cita textual se copia tal cual y puede acortarse a su frase más fuerte (máximo 20 palabras).
 FORMATO: fechas y cifras con dígitos (26 de noviembre, 12 de diciembre, 0,99 dólares), no en letras.`;
 
-function bloqueMaterial(cronica, hechos, nota = '') {
-  return `${cronica}\n\n=== DATOS OBLIGATORIOS (TODOS deben aparecer en el guion; son lo único que puedes afirmar) ===\n${hechos.map((h, i) => `${i + 1}. ${h.texto}${h.confirmado === false ? ' [NO CONFIRMADO: cuéntalo como versión, no como hecho]' : ''}`).join('\n')}\n=== FIN DE LOS DATOS ===\n\n=== PAUTA DE TONO ===\n${PICANTE}\n=== FIN DE LA PAUTA ===${nota ? `\n\n${nota}` : ''}`;
+// corto = canal de ~30 s: no caben todos los datos, así que se pide elegir los más fuertes (y solo afirmar esos).
+function bloqueMaterial(cronica, hechos, nota = '', { corto = false } = {}) {
+  const titulo = corto ? 'DATOS DISPONIBLES (el guion es MUY corto: elige los 4 o 5 más fuertes y llamativos; no hace falta usarlos todos; son lo único que puedes afirmar)' : 'DATOS OBLIGATORIOS (TODOS deben aparecer en el guion; son lo único que puedes afirmar)';
+  return `${cronica}\n\n=== ${titulo} ===\n${hechos.map((h, i) => `${i + 1}. ${h.texto}${h.confirmado === false ? ' [NO CONFIRMADO: cuéntalo como versión, no como hecho]' : ''}`).join('\n')}\n=== FIN DE LOS DATOS ===\n\n=== PAUTA DE TONO ===\n${PICANTE}\n=== FIN DE LA PAUTA ===${nota ? `\n\n${nota}` : ''}`;
 }
 
 // ¿Qué datos del hecho aparecen en el guion? Un dato cuenta como cubierto si al menos el 60 % de sus palabras clave (cifras y palabras de 5+ letras,
@@ -87,17 +89,17 @@ function relleno(script, hechos) {
   return partir(script).filter(f => !/[?»]/.test(f) && !f.includes('«')).filter(f => { const k = clave(f); return k.length >= 4 && k.filter(w => dat.has(w)).length / k.length < 0.25; });
 }
 
-function problemas(script, hechos, base, { maxPalabras = null } = {}) {
+function problemas(script, hechos, base, { maxPalabras = null, corto = false } = {}) {
   const c = cobertura(script, hechos), inv = inventados(script, base);
   const lista = [];
-  if (c.faltan.length) lista.push(`faltan datos: ${c.faltan.map(f => f.texto).join(' | ')}`);
+  if (c.faltan.length && !corto) lista.push(`faltan datos: ${c.faltan.map(f => f.texto).join(' | ')}`);
   if (inv.numeros.length) lista.push(`cifras que no están en la noticia: ${inv.numeros.join(', ')}`);
   if (inv.nombres.length) lista.push(`nombres que no están en la noticia: ${inv.nombres.join(', ')}`);
   const rep = repetidos(script), rel = relleno(script, hechos), n = (script.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+/g) || []).length, largo = maxPalabras && n > maxPalabras;
   if (rep.length) lista.push(`repeticiones: ${rep.join(' | ')}`);
   if (rel.length > 1) lista.push(`frases de relleno sin ningún dato (quítalas o reemplázalas por un dato que aún no hayas usado): ${rel.map(f => '"' + f.slice(0, 70) + '…"').join(' | ')}`);
   if (largo) lista.push(`demasiado largo: ${n} palabras, el máximo es ${maxPalabras}; quita relleno, no datos`);
-  return { cobertura: c, inventados: inv, repetidos: rep, relleno: rel, palabras: n, lista, ok: c.pct >= 0.85 && !inv.numeros.length && !inv.nombres.length && !rep.length && rel.length <= 1 && !largo };
+  return { cobertura: c, inventados: inv, repetidos: rep, relleno: rel, palabras: n, lista, ok: (corto || c.pct >= 0.85) && !inv.numeros.length && !inv.nombres.length && !rep.length && rel.length <= 1 && !largo };
 }
 
 function notaDeCorreccion(p) {

@@ -2784,18 +2784,28 @@ app.post('/api/generate-video', async (req, res) => {
 });
 
 // Motor EDL (sin muñeco): de un link a un MP4 con la tubería automática. Encola igual que el motor legado.
-// Body: { link | texto, canal, carpetaClips, destFolder?, etiqueta?, jobId?, protagonista? }
+// Body: { link | texto, canal, carpetaClips, destFolder?, etiqueta?, jobId?, protagonista?, nombre?, gemelo?, destFolderGemelo? }
+// gemelo:true encola DOS videos: el del canal y el de su hermano (canales.json). La noticia se lee una sola vez; el segundo
+// guion se escribe sabiendo cuál fue el primero para no parecérsele, con la voz, el sesgo y los hashtags de SU canal.
 app.post('/api/generate-video-edl', (req, res) => {
   try {
-    const { link, texto, canal, carpetaClips, destFolder, etiqueta, jobId, protagonista, nombre } = req.body || {};
+    const { link, texto, canal, carpetaClips, destFolder, destFolderGemelo, etiqueta, jobId, protagonista, nombre, gemelo } = req.body || {};
     if (!link && !texto) return res.status(400).json({ error: 'Falta el link o el texto de la noticia' });
-    if (!carpetaClips || !/^[\w .-]+$/.test(carpetaClips)) return res.status(400).json({ error: 'Falta carpetaClips (nombre de la carpeta de clips del protagonista)' });
-    const tarea = colaRender.encolar({
+    if (!carpetaClips || !/^[w .-]+$/.test(carpetaClips)) return res.status(400).json({ error: 'Falta carpetaClips (nombre de la carpeta de clips del protagonista)' });
+    const canales = require('./canales');
+    const nombreA = nombre && /^[w-]+$/.test(nombre) ? nombre : `motor-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
+    const hermano = gemelo ? canales.hermanoDe(canal) : null;
+    if (gemelo && !hermano) return res.status(400).json({ error: `El canal "${canal}" no tiene hermano en canales.json` });
+    const tareas = [colaRender.encolar({
       jobId: jobId || null, variante: 'A', etiqueta: etiqueta || 'Video (motor nuevo)', canal: canal || '',
-      params: { motor: 'edl', link, texto, canal, carpetaClips, destFolder, jobId, protagonista, etiqueta, nombre: nombre && /^[\w-]+$/.test(nombre) ? nombre : undefined },
-    });
-    console.log(`📋 [${tarea.renderId}] Encolado motor nuevo (${tarea.etiqueta})`);
-    res.json({ status: 'encolado', ...colaRender.obtener(tarea.renderId) });
+      params: { motor: 'edl', link, texto, canal, carpetaClips, destFolder, jobId, protagonista, etiqueta, nombre: nombreA },
+    })];
+    if (hermano) tareas.push(colaRender.encolar({
+      jobId: jobId || null, variante: 'B', etiqueta: `${etiqueta || 'Video (motor nuevo)'} · gemelo`, canal: hermano.nombre,
+      params: { motor: 'edl', link, texto, canal: hermano.nombre, carpetaClips, destFolder: destFolderGemelo, jobId, protagonista, etiqueta, nombre: `${nombreA}-${hermano.clave}`, desdeNombre: nombreA },
+    }));
+    for (const t of tareas) console.log(`📋 [${t.renderId}] Encolado motor nuevo (${t.etiqueta})`);
+    res.json({ status: 'encolado', tareas: tareas.map(t => colaRender.obtener(t.renderId)), ...colaRender.obtener(tareas[0].renderId) });
   } catch (error) {
     console.error('Error encolando video (motor nuevo):', error);
     res.status(500).json({ error: error.message });

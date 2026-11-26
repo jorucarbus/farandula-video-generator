@@ -83,6 +83,8 @@ function normalizarCanal(nombre) {
 }
 
 function esCanalCorto(nombreCanal) {
+  const ficha = require('./canales').obtener(nombreCanal); // la ficha de canales.json manda; sin ficha, la lista de siempre
+  if (ficha) return !ficha.monetiza;
   return CANALES_CORTOS.has(normalizarCanal(nombreCanal));
 }
 
