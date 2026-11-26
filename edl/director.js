@@ -89,6 +89,8 @@ function validarEscena(e, beats, hechos, clips = null) {
     if (!numerosEnFrase(frase).has(c.valor)) err(`la cifra ${c.valor} no está en la frase`);
     else if (c.valor < 10 && !/\d/.test(frase)) err(`la cifra ${c.valor} es pequeña y viene escrita con letras ("dos piezas"): no es un dato destacable, usa otro principal`);
     if (c.sufijo && !/^[$%]/.test(c.sufijo.trim()) && !contiene(frase, c.sufijo)) err(`el sufijo "${c.sufijo}" no está en la frase`);
+    if (Number.isInteger(c.valor) && c.valor >= 1900 && c.valor <= 2100) err(`${c.valor} es un año, no una cifra destacable`);
+    if (c.sufijo && /\d/.test(c.sufijo)) err(`el sufijo "${c.sufijo}" no puede llevar números (salía como "12 Top 12")`);
     ancla(c.ancla, 'cifra');
   }
   if (e.principal === 'grafico') { // barras que crecen: 2 a 5 barras, cada una con una cifra que la frase dice y una palabra (etiqueta) que la frase dice

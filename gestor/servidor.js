@@ -209,6 +209,13 @@ app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []);
   ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/^prueba/.test(f)).map(f => ({ nombre: f, ruta: path.join(dir, f), tam: fs.statSync(path.join(dir, f)).size, fecha: fs.statSync(path.join(dir, f)).mtime })).sort((a, b) => b.fecha - a.fecha).slice(0, 30));
 });
+// Ficha de publicación de un video listo: lo que se pega en las redes (título, descripción, hashtags) y de dónde salió. Sale del guion guardado junto al render.
+app.get('/api/render-info', (req, res) => {
+  const nombre = path.basename(String(req.query.nombre || '')).replace(/\.mp4$/i, ''); if (!/^[\w.-]+$/.test(nombre)) return res.status(400).json({ error: 'nombre inválido' });
+  const dir = path.join(G.DM, 'noticias', nombre), leer = f => { try { return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { return null; } };
+  const g = leer('guion.json'), l = leer('lectura.json'); if (!g) return ok(res, { sinFicha: true });
+  ok(res, { titulo: g.titulo || '', descripcion: g.descripcion || '', hashtags: g.hashtags || [], canal: g.canal || '', fuente: l && l.fuente || '', palabras: g.palabras || null, guion: g.script || '', datosCubiertosPct: g.control && g.control.datosCubiertosPct });
+});
 app.get('/render', (req, res) => { const f = path.join(G.DM, 'renders', path.basename(String(req.query.nombre || ''))); if (!/\.mp4$/i.test(f) || !fs.existsSync(f)) return res.status(404).end(); res.sendFile(f); });
 
 const limpiarCaducadosYa = () => { try { const r = clipsDrive.limpiarCaducados(); if (r.borrados) console.log(`Caché: ${r.borrados} videos viejos liberados (${(r.bytes / 1e6).toFixed(0)} MB)`); } catch (e) { console.log('Caché: no pude limpiar:', e.message); } };

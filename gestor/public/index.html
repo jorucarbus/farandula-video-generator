@@ -92,7 +92,7 @@
   <section id="t-trabajos" class="oculto"><div id="listaTrabajos"></div></section>
 </main>
 <dialog id="dEtiqueta"></dialog>
-<dialog id="visor"><video id="visorVideo" controls autoplay></video><div class="fila" style="padding:8px 12px;margin:0"><span id="visorTitulo" style="flex:1"></span><button class="b" id="visorCerrar">Cerrar</button></div></dialog>
+<dialog id="visor"><video id="visorVideo" controls autoplay></video><div id="visorFicha" class="oculto" style="padding:12px 16px;max-width:min(720px,90vw);display:grid;gap:8px;max-height:36vh;overflow:auto"></div><div class="fila" style="padding:8px 12px;margin:0"><span id="visorTitulo" style="flex:1"></span><button class="b" id="visorCerrar">Cerrar</button></div></dialog>
 
 <script>
 const $ = (s, r = document) => r.querySelector(s);
@@ -240,7 +240,17 @@ function pintarRedes() {
 }
 $('#bSesiones').onclick = async () => { $('#bSesiones').disabled = true; $('#bSesiones').textContent = 'Comprobando…'; try { for (const s of await api('/api/sesiones')) sesiones[s.plat] = s; } catch (e) { alert(e.message); } pintarRedes(); $('#bSesiones').disabled = false; $('#bSesiones').textContent = 'Comprobar sesiones'; };
 function mensaje(t) { $('#aviso').replaceChildren(el('div', { className: 'msg' }, t)); }
-function ver(url, titulo) { $('#visorVideo').src = url; $('#visorTitulo').textContent = titulo; $('#visor').showModal(); }
+function ver(url, titulo, ficha) { $('#visorVideo').src = url; $('#visorTitulo').textContent = titulo; const f = $('#visorFicha'); f.replaceChildren(); f.classList.add('oculto'); $('#visor').showModal(); if (ficha) pintarFicha(ficha); }
+// Ficha de publicación: cada dato con su botón de copiar (como en "por publicar" de la app vieja).
+async function pintarFicha(nombre) {
+  const f = $('#visorFicha'); let d; try { d = await api('/api/render-info?nombre=' + q(nombre)); } catch { return; }
+  f.classList.remove('oculto'); if (d.sinFicha) { f.append(el('div', { className: 'msg' }, 'Este video no tiene ficha guardada (se hizo antes de que se guardaran los datos de publicación).')); return; }
+  const tags = (d.hashtags || []).join(' '), todo = [d.descripcion, tags].filter(Boolean).join('\n\n');
+  const campo = (rot, txt, filas = 1) => { const ta = el('textarea', { rows: filas, readOnly: true, value: txt, style: 'width:100%;resize:vertical' }); const b = el('button', { className: 'b', textContent: 'Copiar', onclick: async () => { try { await navigator.clipboard.writeText(txt); b.textContent = '¡Copiado!'; } catch { ta.select(); document.execCommand('copy'); b.textContent = '¡Copiado!'; } setTimeout(() => (b.textContent = 'Copiar'), 1500); } });
+    return el('div', {}, el('div', { className: 'fila', style: 'margin:0 0 3px;justify-content:space-between' }, el('strong', { style: 'font-size:12px;color:var(--suave)' }, rot), b), ta); };
+  f.append(d.canal ? el('div', {}, el('span', { className: 'chip ok' }, 'Canal: ' + d.canal), ' ', d.palabras ? el('span', { className: 'chip gris' }, d.palabras + ' palabras') : '', ' ', d.fuente ? el('a', { href: d.fuente, target: '_blank', rel: 'noopener', textContent: 'noticia original', style: 'font-size:12px' }) : '') : '',
+    campo('Título', d.titulo, 1), campo('Descripción + hashtags (todo junto)', todo, 5), campo('Solo hashtags', tags, 1), d.guion ? campo('Guion (lo que dice la voz)', d.guion, 4) : '');
+}
 $('#visorCerrar').onclick = () => { $('#visor').close(); $('#visorVideo').removeAttribute('src'); };
 $('#visor').addEventListener('close', () => $('#visorVideo').pause());
 
@@ -255,7 +265,7 @@ $('#cIr').onclick = async () => {
 async function cargarVideos() {
   const g = $('#gridVideos'); g.replaceChildren(); const l = await api('/api/renders');
   if (!l.length) g.append(el('div', { className: 'vacio' }, 'Todavía no hay videos renderizados.'));
-  for (const v of l) g.append(el('div', { className: 'clip' }, el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.nombre) }), el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.nombre), el('div', {}, new Date(v.fecha).toLocaleString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB'))));
+  for (const v of l) g.append(el('div', { className: 'clip' }, el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.nombre, v.nombre) }), el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.nombre), el('div', {}, new Date(v.fecha).toLocaleString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB'))));
 }
 async function cargarPapelera() {
   const g = $('#gridPapelera'); g.replaceChildren(); const l = await api('/api/papelera');

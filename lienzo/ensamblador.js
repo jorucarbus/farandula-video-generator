@@ -25,7 +25,7 @@ const SLOTS = {
 };
 const espejar = (p, der) => (der ? { ...p, cx: 1 - p.cx } : p);
 const SLOTS_COMP = [{ cx: 0.84, cy: 0.80 }, { cx: 0.16, cy: 0.80 }]; // con el muñeco acompañante abajo: las insignias van a los lados del muñeco, no sobre el dato
-const SLOTS_VIDEO = [{ cx: 0.22, cy: 0.27 }, { cx: 0.80, cy: 0.27 }]; // con el video de fondo: las insignias flotan en las esquinas de arriba del recuadro
+const SLOTS_VIDEO = [{ cx: 0.22, cy: 0.33 }, { cx: 0.80, cy: 0.33 }]; // con el video de fondo: las insignias flotan en las esquinas de arriba del recuadro
 // Encuadres del muñeco (fracciones del cuadro): cx, base (pies) y alto (de los pies a la coronilla). medio/primer ponen la cabeza arriba y dejan los pies fuera del cuadro.
 const ENC = { cuerpo: { cx: 0.30, base: 0.90, alto: 0.60 }, lado: { cx: 0.26, base: 0.90, alto: 0.56 }, companero: { cx: 0.50, base: 0.99, alto: 0.50 }, medio: { cx: 0.44, base: 1.30, alto: 1.02 }, primer: { cx: 0.46, base: 1.66, alto: 1.45 } };
 const PEGATINA = { baston: { dx: 0.34, dy: 0.40, ancho: 0.40, giro: true }, 'guante-pulgar': { dx: -0.36, dy: 0.62, ancho: 0.24 }, 'guante-abierto': { dx: -0.36, dy: 0.62, ancho: 0.28 } };
@@ -66,7 +66,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         const tm = Math.min(t0 + dur - 0.6, Math.max(t0 + 0.3, tPal(k, m.ancla)));
         marcas.push(marcaDeRostro(info, cara, e.clip.ss, dur, tm, k, FORMAS_MARCA[nMarca++ % FORMAS_MARCA.length], cfg.serieDe)); marca(k, m.ancla);
       } else if (e.clip.marca) avisos.push('frase ' + (k + 1) + (!info.rostro ? ': sin coordenadas del rostro; el clip va sin círculo' : ': el círculo no tiene sentido (rostro pequeño o la palabra no habla de ella); el clip va sin marca'));
-      elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.58, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
+      elementos.push(E.ventanaClip({ clip: info.ruta, ss: e.clip.ss, cy: 0.64, t0, t1: t0 + dur, marcas })); cubre.push([t0, t0 + dur]);
     }
     if (e.principal === 'video') { cubre.push([t0, t1]); } // solo montaje de tomas (lo arma el paso 4b): el muñeco no aporta aquí
     if (e.principal === 'escenario') { const ta = Math.max(0, tPal(k, e.escenario.ancla) - 0.2); elementos.push(escenario({ tipo: e.escenario.tipo, texto: e.escenario.texto, cx: e.muneco && e.muneco.lado === 'der' ? 0.30 : 0.70, base: M ? 0.86 : 0.90, ancho: 0.56, t0: ta, t1 })); card([ta, t1]); marca(k, e.escenario.ancla); }
@@ -75,16 +75,16 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       if (rt && (!rt.desde || !rt.hasta)) throw new Error(`mapa: ruta fuera del catálogo (${e.mapa.ruta.desde} → ${e.mapa.ruta.hasta})`);
       const l = e.mapa.lugar ? LUGARES[e.mapa.lugar] : null; if (!rt && (e.mapa.lugar ? !l : !PAISES[e.mapa.pais])) throw new Error(`mapa: lugar o país fuera del catálogo (${e.mapa.lugar || e.mapa.pais})`);
       const tA = tPal(k, e.mapa.ancla), t0m = Math.max(t0, tA - 1.2), t1m = Math.max(t0m + 3, Math.min(t1, tA + 4.5)); // el mapa aparece ~1 s antes de nombrar el lugar y no se queda hasta el final de una frase larga
-      const base = { cy: e.muneco ? 0.375 : M ? 0.79 : 0.56, alto: e.muneco ? 0.32 : M ? 0.30 : 0.40, tPin: tA, t0: t0m, t1: t1m };
+      const base = { cy: e.muneco ? 0.375 : M ? 0.83 : 0.56, alto: e.muneco ? 0.32 : M ? 0.30 : 0.40, tPin: tA, t0: t0m, t1: t1m };
       elementos.push(rt ? E.mapa({ pais: null, ...rt, ...base }) : l ? E.mapa({ pais: 'Ecuador', lugar: { lon: l.lon, lat: l.lat, nombre: e.mapa.lugar }, ...base }) : E.mapa({ pais: PAISES[e.mapa.pais], nombrePais: e.mapa.pais, ...base })); card([t0m, t1m]); marca(k, e.mapa.ancla); zoomsT.push(tPal(k, e.mapa.ancla)); }
-    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.80 : 0.42, t0: ta, t1: Math.min(t1, ta + 4) })); card([ta, Math.min(t1, ta + 4)]); marca(k, e.cifra.ancla); }
+    if (e.principal === 'cifra') { const ta = Math.max(0, tPal(k, e.cifra.ancla) - 0.1); elementos.push(E.cifra({ valor: e.cifra.valor, sufijo: e.cifra.sufijo, cy: e.muneco ? 0.34 : M ? 0.86 : 0.42, t0: ta, t1: Math.min(t1, ta + 4) })); card([ta, Math.min(t1, ta + 4)]); marca(k, e.cifra.ancla); }
     if (e.principal === 'grafico') { // barras que crecen, abajo sobre la tarjeta del video (o arriba con muñeco)
       const its = e.grafico.items.map(b => ({ etiqueta: b.etiqueta, valor: b.valor, t: tPal(k, b.ancla) })), ta = Math.max(0, Math.min(...its.map(b => b.t)) - 0.3);
-      elementos.push(E.grafico({ titulo: e.grafico.titulo, items: its, cy: e.muneco ? 0.36 : M ? 0.79 : 0.42, alto: 0.30, t0: ta, t1 })); card([ta, t1]); e.grafico.items.forEach(b => { marca(k, b.ancla); zoomsT.push(tPal(k, b.ancla)); });
+      elementos.push(E.grafico({ titulo: e.grafico.titulo, items: its, cy: e.muneco ? 0.36 : M ? 0.83 : 0.42, alto: 0.30, t0: ta, t1 })); card([ta, t1]); e.grafico.items.forEach(b => { marca(k, b.ancla); zoomsT.push(tPal(k, b.ancla)); });
     }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
-      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.79 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
+      elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.83 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
   }
@@ -133,7 +133,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3b) círculos flotantes con la foto de las OTRAS personas cuando se las nombra (el lado ya se eligió para que miren hacia adentro del video)
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e || !e.personas) continue;
-    e.personas.forEach((pr) => { const ta = Math.max(0, tPal(k, pr.ancla) - 0.15); elementos.push(E.retrato({ foto: pr.foto, nombre: pr.nombre, cx: pr.lado === 'der' ? 0.84 : 0.16, cy: 0.27, r: 0.115, t0: ta, t1: Math.min(fin(k) + 0.6, ta + 3.4) })); });
+    e.personas.forEach((pr) => { const ta = Math.max(0, tPal(k, pr.ancla) - 0.15); elementos.push(E.retrato({ foto: pr.foto, nombre: pr.nombre, cx: pr.lado === 'der' ? 0.84 : 0.16, cy: 0.33, r: 0.115, t0: ta, t1: Math.min(fin(k) + 0.6, ta + 3.4) })); });
   }
   // 3c) VS y apoyo (ver edl/graficosSociales.js): esquinas de arriba del recuadro; la escena ya trae `social` solo si la frase lo pide
   for (let k = 0; k < beats.length; k++) {
@@ -203,7 +203,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         const info = cfg.relleno.info(id), dur = Math.min(USO_MAX_S - (uso.get(id) || 0), hb - a, USO_MAX_S);
         const ss = Math.max(0, Math.min((info.rostro && info.rostro.t) || 0, Math.max(0, (info.duracion || USO_MAX_S) - dur)));
         uso.set(id, (uso.get(id) || 0) + dur);
-        elementos.push(E.ventanaClip({ clip: info.ruta, ss, cy: 0.58, t0: a, t1: a + dur, marcas: [] }));
+        elementos.push(E.ventanaClip({ clip: info.ruta, ss, cy: 0.64, t0: a, t1: a + dur, marcas: [] }));
         a += dur;
       }
     }

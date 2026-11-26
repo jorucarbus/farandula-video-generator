@@ -23,7 +23,7 @@ function bloques(palabras) {
 function crearSubtitulos({ palabras, claves = new Set(), w, h, estilo }) {
   registrarFuentes(estilo); // sin la fuente registrada, measureText usaría otra y las palabras saldrían pegadas
   const u = Math.min(w, h);
-  const tam = Math.round(u * 0.054), interlinea = Math.round(tam * 1.26), x0 = Math.round(w * 0.137), y0 = Math.round(h * 0.105) - interlinea; // una línea más arriba: nunca choca con lo de abajo (mapas, tarjetas, la cabeza del muñeco)
+  const tam = Math.round(u * 0.054), interlinea = Math.round(tam * 1.26), x0 = Math.round(w * 0.137), y0 = Math.round(h * 0.105) - interlinea + Math.round(interlinea * 1.6); // una línea más arriba: nunca choca con lo de abajo (mapas, tarjetas, la cabeza del muñeco)
   const ancho = w * 0.74;
   const fuente = `${tam}px ${estilo.tipografia.texto}`;
   const medidor = require('@napi-rs/canvas').createCanvas(8, 8).getContext('2d'); medidor.font = fuente;

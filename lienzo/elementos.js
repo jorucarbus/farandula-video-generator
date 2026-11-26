@@ -65,7 +65,7 @@ function etiquetaNombre(ctx, nombre, X, y, p, u, estilo) {
   ctx.save(); ctx.globalAlpha *= p; B.sombraDeCapa(ctx, u, 0.35, 0.28); ctx.fillStyle = estilo.colores.negro; B.rectRedondo(ctx, X - pw / 2, y, pw, ph, ph / 2); ctx.fill(); B.sinSombra(ctx);
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(nombre, X, y + ph / 2 + tam * 0.04); ctx.restore();
 }
-function vs({ a, b, cy = 0.27, r = 0.105, t0, t1 }) {
+function vs({ a, b, cy = 0.33, r = 0.105, t0, t1 }) {
   let ia = null, ib = null;
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'whoosh', db: -8 }, { t: t0 + 0.38, sonido: 'golpe', db: -4 }],
@@ -88,7 +88,7 @@ function vs({ a, b, cy = 0.27, r = 0.105, t0, t1 }) {
 }
 
 // ── Apoyo: fotos con un corazón (o siluetas del público si nadie en particular) ────────────────────────────────────────────────────
-function apoyo({ fotos = [], icono = 'heart', cy = 0.27, r = 0.1, t0, t1 }) {
+function apoyo({ fotos = [], icono = 'heart', cy = 0.33, r = 0.1, t0, t1 }) {
   let imgs = [], ico = null; const { cargarIcono } = require('./iconos');
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...(fotos.length ? fotos : [0, 1, 2, 3, 4]).map((_, i) => ({ t: t0 + 0.12 + i * 0.14, sonido: 'clic', db: -12 }))],
@@ -291,7 +291,7 @@ function mapa({ pais = 'Ecuador', nombrePais, lugar, tPin, cy = 0.5, alto = 0.40
 
 // ── Recuadro vertical redondeado con clip real + marcas a mano encima ───────────────────────────
 // marcas: [{ tipo:'circulo', cx, cy, rx, ry, t, dur? } | { tipo:'subrayado', x0, y0, x1, y1, t, dur? }] en fracciones del recuadro; t ABSOLUTO.
-function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.616, t0, t1 }) {
+function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.63, ancho = 0.616, t0, t1 }) {
   let dir = null, nFrames = 0, WW = 0, HH = 0, fpsClip = 30;
   return {
     t0, t1, eventos: [{ t: t0, sonido: 'pop' }, ...marcas.map(m => ({ t: m.t, sonido: 'trazo' }))],
@@ -323,7 +323,7 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.57, ancho = 0.616, t0, 
 // el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
 // Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
 const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
-function montaje({ cortes, t0, t1, cy = 0.48, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30, zooms = [] }) {
+function montaje({ cortes, t0, t1, cy = 0.54, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30, zooms = [] }) {
   let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
   const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
   // zoom digital: un golpe de acercamiento (≈ 10 %) en cada palabra clave (zooms: [t absolutos]); sube en 0,12 s y se relaja en ≈ 0,7 s

@@ -54,3 +54,12 @@ test('resolverPunto: ciudad -> coordenadas, pais -> nombre del atlas, desconocid
   assert.strictEqual(D.resolverPunto('Tailandia').pais, 'Thailand');
   assert.strictEqual(D.resolverPunto('Atlantis'), null);
 });
+
+test('la dirección rechaza una cifra que es un año o con números en el sufijo (salían "2.0262026" y "12 Top 12")', () => {
+  const beats = [{ frase: 'Quedó fuera del Top 12 de Miss Universo 2026 en noviembre.', rol: 'dato', hechos: [] }];
+  const base = { beat: 1, principal: 'cifra', extras: [] };
+  const err = cifra => D.validarDireccion([{ ...base, cifra }], beats, [], null);
+  assert.ok(err({ valor: 2026, ancla: 'universo' }).some(x => /año/.test(x)));
+  assert.ok(err({ valor: 12, sufijo: 'Top 12', ancla: 'top' }).some(x => /no puede llevar números/.test(x)));
+  assert.deepStrictEqual(err({ valor: 12, sufijo: 'Top', ancla: 'top' }), []);
+});
