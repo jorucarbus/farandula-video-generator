@@ -6,6 +6,8 @@ chcp 65001 >nul
 cd /d "%~dp0"
 set "SELECTOR_DIR=%~dp0..\selector-videos"
 set "PERFIL=%~dp0..\superapp-firefox-perfil"
+rem Si quedó abierta una versión vieja del gestor o del Selector (puerto ocupado), se reemplaza: si no, la superapp seguiría mostrando lo anterior.
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'gestor.servidor.js|selector_tiktok.py' -and $_.CommandLine -notmatch 'powershell' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 if not exist "%PERFIL%" mkdir "%PERFIL%"
 if not exist "%PERFIL%\user.js" copy /y "%~dp0gestor\firefox\user.js" "%PERFIL%\user.js" >nul
 set "SELECTOR_NAVEGADOR=firefox"
