@@ -118,8 +118,12 @@ app.post('/api/crear-video', async (req, res) => {
     if (carpeta !== 'auto') { const mapa = await carpetasDrive(false).catch(() => ({})); if (!carpetaValida(carpeta) || !(G.carpetasBiblioteca().includes(carpeta) || mapa[carpeta])) throw new Error('esa carpeta no existe en Drive ni en la biblioteca; elige otra o usa la detección automática'); }
     const ficha = canales.obtener(canal); if (!ficha) throw new Error('canal desconocido');
     const nombre = `gestor-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
-    const pasos = [node('noticia-a-video.js', link, '--canal', ficha.nombre, '--carpeta', carpeta, '--nombre', nombre, '--salida', path.join(G.DM, 'renders', `${nombre}.mp4`))];
-    if (gemelo) { const h = canales.hermanoDe(canal); if (!h) throw new Error(`"${ficha.nombre}" no tiene canal hermano en canales.json`); const n2 = `${nombre}-${h.clave}`; pasos.push(node('noticia-a-video.js', '--canal', h.nombre, '--carpeta', carpeta, '--nombre', n2, '--desde', nombre, '--salida', path.join(G.DM, 'renders', `${n2}.mp4`))); }
+    const render = (n, c, ...extra) => node('noticia-a-video.js', ...extra, '--canal', c.nombre, '--carpeta', carpeta, '--nombre', n, ...(n === nombre ? [] : ['--desde', nombre]), '--salida', path.join(G.DM, 'renders', `${n}.mp4`));
+    // al final de cada video se sube a Drive: "para publicar" / subcarpeta de su canal (paso opcional: si falla, el video queda local y se reintenta con scripts/publicar-en-drive.js)
+    const subir = (n, c) => ({ ...node('publicar-en-drive.js', n, '--canal', c.nombre), opcional: true, titulo: `Subir a Drive: para publicar / ${c.nombre}` });
+    const pasos = [render(nombre, ficha, link)], subidas = [subir(nombre, ficha)];
+    if (gemelo) { const h = canales.hermanoDe(canal); if (!h) throw new Error(`"${ficha.nombre}" no tiene canal hermano en canales.json`); const n2 = `${nombre}-${h.clave}`; pasos.push(render(n2, h)); subidas.push(subir(n2, h)); }
+    pasos.push(...subidas);
     ok(res, { id: encolar(`Video: ${ficha.nombre}${gemelo ? ' + gemelo' : ''} · ${link.slice(0, 60)}`, pasos).id, salidas: [`${nombre}.mp4`].concat(gemelo ? [`${nombre}-${canales.hermanoDe(canal).clave}.mp4`] : []) });
   } catch (e) { mal(res, e); }
 });
@@ -212,7 +216,7 @@ app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []); const est = leerPublicados();
   const guion = n => { try { return JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'guion.json'), 'utf8')); } catch { return null; } };
   ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
-    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '' }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
+    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
 });
 app.post('/api/render-publicado', (req, res) => {
   try {

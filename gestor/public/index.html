@@ -278,7 +278,7 @@ async function cargarVideos() {
     const g = el('div', { className: 'grid' }); cont.append(g);
     for (const v of vs) g.append(el('div', { className: 'clip' },
       el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
-      el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB'),
+      el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
         el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }))));
   }
 }

@@ -14,3 +14,14 @@ logs/
 prueba-voz/
 
 data-motor/
+
+# Perfil de Firefox que quedó en la raíz (cookies y sesiones: nunca al repositorio)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+key4.db
+cert9.db
+logins.json
+logins.db
+prefs.js
+sessionstore-backups/
