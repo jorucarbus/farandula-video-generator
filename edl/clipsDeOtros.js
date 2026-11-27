@@ -34,8 +34,9 @@ function personasEnTexto(texto, carpetas, { excluir = [], yaListadas = [] } = {}
 }
 
 // Frases (0-based) que nombran a la persona (por su nombre o su apellido, 4+ letras).
-function frasesQueLaNombran(beats, nombre) {
-  const alias = new Set(toks(nombre).filter(t => t.length >= 4)); if (!alias.size) return [];
+const ARTICULOS = new Set(['el', 'la', 'los', 'las', 'de', 'del', 'don', 'dona']);
+function frasesQueLaNombran(beats, nombre, { min = 4 } = {}) {
+  const alias = new Set(toks(nombre).filter(t => t.length >= min && !(min < 4 && ARTICULOS.has(t)))); if (!alias.size) return [];
   return beats.map((b, i) => (toks(b.frase).some(t => alias.has(t)) ? i : -1)).filter(i => i >= 0);
 }
 
@@ -79,11 +80,11 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
   const elecciones = new Map(), carpetaDe = new Map(), avisos = [], usadas = new Set();
   const todas = [...new Set([...carpetasLocales, ...carpetasDrive])];
   for (const p of personas || []) {
-    const carpeta = buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta) continue;
+    const carpeta = p.carpeta && todas.includes(p.carpeta) ? p.carpeta : buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta) continue;
     let datos = cargar(carpeta);
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
     const col = colectivoDe(carpeta, p.nombre), tomas = (col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} })).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
-    const frases = frasesQueLaNombran(beats, p.nombre).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
+    const frases = [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
     frases.forEach((i, n) => {
       const t = tomas[n]; if (!t) return; usadas.add(t.id);
       const ss = Math.max(0, Math.min(((t.rostro && t.rostro.t) || 0.5) - 0.4, (t.duracion || 3.2) - 3.2));

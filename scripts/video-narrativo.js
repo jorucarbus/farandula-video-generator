@@ -81,7 +81,18 @@ function sinNegro(ruta, ss) {
       // además de las personas que listó la lectura, las que el guion nombra y tienen carpeta (p. ej. Kike Jav → Kike_Jav_Cuy)
       const textoGuion = g.script || g.beats.map(b => b.frase).join(' '), extra = CO.personasEnTexto(textoGuion, [...new Set([...locales, ...Object.keys(mapaDrive)])], { excluir: [carpeta, protagonista], yaListadas: (g.personas || []).map(p => p.nombre) });
       if (extra.length) console.log('OTROS: nombrados con carpeta propia: ' + extra.map(x => x.nombre + ' → ' + x.carpeta).join(', '));
-      const otros = await CO.planificar({ beats: g.beats, personas: [...(g.personas || []), ...extra], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
+      // alias aprendidos (sin IA) y, para los nombres sin carpeta, una búsqueda en internet UNA sola vez (queda guardada en data-motor/alias-personas.json)
+      const AL = require('../edl/aliasPersonas'), todasC = [...new Set([...locales, ...Object.keys(mapaDrive)])], reg = AL.cargar(), excl = [carpeta, protagonista];
+      const aprendidos = AL.personasEnTexto(textoGuion, todasC, reg).filter(x => x.carpeta !== carpeta && !extra.some(e => e.carpeta === x.carpeta));
+      const porResolver = (g.personas || []).filter(p => !CO.buscarCarpeta(p.nombre, todasC, { excluir: excl }) && !aprendidos.some(x => x.alias.includes(CO.norm(p.nombre))));
+      const resueltas = []; let consultas = 0;
+      for (const p of porResolver) {
+        if (process.argv.includes('--sin-alias-web') || consultas >= 4) break;
+        const conocido = Boolean(reg.alias[CO.norm(p.nombre)] || reg.sinCarpeta[CO.norm(p.nombre)]); if (!conocido) consultas++;
+        const r = await AL.resolver(p.nombre, { carpetas: todasC, reg, excluir: excl, contexto: (g.hechos || []).slice(0, 3).map(h => h.texto).join(' ') });
+        if (r.carpeta && r.carpeta !== carpeta) { resueltas.push({ nombre: p.nombre, carpeta: r.carpeta, alias: [p.nombre] }); console.log(`OTROS: "${p.nombre}" es ${r.carpeta} (${r.origen})`); }
+      }
+      const otros = await CO.planificar({ beats: g.beats, personas: [...(g.personas || []).filter(p => !resueltas.some(r => r.nombre === p.nombre)), ...extra, ...aprendidos, ...resueltas], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
       const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
       for (const [c, ids] of porCarpeta) { // bajar de Drive solo esas tomas y medirlas
         const clipsC = leerJ(path.join(RAIZ, `${c}.clips.json`), []), ros = leerJ(path.join(RAIZ, `${c}.rostros.json`), {}), et = cargar(c).etiquetas, ruta = Object.fromEntries(clipsC.map(x => [x.id, x.ruta]));
