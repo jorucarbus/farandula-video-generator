@@ -24,7 +24,10 @@ async function publicar(nombre, canal, { forzar = false, log = console.log, clie
   const carpeta = await carpetaDelCanal(cliente, canal);
   if (!carpeta) throw new Error(`no encuentro la subcarpeta de "${canal}" dentro de "para publicar"`);
   let g = {}; try { g = JSON.parse(fs.readFileSync(path.join(DM, 'noticias', nombre, 'guion.json'), 'utf8')); } catch { /* sin guion: nombre por defecto */ }
-  const base = `${new Date().toISOString().slice(0, 10)} ${nombreSeguro(g.titulo || nombre)}`;
+  // Nombre como la app vieja: "<fecha> <Protagonista> - <Secundario> - <hecho corto>" (sale de la crónica que ya se leyó: sin llamadas extra)
+  const leerJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } }, NA = require('../edl/nombreArchivo');
+  const lec = leerJ(path.join(DM, 'noticias', nombre, 'lectura.json')), rj = leerJ(path.join(DM, 'noticias', nombre, 'render.json'));
+  const base = nombreSeguro(NA.nombreCompleto(nombre, lec.cronica && (lec.cronica.protagonista || lec.cronica.accion) ? lec.cronica : { titulo: g.titulo || nombre }, { carpeta: rj.carpeta }));
   log(`Subiendo a "para publicar/${carpeta.name}": ${base}.mp4`);
   const v = await subir(mp4, `${base}.mp4`, carpeta.id);
   let portadaId = null; const jpg = path.join(DM, 'renders', `${nombre}.portada.jpg`);
