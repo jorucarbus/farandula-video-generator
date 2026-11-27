@@ -36,8 +36,10 @@ async function miradaGemini(buffer) {
   try { fs.writeFileSync(f, buffer); const an = await require('./personas').analizarFoto(f); return an && an.mira || null; } finally { try { fs.unlinkSync(f); } catch { /* nada */ } }
 }
 
-async function elegirFoto(carpeta, { semilla = '', top = 4, asegurar = null, mirada = miradaGemini, ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') } = {}) {
-  const c = candidatos(carpeta).slice(0, top); if (!c.length) return null;
+async function elegirFoto(carpeta, { semilla = '', top = 4, excluir = [], asegurar = null, mirada = miradaGemini, ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') } = {}) {
+  // `excluir`: ids de clips cuyas fotos YA se usaron en la portada del video hermano (el gemelo del otro canal): se evitan para que las dos portadas no sean la misma foto.
+  // Si no queda otra (la carpeta tiene pocos cuadros buenos), se repite en vez de quedarse sin portada.
+  const todos = candidatos(carpeta), libres = todos.filter(x => !excluir.includes(x.clip.id)), c = (libres.length ? libres : todos).slice(0, top); if (!c.length) return null;
   const orden = [...c.slice(hash(semilla) % c.length), ...c.slice(0, hash(semilla) % c.length)]; // empieza por uno distinto según la semilla
   let respaldo = null; // el mejor cuadro aunque no mire al frente, por si ninguno lo hace
   for (const x of orden) {
@@ -57,4 +59,11 @@ async function elegirFoto(carpeta, { semilla = '', top = 4, asegurar = null, mir
   return respaldo;
 }
 
-module.exports = { elegirFoto, candidatos, puntaje };
+// Memoria de las fotos de portada usadas por carpeta (artista): evita repetir la misma foto en videos seguidos de la misma persona.
+// ledger: { "<carpeta>": [{ video, clipId }] } (el más viejo primero). Un video NO se excluye a sí mismo: al re-renderizar conserva su foto.
+const recientes = (ledger, carpeta, video, n = 4) => ((ledger && ledger[carpeta]) || []).filter(x => x.video !== video).slice(-n).map(x => x.clipId);
+function anotarUso(ledger, carpeta, video, clipId, max = 8) {
+  const l = { ...(ledger || {}) }; l[carpeta] = [...(l[carpeta] || []).filter(x => x.video !== video), { video, clipId }].slice(-max); return l;
+}
+
+module.exports = { elegirFoto, candidatos, puntaje, recientes, anotarUso };

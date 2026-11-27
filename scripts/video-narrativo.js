@@ -167,8 +167,12 @@ function sinNegro(ruta, ss) {
   let portadaPng = null;
   if (!process.argv.includes('--sin-portada')) {
     try {
-      const PF = require('../edl/portadaFlujo'), pr = await PF.crear({ g, carpeta, canal: canalPortada, personas: fotosPersonas, estilo, salida, foto: arg('--portada-foto', null) });
-      if (pr) { portadaPng = pr.png; console.log(`PORTADA: "${pr.titular}" (resalte "${pr.resalte}", ${pr.etiqueta}) · foto ${pr.fotoDe} → ${path.relative(RAIZ, pr.jpg)}`); }
+      const PFo = require('../edl/portadaFoto'), FL_PORTADAS = path.join(DM, 'portadas-usadas.json'), nombreVideo = path.basename(path.dirname(arg('--guion', path.join(DM, 'guion-reina.json'))));
+      let ledgerPortadas = {}; try { ledgerPortadas = JSON.parse(fs.readFileSync(FL_PORTADAS, 'utf8')); } catch { /* primera vez */ }
+      const PF = require('../edl/portadaFlujo'), pr = await PF.crear({ g, carpeta, canal: canalPortada, personas: fotosPersonas, estilo, salida, foto: arg('--portada-foto', null), excluir: [...String(arg('--portada-excluir', '')).split(',').filter(Boolean), ...PFo.recientes(ledgerPortadas, carpeta, nombreVideo)] });
+      if (pr && pr.fotoDe && pr.fotoDe !== 'manual') { try { require('../edl/respaldoIndice').escribirSeguro(FL_PORTADAS, PFo.anotarUso(ledgerPortadas, carpeta, nombreVideo, pr.fotoDe)); } catch { /* opcional */ } }
+      if (pr) { try { fs.writeFileSync(path.join(path.dirname(arg('--guion', path.join(DM, 'guion-reina.json'))), 'portada.json'), JSON.stringify({ clipId: pr.fotoDe, titular: pr.titular })); } catch { /* opcional */ }
+        portadaPng = pr.png; console.log(`PORTADA: "${pr.titular}" (resalte "${pr.resalte}", ${pr.etiqueta}) · foto ${pr.fotoDe} → ${path.relative(RAIZ, pr.jpg)}`); }
     } catch (e) { console.log('sin portada:', String(e.message).slice(0, 140)); }
   }
   await renderizar({ portada: portadaPng, duracion: hasta, audio: AUDIO_VIDEO, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: elementos.filter(e => e.t0 < hasta), alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });

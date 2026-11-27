@@ -171,7 +171,15 @@ const log = (...a) => console.log(...a);
   if (fs.existsSync(audio) && fs.existsSync(fPal) && !rehacer) log('Voz ya generada; se reutiliza');
   else { log(`Voz: ${g.script.length} caracteres…`); correr('noticia-voz.js', ['--guion', fGuion, '--audio', audio, '--palabras', fPal]); }
 
-  try { fs.writeFileSync(path.join(DM, 'noticias', nombre, 'render.json'), JSON.stringify({ carpeta, canal, actualizado: new Date().toISOString() }, null, 1)); } catch { /* opcional: sin esto el re-render detecta la carpeta solo */ }
+  // Gemelos: la portada del otro canal NO debe usar la misma foto. `render.json` recuerda de cuál video se hizo el gemelo (`desde`) para que también valga al re-renderizar.
+  const leerJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+  // (los gemelos hechos antes de que se guardara `desde` se reconocen por el nombre: <video>-<clave del canal hermano>)
+  const porNombre = (nombre.match(/^(gestor-.+?)-[a-z0-9]+$/) || [])[1], baseExiste = porNombre && fs.existsSync(path.join(DM, 'noticias', porNombre, 'lectura.json'));
+  const desdeEfectivo = desde || (leerJ(path.join(DM, 'noticias', nombre, 'render.json')) || {}).desde || (baseExiste ? porNombre : null);
+  const hermanos = (() => { try { return fs.readdirSync(path.join(DM, 'noticias')).filter(d => d !== nombre && ((leerJ(path.join(DM, 'noticias', d, 'render.json')) || {}).desde === (desdeEfectivo || nombre) || d === desdeEfectivo || (!desdeEfectivo && d.startsWith(nombre + '-')))); } catch { return []; } })();
+  const excluirPortada = hermanos.map(d => (leerJ(path.join(DM, 'noticias', d, 'portada.json')) || {}).clipId).filter(Boolean);
+  if (excluirPortada.length) log(`Portada: se evita la foto del video hermano (${excluirPortada.join(', ')})`);
+  try { fs.writeFileSync(path.join(DM, 'noticias', nombre, 'render.json'), JSON.stringify({ carpeta, canal, ...(desdeEfectivo ? { desde: desdeEfectivo } : {}), actualizado: new Date().toISOString() }, null, 1)); } catch { /* opcional: sin esto el re-render detecta la carpeta solo */ }
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];
@@ -181,7 +189,7 @@ const log = (...a) => console.log(...a);
     try { const p = require('child_process').spawnSync('python', [path.join(__dirname, 'rostros-clips.py'), carpeta], { stdio: 'inherit', cwd: RAIZ }); if (p.status !== 0) log('(rostros locales no disponibles: se usan los del modelo)'); } catch { log('(sin python: se usan los rostros del modelo)'); }
     try { correr('calidad-clips.js', [carpeta]); } catch (e) { log('(no se pudo medir la calidad: ' + e.message + ')'); } // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
   }
-  correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--canal', canal, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
+  correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--canal', canal, '--sin-muneco', '--salida', salida, ...minimo, ...(excluirPortada.length ? ['--portada-excluir', excluirPortada.join(',')] : []), ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
   // ---- 6) juez: una mirada barata (1 llamada, 1 imagen) a lo que se ve mal. Nunca rompe el flujo; --sin-juez lo salta.
   if (!bandera('--sin-juez') && !process.env.SIN_JUEZ) {
     try { await require('../edl/juezVideo').juzgar({ video: salida, guion: g, dir, minimo: objetivo.id === 'corto' ? 0 : 60, log }); }

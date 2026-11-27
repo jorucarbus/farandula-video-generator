@@ -105,3 +105,28 @@ test('música: las carpetas de Drive (MAYÚSCULAS, tildes, erratas) se cotejan c
   const { tonosDeCarpetas } = require('../lienzo/musicaFondo'), m = tonosDeCarpetas({ 'MISTERIO': 1, 'NEUTRAL': 2, 'ROMÁNTICO': 3, 'ALEGRE': 4, 'ESCÁDALO': 5, 'TENSIÓN': 6, 'TRAGEDIA': 7 });
   assert.deepStrictEqual(m, { tragedia: 7, tension: 6, escandalo: 5, alegre: 4, romantico: 3, misterio: 1, neutral: 2 });
 });
+
+test('portada: elegirFoto evita los clips excluidos (la foto del video hermano) y, si no hay otra, repite en vez de quedarse sin portada', async () => {
+  const fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process'), ffm = require('ffmpeg-static');
+  const dm = fs.mkdtempSync(path.join(os.tmpdir(), 'pf-')), bib = path.join(dm, 'biblioteca'); fs.mkdirSync(bib);
+  const ids = ['a', 'b', 'c'], clips = ids.map(id => ({ id, ruta: path.join(dm, id + '.mp4') }));
+  for (const c of clips) execFileSync(ffm, ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'color=c=gray:s=1080x1920:d=1', '-pix_fmt', 'yuv420p', c.ruta]);
+  const et = Object.fromEntries(ids.map(id => [id, { rostro: { cx: 0.5, cy: 0.3, r: 0.2, t: 0 }, personas: 1, tipo: 'selfie_hablando' }])), cal = Object.fromEntries(ids.map(id => [id, { ancho: 1080, alto: 1920, nitidez: 0.5, apto: true }]));
+  fs.writeFileSync(path.join(bib, 'X.clips.json'), JSON.stringify(clips)); fs.writeFileSync(path.join(bib, 'X.etiquetas.json'), JSON.stringify(et)); fs.writeFileSync(path.join(bib, 'X.calidad.json'), JSON.stringify(cal));
+  const prev = process.env.DATA_MOTOR_DIR; process.env.DATA_MOTOR_DIR = dm; delete require.cache[require.resolve('../edl/portadaFoto')];
+  try {
+    const F = require('../edl/portadaFoto');
+    assert.equal((await F.elegirFoto('X', { semilla: 'cualquiera', excluir: ['a', 'b'], mirada: false })).clipId, 'c');
+    assert.notEqual((await F.elegirFoto('X', { semilla: 's2', excluir: ['a'], mirada: false })).clipId, 'a');
+    assert.ok((await F.elegirFoto('X', { semilla: 's3', excluir: ['a', 'b', 'c'], mirada: false })).clipId, 'si todo está excluido repite, no se queda sin portada');
+  } finally { if (prev === undefined) delete process.env.DATA_MOTOR_DIR; else process.env.DATA_MOTOR_DIR = prev; delete require.cache[require.resolve('../edl/portadaFoto')]; }
+});
+
+test('portada: memoria de fotos usadas por artista; el video no se excluye a sí mismo (al re-renderizar conserva su foto)', () => {
+  const F = require('../edl/portadaFoto'); let l = {};
+  for (const [v, c] of [['v1', 'a'], ['v2', 'b'], ['v3', 'c'], ['v4', 'd'], ['v5', 'e'], ['v6', 'f']]) l = F.anotarUso(l, 'Mara', v, c);
+  assert.deepEqual(F.recientes(l, 'Mara', 'v7', 4), ['c', 'd', 'e', 'f']);
+  assert.ok(!F.recientes(l, 'Mara', 'v6', 4).includes('f')); // v6 re-renderiza: su foto no cuenta como "usada por otro"
+  assert.deepEqual(F.recientes(l, 'Otra', 'v1'), []);
+  l = F.anotarUso(l, 'Mara', 'v6', 'z'); assert.equal(l.Mara.filter(x => x.video === 'v6').length, 1); assert.equal(l.Mara.length <= 8, true);
+});

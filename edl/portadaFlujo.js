@@ -7,10 +7,10 @@ const Foto = require('./portadaFoto');
 const Tit = require('./portadaTitular');
 
 // g: guion.json ({ titulo, descripcion, ...}); personas: [{ nombre, foto, alias }] de edl/personas.prepararPersonas (ya con foto de círculo).
-async function crear({ g, carpeta, canal = '', personas = [], estilo, salida, foto = null, llamarTitular = null }) {
+async function crear({ g, carpeta, canal = '', personas = [], estilo, salida, foto = null, llamarTitular = null, excluir = [] }) {
   let f = null;
   if (foto && fs.existsSync(foto)) f = { buffer: fs.readFileSync(foto), foco: { x: 0.5, y: 0.35 }, clipId: 'manual' };
-  else if (carpeta) f = await Foto.elegirFoto(carpeta, { semilla: (g && g.titulo) || carpeta });
+  else if (carpeta) f = await Foto.elegirFoto(carpeta, { semilla: (g && g.titulo) || carpeta, excluir });
   if (!f) return null;
   const t = await Tit.generar({ titulo: (g && g.titulo) || '', descripcion: (g && g.descripcion) || '', llamar: llamarTitular });
   const protag = String(carpeta || '').toLowerCase().replace(/_/g, ' ');
