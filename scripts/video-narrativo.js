@@ -125,7 +125,7 @@ function sinNegro(ruta, ss) {
   fs.mkdirSync(path.dirname(salida), { recursive: true });
   const ini = Date.now();
   // música de fondo de la biblioteca de Drive (por tono); --sin-musica la quita, --tono fuerza el tono, --semilla cambia de pista
-  let fondo = null; if (!process.argv.includes('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'), tono = arg('--tono', mf.tonoDeGuion(g.script)); fondo = await mf.prepararFondo({ tono, duracion: hasta, jobId: 'motor' + process.pid, semilla: Number(arg('--semilla', 0)) }); console.log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { console.log('sin música de fondo:', e.message.slice(0, 160)); } }
+  let fondo = null; if (!process.argv.includes('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'), tono = arg('--tono', mf.tonoDeGuion(g.script)); fondo = await mf.prepararFondo({ tono, duracion: hasta, jobId: 'motor' + process.pid, semilla: Number(arg('--semilla', 0)) || null, clave: `${g.titulo || ''}|${arg('--canal', '')}` }); console.log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { console.log('sin música de fondo:', e.message.slice(0, 160)); } }
   // Portada 9:16 en el primer cuadro + JPG aparte (--sin-portada la quita). Si algo falla, el video sale igual, sin portada.
   let portadaPng = null;
   if (!process.argv.includes('--sin-portada')) {

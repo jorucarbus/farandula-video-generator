@@ -91,3 +91,12 @@ test('gemelo: título propio distinto al del hermano; rechaza copias y respuesta
   assert.strictEqual(n, 2); assert.strictEqual(r.titulo, 'Reina ecuatoriana atrapada en isla azoreña sin hotel');
   assert.strictEqual(await G.generar({ script: 'x', original: orig, llamar: async () => { throw new Error('sin red'); } }), null);
 });
+
+test('música: la pista rota (evita las últimas usadas) y es estable para la misma clave', () => {
+  const { indiceRotado } = require('../lienzo/musicaFondo'), n = ['a', 'b', 'c', 'd', 'e'];
+  assert.strictEqual(indiceRotado(n, 't', 'video1', {}), indiceRotado(n, 't', 'video1', {}));
+  const vistas = new Set(); let uso = {}; for (let k = 0; k < 5; k++) { const i = indiceRotado(n, 't', 'v' + k, uso); uso = { t: [...(uso.t || []), n[i]] }; vistas.add(n[i]); }
+  assert.ok(vistas.size >= 4, 'no repite la misma pista seguido');
+  for (const r of ['a', 'b', 'c']) assert.notStrictEqual(n[indiceRotado(n, 't', 'x', { t: ['a', 'b', 'c'] })], r);
+  assert.strictEqual(indiceRotado(['sola'], 't', 'x', { t: ['sola'] }), 0);
+});
