@@ -68,3 +68,12 @@ test('personasEnTexto: detecta nombres de carpeta dentro del guion aunque la lec
   assert.deepEqual(r.map(x => x.carpeta).sort(), ['Kike_Jav_Cuy', 'Las_ñañas', 'Nando', 'Vicente_Fernandez']);
   assert.deepEqual(C.personasEnTexto('Kike Jav habló', car, { yaListadas: ['Kike Jav'] }), []);
 });
+
+test('planificar con elegir (Gemini): usa su reparto; si falla, cae a las reglas', async () => {
+  const et = { a: { id: 'a', rostro: { r: 0.2, t: 1 }, personas: 1, duracion: 9, tipo: 'selfie' }, b: { id: 'b', rostro: { r: 0.1, t: 1 }, personas: 1, duracion: 9, tipo: 'baile' } };
+  const base = { beats: [{ frase: 'x' }, { frase: 'Marcela baila' }], personas: [{ nombre: 'Marcela Ruiz' }], protagonista: [], carpetasLocales: ['Marcela_Ruiz'], cargar: () => ({ etiquetas: et }) };
+  const ok = await C.planificar({ ...base, elegir: async () => new Map([[0, { id: 'b', ss: 2, motivo: 'baila' }]]) });
+  assert.equal(ok.elecciones.get(1).id, 'b'); assert.equal(ok.elecciones.get(1).ss, 2);
+  const mal = await C.planificar({ ...base, elegir: async () => { throw new Error('429'); } });
+  assert.equal(mal.elecciones.get(1).id, 'a'); assert.ok(mal.avisos.some(a => /reglas/.test(a)));
+});

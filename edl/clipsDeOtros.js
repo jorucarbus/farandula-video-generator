@@ -76,7 +76,10 @@ function tomasColectivo(etiquetas, { integrantes = 0, duraciones = {}, minDuraci
 // beats: [{frase}]; personas: [{nombre}]; existentes: Map beat(0-based) → elección ya hecha para la protagonista (solo se pisan las 'relacionada': relleno sin dato exacto).
 // Devuelve { elecciones: Map beat → {id, ss, motivo, nivel, persona, carpeta}, rutas: Map id → carpeta, avisos }.
 // cargar(carpeta) → { etiquetas, clips } (inyectable); indexar(carpeta) → Promise (inyectable); carpetasLocales/carpetasDrive: nombres.
-async function planificar({ beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 3, log = () => {} }) {
+// Reparto con Gemini (el mismo elegidor de la protagonista): ve el catálogo de ESA persona/grupo y decide qué toma calza con cada frase donde se la nombra.
+async function elegirConGemini(beatsSub, etiquetas, nombre) { const r = await require('./biblioteca').elegirClips(beatsSub, etiquetas, { protagonista: nombre }); return r.elecciones; }
+
+async function planificar({ elegir = null, beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 3, log = () => {} }) {
   const elecciones = new Map(), carpetaDe = new Map(), avisos = [], usadas = new Set();
   const todas = [...new Set([...carpetasLocales, ...carpetasDrive])];
   for (const p of personas || []) {
@@ -85,8 +88,17 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
     const col = colectivoDe(carpeta, p.nombre), tomas = (col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} })).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
     const frases = [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
+    let porGemini = new Map();
+    if (elegir && frases.length && tomas.length) {
+      try {
+        const catalogo = Object.fromEntries(tomas.slice(0, 40).map(t => [t.id, { ...t, duracion: t.duracion || 3.2 }])), sub = frases.map(i => beats[i]);
+        for (const [j, c] of await elegir(sub, catalogo, p.nombre)) { const t = catalogo[c.id]; if (t && !usadas.has(t.id) && frases[j] !== undefined) porGemini.set(frases[j], { t, ss: c.ss, motivo: c.motivo }); }
+        if (porGemini.size) avisos.push(`${p.nombre}: Gemini repartió ${porGemini.size} toma(s) de ${carpeta}`);
+      } catch (e) { avisos.push(`${p.nombre}: Gemini no pudo repartir (${String(e.message).slice(0, 60)}); se usa el orden por reglas`); }
+    }
     frases.forEach((i, n) => {
-      const t = tomas[n]; if (!t) return; usadas.add(t.id);
+      if (porGemini.has(i)) { const { t, ss, motivo } = porGemini.get(i); usadas.add(t.id); elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `${motivo} (${p.nombre})`, nivel: 'exacta', persona: p.nombre, carpeta }); carpetaDe.set(t.id, carpeta); return; }
+      const t = tomas.find(x => !usadas.has(x.id)); if (!t) return; usadas.add(t.id);
       const ss = Math.max(0, Math.min(((t.rostro && t.rostro.t) || 0.5) - 0.4, (t.duracion || 3.2) - 3.2));
       elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `toma de ${p.nombre} (se la nombra en esta frase)`, nivel: 'exacta', persona: p.nombre, carpeta }); carpetaDe.set(t.id, carpeta);
     });
@@ -95,4 +107,4 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
   return { elecciones, carpetaDe, avisos };
 }
 
-module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, planificar, norm };
+module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, elegirConGemini, planificar, norm };

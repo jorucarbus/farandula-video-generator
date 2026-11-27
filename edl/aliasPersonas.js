@@ -52,4 +52,23 @@ function personasEnTexto(texto, carpetas, reg = cargar()) {
   return [...out.values()];
 }
 
-module.exports = { cargar, guardar, registrar, resolver, personasEnTexto, buscarNombresWeb, ARCHIVO };
+// Respaldo en Drive (cache-estado/alias-personas.json) con FUSIÓN: lo aprendido en otra PC se suma, nunca se pierde nada. Lo manual local gana en un choque.
+const NOMBRE_REMOTO = 'alias-personas.json';
+async function sincronizar({ archivo = ARCHIVO, log = () => {} } = {}) {
+  if (process.env.RESPALDO_DRIVE === '0') return { subido: false, traidos: 0 };
+  try {
+    const dc = require('../driveCache'), local = cargar(archivo); let traidos = 0;
+    const info = await dc.infoRemota(NOMBRE_REMOTO);
+    if (info && info.id) {
+      const rem = JSON.parse(await dc.leerRemoto(info.id));
+      for (const sec of ['alias', 'sinCarpeta']) for (const [k, v] of Object.entries(rem[sec] || {})) if (!(k in local[sec])) { local[sec][k] = v; traidos++; }
+      for (const k of Object.keys(local.alias)) delete local.sinCarpeta[k];
+    }
+    if (traidos) guardar(local, archivo);
+    if (!Object.keys(local.alias).length && !Object.keys(local.sinCarpeta).length) return { subido: false, traidos }; // nunca se sube vacío
+    await dc.respaldar(archivo, NOMBRE_REMOTO); log(`alias respaldados en Drive (${Object.keys(local.alias).length})`);
+    return { subido: true, traidos };
+  } catch (e) { log('alias: no pude sincronizar con Drive (' + String(e.message).slice(0, 80) + ')'); return { subido: false, traidos: 0 }; }
+}
+
+module.exports = { sincronizar, cargar, guardar, registrar, resolver, personasEnTexto, buscarNombresWeb, ARCHIVO };
