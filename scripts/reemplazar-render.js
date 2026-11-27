@@ -5,7 +5,10 @@ const R = path.join(__dirname, '..', 'data-motor', 'renders');
 function reemplazar(n, dir = R) {
   const nuevo = path.join(dir, `${n}.rerender.mp4`), actual = path.join(dir, `${n}.mp4`);
   if (!fs.existsSync(nuevo) || fs.statSync(nuevo).size < 50000) throw new Error('el video nuevo no se generó (o salió vacío); el anterior queda intacto');
-  if (fs.existsSync(actual)) fs.renameSync(actual, path.join(dir, `${n}.anterior.mp4`));
+  if (fs.existsSync(actual)) { // en Windows, renombrar ENCIMA de un archivo abierto por otro programa (visor, antivirus) da EPERM: se libera el destino o se usa otro nombre
+    const ant = path.join(dir, `${n}.anterior.mp4`);
+    try { fs.rmSync(ant, { force: true }); fs.renameSync(actual, ant); } catch { fs.renameSync(actual, path.join(dir, `${n}.anterior-${Date.now()}.mp4`)); }
+  }
   fs.renameSync(nuevo, actual);
   for (const ext of ['portada.jpg', 'portada.png']) { const o = path.join(dir, `${n}.rerender.${ext}`); if (fs.existsSync(o)) fs.renameSync(o, path.join(dir, `${n}.${ext}`)); }
   return actual;
