@@ -45,3 +45,10 @@ test('planificar: una carpeta de Drive sin índice se indexa una vez; si no hay 
   const falla = await C.planificar({ beats, personas: [{ nombre: 'Conny Garcés' }], carpetasDrive: ['Conny_Garces'], cargar: () => ({ etiquetas: {} }), indexar: async () => { throw new Error('sin red'); } });
   assert.equal(falla.elecciones.size, 0); assert.ok(falla.avisos.some(a => /no pude indexar/.test(a)));
 });
+
+test('tomasPosibles: un grupo sin tomas "solo ella" igual aporta sus videos (duración desde clips.json)', () => {
+  const et = { g1: { id: 'g1', tipo: 'desfile', personas: 6, rostro: { r: 0.2 } }, g2: { id: 'g2', tipo: 'otro', personas: 1 }, g3: { id: 'g3', tipo: 'selfie_hablando', personas: 2, rostro: { r: 0.15 }, duracion: 8 } };
+  assert.equal(C.tomasAptas(et).length, 0);
+  assert.deepEqual(C.tomasPosibles(et, { duraciones: { g1: 10, g2: 12 } }).map(t => t.id), ['g3', 'g1', 'g2']);
+  assert.deepEqual(C.tomasPosibles(et, { duraciones: {} }).map(t => t.id), ['g3']);
+});

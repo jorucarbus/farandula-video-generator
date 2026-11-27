@@ -27,6 +27,17 @@ function tomasAptas(etiquetas, { minDuracion = 3 } = {}) {
     .sort((a, b) => (b.tipo !== 'otro') - (a.tipo !== 'otro') || (b.rostro.r || 0) - (a.rostro.r || 0));
 }
 
+// Si la persona es un GRUPO (Las Ñañas: 2 a 6 por toma) o no hay tomas "solo ella con rostro grande", igual se usan sus videos: prioridad a lo que se nombra, y solo
+// se omite cuando no hay nada. Orden: aptas estrictas, luego con rostro y menos gente, luego el resto. `duraciones`: id → segundos (las etiquetas viejas no la traen).
+function tomasPosibles(etiquetas, { minDuracion = 3, duraciones = {} } = {}) {
+  const dur = t => t.duracion || duraciones[t.id] || 0, estrictas = tomasAptas(Object.fromEntries(Object.entries(etiquetas || {}).map(([k, t]) => [k, { ...t, duracion: dur(t) }])), { minDuracion });
+  const ids = new Set(estrictas.map(t => t.id));
+  const resto = Object.values(etiquetas || {}).filter(t => t && !ids.has(t.id) && dur(t) >= minDuracion)
+    .map(t => ({ ...t, duracion: dur(t) }))
+    .sort((a, b) => (!!b.rostro - !!a.rostro) || ((a.tipo === 'otro') - (b.tipo === 'otro')) || ((a.personas || 1) - (b.personas || 1)));
+  return [...estrictas, ...resto];
+}
+
 // beats: [{frase}]; personas: [{nombre}]; existentes: Map beat(0-based) → elección ya hecha para la protagonista (solo se pisan las 'relacionada': relleno sin dato exacto).
 // Devuelve { elecciones: Map beat → {id, ss, motivo, nivel, persona, carpeta}, rutas: Map id → carpeta, avisos }.
 // cargar(carpeta) → { etiquetas, clips } (inyectable); indexar(carpeta) → Promise (inyectable); carpetasLocales/carpetasDrive: nombres.
@@ -37,11 +48,11 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
     const carpeta = buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta) continue;
     let datos = cargar(carpeta);
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
-    const tomas = tomasAptas(datos.etiquetas).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(`${p.nombre}: la carpeta ${carpeta} no tiene tomas aptas con su rostro`); continue; }
+    const tomas = tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} }).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(`${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
     const frases = frasesQueLaNombran(beats, p.nombre).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
     frases.forEach((i, n) => {
       const t = tomas[n]; if (!t) return; usadas.add(t.id);
-      const ss = Math.max(0, Math.min((t.rostro.t || 0) - 0.4, (t.duracion || 3.2) - 3.2));
+      const ss = Math.max(0, Math.min(((t.rostro && t.rostro.t) || 0.5) - 0.4, (t.duracion || 3.2) - 3.2));
       elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `toma de ${p.nombre} (se la nombra en esta frase)`, nivel: 'exacta', persona: p.nombre, carpeta }); carpetaDe.set(t.id, carpeta);
     });
     if (frases.length) avisos.push(`${p.nombre}: ${Math.min(frases.length, tomas.length)} toma(s) de su carpeta ${carpeta}`);
@@ -49,4 +60,4 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
   return { elecciones, carpetaDe, avisos };
 }
 
-module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, planificar, norm };
+module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, planificar, norm };

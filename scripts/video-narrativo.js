@@ -76,7 +76,7 @@ function sinNegro(ruta, ss) {
       const CO = require('../edl/clipsDeOtros'), leerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
       let mapaDrive = {}; try { mapaDrive = process.env.RESPALDO_DRIVE === '0' ? {} : await require('../drive').obtenerCarpetasFamosos(); } catch { /* sin Drive: solo carpetas locales */ }
       const locales = fs.readdirSync(RAIZ).filter(f => f.endsWith('.etiquetas.json')).map(f => f.replace(/\.etiquetas\.json$/, ''));
-      const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; return { etiquetas: et }; };
+      const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; const duraciones = {}; for (const x of leerJ(path.join(RAIZ, `${c}.clips.json`), [])) if (x && x.duracion) duraciones[x.id] = x.duracion; return { etiquetas: et, duraciones }; };
       const indexar = async c => { require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), c], { stdio: 'inherit' }); };
       const otros = await CO.planificar({ beats: g.beats, personas: g.personas, protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
       const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
@@ -87,7 +87,7 @@ function sinNegro(ruta, ss) {
         for (const id of ids) {
           const beat = [...otros.elecciones].find(([, v]) => v.id === id)[0];
           if (!ruta[id] || !fs.existsSync(ruta[id])) { otros.elecciones.delete(beat); continue; }
-          cfgClips[id] = { ruta: ruta[id], ...dimensiones(ruta[id]), rostro: et[id].rostro, duracion: et[id].duracion, caras: ros[id] ? ros[id].cuadros : null };
+          cfgClips[id] = { ruta: ruta[id], ...dimensiones(ruta[id]), rostro: et[id].rostro, duracion: et[id].duracion || (clipsC.find(x => x.id === id) || {}).duracion, caras: ros[id] ? ros[id].cuadros : null };
         }
       }
       for (const [i, c] of otros.elecciones) { elecciones.set(i, c); console.log(`  [otra persona] frase ${i + 1} ← ${c.persona}: ${c.motivo}`); }
