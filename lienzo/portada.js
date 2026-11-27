@@ -78,7 +78,7 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   const margen = Math.round(w * 0.075), anchoTexto = w - margen * 2 - Math.round(w * 0.03);
   const palabras = marcarResalte(String(titular || '').toUpperCase().replace(/\s+/g, ' '), String(resalte || '').toUpperCase());
   const { tam, lineas, espacio } = ajustarTitular(ctx, palabras, { ancho: anchoTexto, maxLineas: 4, tamMax: 122, tamMin: 80, fuente: FUENTE }); // 4 líneas como mucho: el texto queda en el 45 % de abajo y deja libre la cara
-  const interlinea = tam * 0.98, altoTexto = lineas.length * interlinea, finTexto = h * 0.82, inicioTexto = finTexto - altoTexto;
+  const interlinea = tam * 0.98, altoTexto = lineas.length * interlinea, finTexto = h * 0.875, inicioTexto = finTexto - altoTexto;
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   lineas.forEach((ln, i) => {
     let x = margen; const y = inicioTexto + (i + 1) * interlinea - interlinea * 0.12;
@@ -92,7 +92,7 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   // 4) logo del canal: solo, abajo y centrado (no toca letras ni cara)
   const logo = pal.logo ? await cargar(path.join(MARCAS_DIR, pal.logo)) : null;
   if (logo) {
-    const rL = u * 0.078, cx = w / 2, cy = h * 0.915; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rL + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
+    const rL = u * 0.07, cx = w / 2, cy = h * 0.945; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rL + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rL, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = pal.fondoLogo; ctx.fillRect(cx - rL, cy - rL, rL * 2, rL * 2);
     const lado = Math.min(logo.width, logo.height), esc = (rL * 2) / lado; ctx.drawImage(logo, cx - (logo.width * esc) / 2, cy - (logo.height * esc) / 2, logo.width * esc, logo.height * esc); ctx.restore();
   }
@@ -102,7 +102,10 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   if (imOtro) {
     const R = u * 0.115, cx = margen + R + 7, cy = inicioTexto - R - u * 0.025;
     ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(cx, cy, R + 7, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
-    B.retratoCircular(ctx, imOtro, cx, cy, R, { u: R * 6 });
+    if (otro.lado === 'der') { // preparado para el lado derecho (mira hacia la izquierda): aquí va a la izquierda, así que se espeja para que mire hacia adentro
+      const c = createCanvas(imOtro.width, imOtro.height), x = c.getContext('2d'); x.translate(imOtro.width, 0); x.scale(-1, 1); x.drawImage(imOtro, 0, 0);
+      B.retratoCircular(ctx, c, cx, cy, R, { u: R * 6 });
+    } else B.retratoCircular(ctx, imOtro, cx, cy, R, { u: R * 6 });
   }
   return canvas.toBuffer('image/png');
 }

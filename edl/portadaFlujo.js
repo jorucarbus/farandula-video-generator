@@ -14,7 +14,7 @@ async function crear({ g, carpeta, canal = '', personas = [], estilo, salida, fo
   if (!f) return null;
   const t = await Tit.generar({ titulo: (g && g.titulo) || '', descripcion: (g && g.descripcion) || '', llamar: llamarTitular });
   const protag = String(carpeta || '').toLowerCase().replace(/_/g, ' ');
-  const otros = (personas || []).filter(p => p && p.foto && !String(p.nombre || '').toLowerCase().split(' ').some(w => w.length >= 4 && protag.includes(w))).slice(0, 3).map(p => ({ foto: p.foto, nombre: p.nombre }));
+  const otros = (personas || []).filter(p => p && p.foto && !String(p.nombre || '').toLowerCase().split(' ').some(w => w.length >= 4 && protag.includes(w))).slice(0, 3).map(p => ({ foto: p.foto, nombre: p.nombre, lado: p.lado }));
   const buf = await dibujarPortada({ foto: f.buffer, foco: f.foco, titular: t.titular, resalte: t.resalte, etiqueta: '', canal, circulos: otros, estilo });
   const base = salida.replace(/\.mp4$/i, '') + '.portada', png = base + '.png', jpg = base + '.jpg';
   fs.mkdirSync(path.dirname(png), { recursive: true }); fs.writeFileSync(png, buf);

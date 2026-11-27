@@ -56,3 +56,16 @@ test('dibujarPortada devuelve un PNG 1080x1920 aun sin foto ni logo', async () =
   assert.strictEqual(png.slice(1, 4).toString(), 'PNG');
   const { loadImage } = require('@napi-rs/canvas'); const im = await loadImage(png); assert.deepStrictEqual([im.width, im.height], [1080, 1920]);
 });
+
+test('foto de portada: prefiere el cuadro que mira al frente; si ninguno lo hace, usa el mejor', async () => {
+  const fsx = require('fs'), os = require('os'), pathx = require('path'), dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'pf-')), biblio = pathx.join(dir, 'biblioteca'); fsx.mkdirSync(biblio);
+  process.env.DATA_MOTOR_DIR = dir; const orig = require('child_process').execFileSync; require('child_process').execFileSync = () => Buffer.from('png'); delete require.cache[require.resolve('../edl/portadaFoto')]; const F = require('../edl/portadaFoto');
+  const clips = [1, 2, 3].map(i => ({ id: 'c' + i, ruta: pathx.join(dir, `c${i}.mp4`) })); clips.forEach(c => fsx.writeFileSync(c.ruta, 'x'));
+  const et = {}, cal = {}; clips.forEach((c, i) => { et[c.id] = { rostro: { r: 0.2, cy: 0.35, cx: 0.5, t: 0 }, personas: 1, tipo: 'selfie_hablando' }; cal[c.id] = { ancho: 1080, alto: 1920, apto: true, nitidez: 0.4 - i * 0.05 }; });
+  fsx.writeFileSync(pathx.join(biblio, 'X.clips.json'), JSON.stringify(clips)); fsx.writeFileSync(pathx.join(biblio, 'X.etiquetas.json'), JSON.stringify(et)); fsx.writeFileSync(pathx.join(biblio, 'X.calidad.json'), JSON.stringify(cal));
+  try {
+    const orden = []; const r1 = await F.elegirFoto('X', { semilla: '', mirada: async () => { orden.push(1); return orden.length < 3 ? 'izquierda' : 'frente'; } });
+    assert.strictEqual(r1.mira, 'frente'); assert.strictEqual(orden.length, 3);
+    const r2 = await F.elegirFoto('X', { semilla: '', mirada: async () => 'derecha' }); assert.strictEqual(r2.mira, 'derecha'); assert.ok(r2.clipId);
+  } finally { require('child_process').execFileSync = orig; delete process.env.DATA_MOTOR_DIR; delete require.cache[require.resolve('../edl/portadaFoto')]; }
+});
