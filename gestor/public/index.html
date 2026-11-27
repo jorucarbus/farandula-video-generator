@@ -284,6 +284,10 @@ function juicioChip(j) {
   const detalle = (j.resumen ? j.resumen + '\n' : '') + j.problemas.map(p => `• [${p.gravedad}]${p.t !== null ? ' ~' + p.t + 's' : ''} ${p.que}${p.mejora ? ' → ' + p.mejora : ''}`).join('\n');
   return el('div', { className: 'chip ' + color, style: 'margin:3px 0;cursor:help;white-space:normal', title: detalle || 'Sin problemas visibles' }, `Juez ${j.puntaje === null ? '—' : j.puntaje + '/10'}${graves ? ` · ${graves} grave(s)` : (j.problemas.length ? ` · ${j.problemas.length} detalle(s)` : ' · limpio')}`);
 }
+async function anotarVistas(v) {
+  const t = prompt(`¿Cuántas vistas tiene "${v.titulo || v.nombre}"?\n\nLos que pasan de 100 mil (★) se usan como referencia para juzgar y mejorar los guiones.`, v.vistas === null ? '' : String(v.vistas)); if (t === null || !t.trim()) return;
+  try { await api('/api/vistas', { nombre: v.nombre, vistas: t }); cargarVideos(); } catch (e) { alert('No se pudo: ' + e.message); }
+}
 async function cargarVideos() {
   const l = await api('/api/renders'), sub = $('#subVideos'), cont = $('#gridVideos'); cont.replaceChildren(); sub.replaceChildren();
   const por = l.filter(v => !v.publicado), pub = l.filter(v => v.publicado);
@@ -297,6 +301,7 @@ async function cargarVideos() {
       el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
       el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), v.juicio ? juicioChip(v.juicio) : '', el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
         el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }),
+        el('button', { className: 'b', style: 'margin-top:4px;width:100%', title: 'Anota cuántas vistas tuvo: los que pasan de 100 mil sirven de referencia para mejorar guiones y planes', textContent: v.vistas === null ? '👁 Anotar vistas' : `👁 ${v.vistas.toLocaleString()} vistas${v.vistas >= 100000 ? ' ★' : ''}`, onclick: () => anotarVistas(v) }),
         el('button', { className: 'b', style: 'margin-top:4px;width:100%', title: 'Vuelve a armar el video con el código actual, reutilizando guion y voz (no gasta ElevenLabs)', textContent: '↻ Volver a renderizar', onclick: () => rehacerVideo(v) }))));
   }
 }

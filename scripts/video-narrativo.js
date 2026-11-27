@@ -97,6 +97,17 @@ function sinNegro(ruta, ss) {
   const SIN_MUNECO = process.argv.includes('--sin-muneco'); // sin personajes: tomas reales + motion graphics
   const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: SIN_MUNECO }), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones, sinMuneco: SIN_MUNECO });
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
+  // REVISOR DEL PLAN (una llamada de texto, barata): verifica que lo visual acompañe lo narrado y mejora lo técnico. Sus cambios pasan por los validadores; --sin-revisor lo salta.
+  let revisionPlan = null;
+  if (!process.argv.includes('--sin-llm') && !process.argv.includes('--sin-revisor')) {
+    try {
+      const refs = require('../edl/exitos').referencias(DM, { canal: g.canal || '' });
+      revisionPlan = await require('../edl/revisorPlan').revisarPlan({ beats: g.beats, hechos: g.hechos, clips: elecciones, escenas: dir.escenas, referencias: refs });
+      dir.escenas = revisionPlan.escenas;
+      console.log(`REVISOR: ${revisionPlan.aplicados.length} cambio(s)${refs ? ' (con referencias de videos exitosos)' : ''}${revisionPlan.avisos.length ? ' · ' + revisionPlan.avisos.join(' | ') : ''}`);
+      revisionPlan.aplicados.forEach(c => console.log(`  frase ${c.beat}: ${c.de} -> ${c.a} · ${c.motivo}`));
+    } catch (e) { console.log('(el revisor del plan no pudo correr: ' + String(e.message).slice(0, 100) + ')'); }
+  }
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   // fotos de las otras personas nombradas (círculos flotantes); --sin-personas las quita
   if (!process.argv.includes('--sin-personas')) {
@@ -120,6 +131,8 @@ function sinNegro(ruta, ss) {
     } catch (e) { console.log('sin fotos de personas:', e.message.slice(0, 140)); }
   }
   const errores = validarDireccion(dir.escenas, g.beats, g.hechos, elecciones); if (errores.length) throw new Error('dirección inválida: ' + errores.join('; '));
+  // El plan final (con lo que cambió el revisor) queda junto al guion: sirve para comparar después qué secuencias visuales funcionan (ver edl/exitos.js).
+  try { fs.writeFileSync(path.join(path.dirname(arg('--guion', path.join(DM, 'guion-reina.json'))), 'plan.json'), JSON.stringify({ escenas: dir.escenas.map(({ beat, principal, extras }) => ({ beat, principal, extras: (extras || []).map(x => x.tipo) })), origen: dir.origen, revisor: revisionPlan ? { aplicados: revisionPlan.aplicados, descartados: revisionPlan.descartados } : null, fecha: new Date().toISOString() }, null, 1)); } catch { /* opcional */ }
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
   const cand = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id])) : []; await hidratar(cand.slice(0, 16)); // solo se bajan los 16 mejores candidatos de relleno

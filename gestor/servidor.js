@@ -243,9 +243,10 @@ const leerPublicados = () => { try { return JSON.parse(fs.readFileSync(F_PUBLICA
 app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []); const est = leerPublicados();
   const guion = n => { try { return JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'guion.json'), 'utf8')); } catch { return null; } };
+  const vistasTodas = require('../edl/exitos').leerVistas(G.DM);
   const juicio = n => { try { const j = JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'juicio.json'), 'utf8')); return { puntaje: j.puntaje, resumen: j.resumen || '', problemas: (j.problemas || []).slice(0, 8) }; } catch { return null; } };
   ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/\.(anterior|rerender)\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
-    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', juicio: juicio(f), publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
+    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', juicio: juicio(f), vistas: (vistasTodas[f] || {}).vistas ?? null, publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
 });
 // Volver a renderizar un video que ya existe, con el código actual: reutiliza lectura, guion y voz (no gasta ElevenLabs ni vuelve a leer la noticia).
 // Renderiza a un archivo aparte y SOLO si termina bien reemplaza el video (si falla, el anterior queda intacto). Subir a Drive es opcional.
@@ -265,6 +266,15 @@ app.post('/api/rerender', (req, res) => {
       ...(subir ? [{ ...node('publicar-en-drive.js', n, '--canal', ficha.nombre, '--forzar'), opcional: true, titulo: `Subir a Drive: para publicar / ${ficha.nombre} (copia nueva; la anterior no se borra)` }] : []),
     ];
     ok(res, { id: encolar(`Rehacer: ${g.titulo || n}${subir ? ' + subir a Drive' : ''}`, pasos).id, carpeta });
+  } catch (e) { mal(res, e); }
+});
+// Vistas de un video publicado (las anota el usuario). Los que pasan de 100 mil sirven de referencia para juzgar guiones y planes (edl/exitos.js).
+app.post('/api/vistas', (req, res) => {
+  try {
+    const { nombre, vistas } = req.body || {}; const n = path.basename(String(nombre || '')); if (!/^[\w.-]+\.mp4$/i.test(n) || !fs.existsSync(path.join(G.DM, 'renders', n))) throw new Error('video desconocido');
+    const v = Number(String(vistas).replace(/[\s.,]/g, '')); if (!Number.isFinite(v) || v < 0 || v > 1e10) throw new Error('escribe un número de vistas (ej. 125000)');
+    const EX = require('../edl/exitos'), todas = EX.leerVistas(G.DM); todas[n] = { vistas: Math.round(v), fecha: new Date().toISOString() };
+    require('../edl/respaldoIndice').escribirSeguro(EX.archivoVistas(G.DM), todas); ok(res, { ...todas[n], exito: todas[n].vistas >= EX.UMBRAL });
   } catch (e) { mal(res, e); }
 });
 app.post('/api/render-publicado', (req, res) => {

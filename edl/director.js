@@ -306,4 +306,4 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
   return { escenas, origen: 'respaldo', avisos };
 }
 
-module.exports = { resolverPunto, rutaDeFrase, lugaresEnFrase, CIUDADES, PAISES, GESTOS, quitarMuneco, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
+module.exports = { PROMPT_SIN_MUNECO, resolverPunto, rutaDeFrase, lugaresEnFrase, CIUDADES, PAISES, GESTOS, quitarMuneco, normalizarEscena, dirigir, directorPorReglas, validarDireccion, validarEscena, nombreDePieza, LUGARES, PRINCIPALES, POSES, EMOCIONES, TRAJES, ACCESORIOS, PEGATINAS, ESCENARIOS, MAX_EXTRAS, normalizar, tokens };
