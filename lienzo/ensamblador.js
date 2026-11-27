@@ -88,7 +88,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       const ta = Math.max(0, tPal(k, c.ancla) - 0.3); elementos.push(E.cita({ texto: c.texto.trim(), autor: c.autor || '', palabras: tp, cy: M ? 0.80 : 0.5, t0: ta, t1 })); card([ta, t1]); marca(k, c.ancla); zoomsT.push(tPal(k, c.ancla));
     }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
-      const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
+      const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, items[0].t - 0.3); // aparece justo antes del primer elemento (antes salía hasta 1.2 s tras el inicio de la frase y quedaba vacía varios segundos)
       elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.83 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
       marca(k, e.lista.items[0].ancla);
     }
