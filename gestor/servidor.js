@@ -127,19 +127,23 @@ app.post('/api/preparar', (req, res) => {
 // Crear video desde un link: uno solo o con su gemelo (canal hermano). Usa la tubería automática (Gemini + voz ElevenLabs).
 app.post('/api/crear-video', async (req, res) => {
   try {
-    const { link, canal, carpeta, gemelo } = req.body || {};
-    if (!/^https?:\/\/\S+$/i.test(link || '')) throw new Error('el link debe empezar con http:// o https://');
+    const { link, canal, carpeta, gemelo, fuentes: fuentesTexto, instruccion, web } = req.body || {};
+    // Varias fuentes en una caja (links uno por línea y/o texto pegado). "link" suelto sigue valiendo (compatibilidad).
+    const FM = require('../edl/fuentesMultiples'), fuentes = FM.parsearFuentes(fuentesTexto || link || '');
+    if (!fuentes.length) throw new Error('pon al menos una fuente: un link que empiece con http:// o https://, o pega el texto de la noticia (mínimo una línea de 20 letras)');
     // carpeta: 'auto' (se detecta desde la noticia leyendo las carpetas de Drive) o cualquier carpeta de Drive / de la biblioteca
     if (carpeta !== 'auto') { const mapa = await carpetasDrive(false).catch(() => ({})); if (!carpetaValida(carpeta) || !(G.carpetasBiblioteca().includes(carpeta) || mapa[carpeta])) throw new Error('esa carpeta no existe en Drive ni en la biblioteca; elige otra o usa la detección automática'); }
     const ficha = canales.obtener(canal); if (!ficha) throw new Error('canal desconocido');
     const nombre = `gestor-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
-    const render = (n, c, ...extra) => node('noticia-a-video.js', ...extra, '--canal', c.nombre, '--carpeta', carpeta, '--nombre', n, ...(n === nombre ? [] : ['--desde', nombre]), '--salida', path.join(G.DM, 'renders', `${n}.mp4`));
+    const tmpP = path.join(G.DM, 'tmp'); fs.mkdirSync(tmpP, { recursive: true }); const fPedido = path.join(tmpP, `pedido-${nombre}.json`);
+    fs.writeFileSync(fPedido, JSON.stringify({ fuentes, instruccion: String(instruccion || '').slice(0, 400), web: Boolean(web) }));
+    const render = (n, c, ...extra) => node('noticia-a-video.js', ...extra, '--fuentes-json', fPedido, '--canal', c.nombre, '--carpeta', carpeta, '--nombre', n, ...(n === nombre ? [] : ['--desde', nombre]), '--salida', path.join(G.DM, 'renders', `${n}.mp4`));
     // al final de cada video se sube a Drive: "para publicar" / subcarpeta de su canal (paso opcional: si falla, el video queda local y se reintenta con scripts/publicar-en-drive.js)
     const subir = (n, c) => ({ ...node('publicar-en-drive.js', n, '--canal', c.nombre), opcional: true, titulo: `Subir a Drive: para publicar / ${c.nombre}` });
-    const pasos = [render(nombre, ficha, link)], subidas = [subir(nombre, ficha)];
+    const pasos = [render(nombre, ficha)], subidas = [subir(nombre, ficha)];
     if (gemelo) { const h = canales.hermanoDe(canal); if (!h) throw new Error(`"${ficha.nombre}" no tiene canal hermano en canales.json`); const n2 = `${nombre}-${h.clave}`; pasos.push(render(n2, h)); subidas.push(subir(n2, h)); }
     pasos.push(...subidas);
-    ok(res, { id: encolar(`Video: ${ficha.nombre}${gemelo ? ' + gemelo' : ''} · ${link.slice(0, 60)}`, pasos).id, salidas: [`${nombre}.mp4`].concat(gemelo ? [`${nombre}-${canales.hermanoDe(canal).clave}.mp4`] : []) });
+    ok(res, { id: encolar(`Video: ${ficha.nombre}${gemelo ? ' + gemelo' : ''} · ${FM.etiquetaDe(fuentes[0])}${fuentes.length > 1 ? ` (+${fuentes.length - 1} fuente(s))` : ''}${web ? ' · con contexto web' : ''}`, pasos).id, salidas: [`${nombre}.mp4`].concat(gemelo ? [`${nombre}-${canales.hermanoDe(canal).clave}.mp4`] : []) });
   } catch (e) { mal(res, e); }
 });
 
@@ -239,8 +243,9 @@ const leerPublicados = () => { try { return JSON.parse(fs.readFileSync(F_PUBLICA
 app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []); const est = leerPublicados();
   const guion = n => { try { return JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'guion.json'), 'utf8')); } catch { return null; } };
+  const juicio = n => { try { const j = JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'juicio.json'), 'utf8')); return { puntaje: j.puntaje, resumen: j.resumen || '', problemas: (j.problemas || []).slice(0, 8) }; } catch { return null; } };
   ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/\.(anterior|rerender)\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
-    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
+    return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', juicio: juicio(f), publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
 });
 // Volver a renderizar un video que ya existe, con el código actual: reutiliza lectura, guion y voz (no gasta ElevenLabs ni vuelve a leer la noticia).
 // Renderiza a un archivo aparte y SOLO si termina bien reemplaza el video (si falla, el anterior queda intacto). Subir a Drive es opcional.

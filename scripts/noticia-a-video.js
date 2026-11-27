@@ -42,18 +42,30 @@ const log = (...a) => console.log(...a);
   if (ficha) log(`Ficha de canal: ${ficha.nombre}${ficha.sesgo ? ' (con sesgo propio)' : ''}${ficha.vozId ? ' (voz propia)' : ''}`);
   let lectura = carpetaTmp && fs.existsSync(path.join(carpetaTmp, 'lectura.json')) && (!rehacer || desde) ? JSON.parse(fs.readFileSync(path.join(carpetaTmp, 'lectura.json'), 'utf8')) : null;
 
+  // El pedido de la interfaz: varias fuentes (links y/o texto), indicaciones propias y si se busca contexto en internet. Sin esto, todo funciona como antes.
+  const pedido = arg('--fuentes-json', null) ? JSON.parse(fs.readFileSync(arg('--fuentes-json'), 'utf8')) : {};
+  const instruccionUsuario = require('../instruccion').normalizar(pedido.instruccion || arg('--instruccion', ''));
+  if (instruccionUsuario) log(`Indicaciones del usuario: "${instruccionUsuario}"`);
   // ---- 2) lectura + crónica (la parte que más tokens gastaba escribiéndola a mano)
   if (!lectura) {
-    let tipo, contenido;
-    if (arg('--texto', null)) { tipo = 'texto'; contenido = arg('--texto'); }
-    else if (arg('--archivo', null)) { tipo = 'texto'; contenido = fs.readFileSync(arg('--archivo'), 'utf8'); }
-    else if (link) { tipo = 'link'; contenido = link; }
-    else throw new Error('Falta la noticia: un link, --texto o --archivo');
-    log('Leyendo la fuente…');
-    const { extraerActaDeFuente } = require('../lecturaFuente');
-    const { acta, tipoReal } = await extraerActaDeFuente(tipo, contenido.trim());
-    const cr = await gemini.sintetizarCronica([acta], 'neutral');
-    lectura = { fuente: tipo === 'link' ? contenido : '(texto)', tipoReal, acta, cronica: cr };
+    const FM = require('../edl/fuentesMultiples');
+    let lista = Array.isArray(pedido.fuentes) && pedido.fuentes.length ? pedido.fuentes : null;
+    if (!lista) {
+      if (arg('--texto', null)) lista = [{ tipo: 'texto', contenido: arg('--texto') }];
+      else if (arg('--archivo', null)) lista = [{ tipo: 'texto', contenido: fs.readFileSync(arg('--archivo'), 'utf8') }];
+      else if (link) lista = [{ tipo: 'link', contenido: link }];
+      else throw new Error('Falta la noticia: un link, --texto o --archivo');
+    }
+    log(`Leyendo ${lista.length} fuente(s)…`);
+    const { extraerActaDeFuente } = require('../lecturaFuente'), actas = [], tipos = [];
+    for (const f of lista) {
+      try { const r = await extraerActaDeFuente(f.tipo, String(f.contenido).trim()); actas.push(r.acta); tipos.push(r.tipoReal); log(`  fuente leída: ${FM.etiquetaDe(f)} (${r.tipoReal})`); }
+      catch (e) { if (lista.length === 1) throw e; log(`  fuente descartada (${FM.etiquetaDe(f)}): ${String(e.message).slice(0, 100)}`); }
+    }
+    if (!actas.length) throw new Error('No se pudo leer ninguna de las fuentes');
+    const acta = FM.unirActas(actas), tipoReal = tipos.join('+');
+    const cr = await gemini.sintetizarCronica(actas, 'neutral', '', instruccionUsuario);
+    lectura = { fuente: lista.map(f => f.tipo === 'link' ? f.contenido : '(texto)').join(' | '), tipoReal, acta, cronica: cr, ...(instruccionUsuario ? { instruccion: instruccionUsuario } : {}) };
     nombre = nombre || normalizar(cr.titulo || 'noticia').slice(0, 40);
     fs.mkdirSync(path.join(DM, 'noticias', nombre), { recursive: true });
     fs.writeFileSync(path.join(DM, 'noticias', nombre, 'lectura.json'), JSON.stringify(lectura, null, 1));
@@ -66,9 +78,21 @@ const log = (...a) => console.log(...a);
   let g = fs.existsSync(fGuion) && !rehacer ? JSON.parse(fs.readFileSync(fGuion, 'utf8')) : null;
   if (!g) {
     // 3a) los DATOS de la noticia (acta + crónica): la verdad contra la que se mide el guion
-    const pauta = require('../edl/pautaGuion'), base = `${lectura.acta.hechos}\n\n${cronica}`;
+    const pauta = require('../edl/pautaGuion'); let base = `${lectura.acta.hechos}\n\n${cronica}`;
     if (!lectura.hechos) { lectura.hechos = await pauta.extraerHechos(base); fs.writeFileSync(path.join(dir, 'lectura.json'), JSON.stringify(lectura, null, 1)); }
     log(`Datos de la noticia: ${lectura.hechos.length}`);
+    // 3a-bis) contexto de internet (solo si se pidió): hechos con fuente citada; los sensibles quedan apartados para decisión humana (no entran al guion)
+    if ((pedido.web || bandera('--web')) && !lectura.contextoWeb) {
+      try {
+        const inv = await require('../edl/investigarHechos').investigarHechos(lectura.hechos, { tema: lectura.cronica.titulo || '', personas: lectura.acta.personas || [] });
+        lectura.contextoWeb = inv.nuevos.map(n => n.texto); lectura.contextoCitas = inv.citas; lectura.contextoApartado = inv.apartados || [];
+        lectura.hechos = [...lectura.hechos, ...inv.nuevos.map(n => (n.confirmado ? { texto: n.texto } : { texto: n.texto, confirmado: false }))];
+        fs.writeFileSync(path.join(dir, 'lectura.json'), JSON.stringify(lectura, null, 1));
+        log(`Contexto de internet: +${inv.nuevos.length} dato(s) con fuente${(inv.apartados || []).length ? `, ${inv.apartados.length} sensible(s) apartado(s) (no entran al guion)` : ''}`);
+        inv.avisos.forEach(a => log('  contexto:', a));
+      } catch (e) { log('Contexto de internet: no se pudo (' + String(e.message).slice(0, 100) + '); se sigue sin él'); }
+    }
+    if (lectura.contextoWeb && lectura.contextoWeb.length) base += '\n\n' + lectura.contextoWeb.join('\n'); // lo que viene de internet también cuenta como dato real para detectar invenciones
     // 3b) guion con el motor grafo, con TODOS los datos y permiso de picante; si faltan datos o aparece algo inventado, UN reintento dirigido
     // Largo adaptado a los datos: con pocos datos, exigir 185-200 palabras obliga al modelo a rellenar. 165 palabras ya dan ~62 s de voz (mínimo para monetizar);
     // en ese caso se escribe de un solo pase (el método en dos tiempos supone material para ~190 palabras).
@@ -82,7 +106,8 @@ const log = (...a) => console.log(...a);
     const maxPalabras = Math.round(objUsado.max * 1.15); // por encima de esto el guion es demasiado largo
     const escribir = async nota => {
       const material = pauta.bloqueMaterial(cronica, lectura.hechos, nota, { corto });
-      return dos ? gemini.escribirGuionEnDosTiempos(material, null, null, [], evitar, 'grafo', ficha ? ficha.sesgo : '') : gemini.escribirGuion(material, null, null, [], evitar, 'grafo', ficha ? ficha.sesgo : '', objUsado);
+      const instrGuion = [instruccionUsuario, ficha && ficha.sesgo].filter(Boolean).join(' ');
+      return dos ? gemini.escribirGuionEnDosTiempos(material, null, null, [], evitar, 'grafo', instrGuion) : gemini.escribirGuion(material, null, null, [], evitar, 'grafo', instrGuion, objUsado);
     };
     let script = await escribir(''), prob = pauta.problemas(script, lectura.hechos, base, { maxPalabras, corto });
     log(`Guion 1: ${contarPalabras(script)} palabras · datos cubiertos ${Math.round(prob.cobertura.pct * 100)}% · ${prob.ok ? 'sin invenciones' : 'PROBLEMAS: ' + prob.lista.join(' ; ')}`);
@@ -152,5 +177,10 @@ const log = (...a) => console.log(...a);
     try { correr('calidad-clips.js', [carpeta]); } catch (e) { log('(no se pudo medir la calidad: ' + e.message + ')'); } // mide los clips nuevos (gratis, reanuda: no repite los ya medidos)
   }
   correr('video-narrativo.js', ['--guion', fGuion, '--palabras', fPal, '--audio', audio, '--carpeta', carpeta, '--canal', canal, '--sin-muneco', '--salida', salida, ...minimo, ...(ficha && ficha.tonoMusica !== 'auto' && !extra.includes('--tono') ? ['--tono', ficha.tonoMusica] : []), ...extra]);
+  // ---- 6) juez: una mirada barata (1 llamada, 1 imagen) a lo que se ve mal. Nunca rompe el flujo; --sin-juez lo salta.
+  if (!bandera('--sin-juez') && !process.env.SIN_JUEZ) {
+    try { await require('../edl/juezVideo').juzgar({ video: salida, guion: g, dir, minimo: objetivo.id === 'corto' ? 0 : 60, log }); }
+    catch (e) { log('(el juez no pudo revisar el video: ' + String(e.message).slice(0, 100) + ')'); }
+  }
   log(`\nListo: ${salida}\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion || ''}\n${(g.hashtags || []).join(' ')}`);
 })().catch(e => { console.error('FALLO', e.message); process.exit(1); });

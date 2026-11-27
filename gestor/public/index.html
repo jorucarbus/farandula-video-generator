@@ -71,7 +71,9 @@
   <section id="t-crear" class="oculto">
     <div class="panel" style="max-width:720px">
       <h3 style="margin-top:0">Crear video desde una noticia</h3>
-      <div class="fila"><label style="flex:1;min-width:280px">Link de la noticia<input type="url" id="cLink" placeholder="https://…"></label></div>
+      <div class="fila"><label style="flex:1;min-width:280px">Fuentes de la noticia (links, uno por línea, y/o texto pegado)<textarea id="cFuentes" rows="5" placeholder="https://… (un link por línea)&#10;&#10;También puedes pegar aquí un texto o lo que sepas; separa cada bloque con una línea en blanco." style="width:100%"></textarea></label></div>
+      <div class="fila"><label style="flex:1;min-width:280px">Indicaciones (opcional)<input type="text" id="cInstr" maxlength="400" placeholder="ej. céntrate en la pelea, no en el concurso; tono más serio" autocomplete="off" style="width:100%"></label></div>
+      <div class="fila"><label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="cWeb"> buscar contexto en internet <span class="chip gris">antecedentes con su fuente; lo delicado queda apartado, no entra al guion</span></label></div>
       <div class="fila">
         <label>Canal<select id="cCanal"></select></label>
         <label>Carpeta de clips (Drive)<input type="text" id="cCarpeta" list="dlCarpetas" value="auto" style="min-width:260px" autocomplete="off"><datalist id="dlCarpetas"></datalist></label>
@@ -270,12 +272,18 @@ $('#visor').addEventListener('close', () => $('#visorVideo').pause());
 // ---------------------------------------------------------------- crear video
 $('#cIr').onclick = async () => {
   const m = $('#cMsg'); m.replaceChildren();
-  try { const r = await api('/api/crear-video', { link: $('#cLink').value.trim(), canal: $('#cCanal').value, carpeta: $('#cCarpeta').value.trim() || 'auto', gemelo: $('#cGemelo').checked }); m.append(el('div', { className: 'msg' }, `Trabajo #${r.id} en marcha: ${r.salidas.join(', ')}. Tarda unos minutos; míralo en Trabajos y luego en Videos listos.`)); }
+  try { const r = await api('/api/crear-video', { fuentes: $('#cFuentes').value, instruccion: $('#cInstr').value.trim(), web: $('#cWeb').checked, canal: $('#cCanal').value, carpeta: $('#cCarpeta').value.trim() || 'auto', gemelo: $('#cGemelo').checked }); m.append(el('div', { className: 'msg' }, `Trabajo #${r.id} en marcha: ${r.salidas.join(', ')}. Tarda unos minutos; míralo en Trabajos y luego en Videos listos.`)); }
   catch (e) { m.append(el('div', { className: 'msg' }, '⚠ ' + e.message)); }
 };
 
 // ---------------------------------------------------------------- videos, papelera, trabajos
 let verPublicados = false;
+// Chip del juez: puntaje y cuántos problemas graves; al pasar el mouse muestra la lista con cómo mejorarlos.
+function juicioChip(j) {
+  const graves = j.problemas.filter(p => p.gravedad === 'alta').length, color = j.puntaje === null ? 'gris' : (j.puntaje >= 8 && !graves ? 'ok' : (j.puntaje >= 6 ? 'med' : 'no'));
+  const detalle = (j.resumen ? j.resumen + '\n' : '') + j.problemas.map(p => `• [${p.gravedad}]${p.t !== null ? ' ~' + p.t + 's' : ''} ${p.que}${p.mejora ? ' → ' + p.mejora : ''}`).join('\n');
+  return el('div', { className: 'chip ' + color, style: 'margin:3px 0;cursor:help;white-space:normal', title: detalle || 'Sin problemas visibles' }, `Juez ${j.puntaje === null ? '—' : j.puntaje + '/10'}${graves ? ` · ${graves} grave(s)` : (j.problemas.length ? ` · ${j.problemas.length} detalle(s)` : ' · limpio')}`);
+}
 async function cargarVideos() {
   const l = await api('/api/renders'), sub = $('#subVideos'), cont = $('#gridVideos'); cont.replaceChildren(); sub.replaceChildren();
   const por = l.filter(v => !v.publicado), pub = l.filter(v => v.publicado);
@@ -287,7 +295,7 @@ async function cargarVideos() {
     const g = el('div', { className: 'grid' }); cont.append(g);
     for (const v of vs) g.append(el('div', { className: 'clip' },
       el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
-      el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
+      el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), v.juicio ? juicioChip(v.juicio) : '', el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
         el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }),
         el('button', { className: 'b', style: 'margin-top:4px;width:100%', title: 'Vuelve a armar el video con el código actual, reutilizando guion y voz (no gasta ElevenLabs)', textContent: '↻ Volver a renderizar', onclick: () => rehacerVideo(v) }))));
   }

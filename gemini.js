@@ -48,6 +48,8 @@ const TAREAS = {
   tecnica:       { nombre: 'técnica',       cadena: CADENAS.mecanico },
   // Planificador de recetas de la EDL: elige de un enum cerrado, tarea pautada y mecánica.
   planEdl:       { nombre: 'planEdl',       cadena: CADENAS.mecanico },
+  // Juez visual del video terminado: una imagen + el guion, una llamada. Arranca en lite (lo más barato) y solo sube si falla.
+  juez:          { nombre: 'juez',          cadena: CADENAS.mecanico },
   // Búsqueda web: tarea de investigación, no de redacción. Va por la cadena creativa porque tiene
   // que decidir QUÉ buscar y qué descartar, no solo rellenar un formato.
   contexto:      { nombre: 'contexto web',  cadena: CADENAS.creativo },
