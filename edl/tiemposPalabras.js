@@ -66,7 +66,7 @@ function ventanasDeFrases(beats, palabras) {
 }
 
 // Ejecuta herramientas/whisper_palabras.py. py: intérprete con faster-whisper (WHISPER_PY o argumento).
-function ejecutarWhisper(audio, { py = process.env.WHISPER_PY, modelo = 'small', ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') } = {}) {
+function ejecutarWhisper(audio, { py = process.env.WHISPER_PY || 'python', modelo = 'small', ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static') } = {}) {
   return new Promise((resolve, reject) => {
     if (!py) return reject(new Error('define WHISPER_PY (python con faster-whisper)'));
     const salida = path.join(os.tmpdir(), `whisper_${Date.now()}.json`);

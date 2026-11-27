@@ -4,6 +4,14 @@ const fs = require('fs');
 const fuentes = require('./fuentes');
 const gemini = require('./gemini');
 
+// Audio -> acta. PRIMERO Whisper local (gratis): la transcripción se lee como texto, que es lo más barato para Gemini.
+// Si Whisper no está, falla o no oye voz, se hace como antes (Gemini oye el audio). `etiqueta` es el prefijo del tipo ("social", "youtube").
+async function actaDeAudio(audioPath, etiqueta, { transcribir = require('./edl/transcribirLocal').transcribir, extraer = (t, c) => gemini.extraerActa(t, c) } = {}) {
+  const texto = await transcribir(audioPath, { log: m => console.log(m) });
+  if (texto) return { acta: await extraer('transcripcion', texto), tipoReal: `${etiqueta}-whisper` };
+  return { acta: await extraer('audio', audioPath), tipoReal: `${etiqueta}-audio` };
+}
+
 // Decide CÓMO leer una fuente y devuelve su acta ya extraída (Fase 4 del plan maestro:
 // multifuente + solo audio). El orden de intentos SIEMPRE prioriza lo más barato — de los
 // videos no importa nada visual (pedido explícito del usuario), así que "ver" el video queda
@@ -36,8 +44,7 @@ async function extraerActaDeFuente(type, content) {
       const audioPath = await fuentes.descargarAudio(content);
       try {
         console.log('  🔊 Audio de YouTube descargado (sin video)');
-        const acta = await gemini.extraerActa('audio', audioPath);
-        return { acta, tipoReal: 'youtube-audio' };
+        return await actaDeAudio(audioPath, 'youtube');
       } finally {
         try { fs.unlinkSync(audioPath); } catch {}
       }
@@ -71,8 +78,7 @@ async function extraerActaDeFuente(type, content) {
       const audioPath = await fuentes.descargarAudio(content);
       try {
         console.log('  🔊 Audio descargado (sin video)');
-        const acta = await gemini.extraerActa('audio', audioPath);
-        return { acta, tipoReal: 'social-audio' };
+        return await actaDeAudio(audioPath, 'social');
       } finally {
         try { fs.unlinkSync(audioPath); } catch {}
       }
@@ -95,4 +101,4 @@ async function extraerActaDeFuente(type, content) {
   return { acta, tipoReal: 'web' };
 }
 
-module.exports = { extraerActaDeFuente };
+module.exports = { extraerActaDeFuente, actaDeAudio };
