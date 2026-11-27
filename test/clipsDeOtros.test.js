@@ -52,3 +52,12 @@ test('tomasPosibles: un grupo sin tomas "solo ella" igual aporta sus videos (dur
   assert.deepEqual(C.tomasPosibles(et, { duraciones: { g1: 10, g2: 12 } }).map(t => t.id), ['g3', 'g1', 'g2']);
   assert.deepEqual(C.tomasPosibles(et, { duraciones: {} }).map(t => t.id), ['g3']);
 });
+
+test('colectivos: solo tomas del grupo, nunca una integrante sola; Tamara (carpeta aparte) no es colectivo', () => {
+  assert.deepEqual(C.colectivoDe('Las_ñañas', 'Las Ñañas', {}), { integrantes: 0 });
+  assert.deepEqual(C.colectivoDe('Las_ñañas', 'Las Ñañas', { Las_ñañas: { integrantes: 4 } }), { integrantes: 4 });
+  assert.equal(C.colectivoDe('Tamara_Pardo', 'Tamara', {}), null);
+  const et = { s: { id: 's', personas: 1, rostro: { r: 0.3 } }, d: { id: 'd', personas: 2, rostro: { r: 0.2 } }, c4: { id: 'c4', personas: 4, tipo: 'musica', rostro: { r: 0.1 } }, c3: { id: 'c3', personas: 3, rostro: { r: 0.1 } }, mult: { id: 'mult', personas: 10, rostro: { r: 0.1 } } };
+  assert.deepEqual(C.tomasColectivo(et, { integrantes: 4 }).map(t => t.id), ['c4', 'c3']);
+  assert.deepEqual(C.tomasColectivo({ s: et.s, d: et.d }, { integrantes: 4 }), []);
+});

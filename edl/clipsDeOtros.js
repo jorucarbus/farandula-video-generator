@@ -38,6 +38,21 @@ function tomasPosibles(etiquetas, { minDuracion = 3, duraciones = {} } = {}) {
   return [...estrictas, ...resto];
 }
 
+// COLECTIVOS (Las Ñañas): son un grupo, así que solo cuentan las tomas donde se ve al grupo (todas o casi todas). Si sale una sola integrante ya no son "ellas", es esa cantante
+// (cada una tiene su carpeta aparte, como la de Tamara). Por eso NO se cae a tomas sueltas: si no hay tomas del grupo, no se pone nada.
+// Quién es colectivo: data-motor/colectivos.json { "Las_ñañas": { "integrantes": 4 } } o, sin config, carpetas que empiezan con "Las/Los".
+const CONFIG = path.join(__dirname, '..', 'data-motor', 'colectivos.json');
+function colectivoDe(carpeta, nombre = '', config = leer(CONFIG, {})) {
+  const c = config[carpeta] || null; if (c) return { integrantes: Number(c.integrantes) || 0 };
+  return /^(las|los)[ _]/i.test(String(carpeta).replace(/^_+/, '')) || /^(las|los)\s/i.test(String(nombre)) ? { integrantes: 0 } : null;
+}
+function tomasColectivo(etiquetas, { integrantes = 0, duraciones = {}, minDuracion = 3 } = {}) {
+  const minP = integrantes ? Math.max(2, integrantes - 1) : 3, maxP = integrantes ? integrantes * 2 : 8, dur = t => t.duracion || duraciones[t.id] || 0;
+  return Object.values(etiquetas || {}).filter(t => t && t.rostro && (t.personas || 1) >= minP && (t.personas || 1) <= maxP && (dur(t) === 0 || dur(t) >= minDuracion))
+    .map(t => ({ ...t, duracion: dur(t) }))
+    .sort((a, b) => (integrantes ? Math.abs((a.personas || 1) - integrantes) - Math.abs((b.personas || 1) - integrantes) : (b.personas || 1) - (a.personas || 1)) || ((a.tipo === 'otro') - (b.tipo === 'otro')) || ((b.rostro.r || 0) - (a.rostro.r || 0)));
+}
+
 // beats: [{frase}]; personas: [{nombre}]; existentes: Map beat(0-based) → elección ya hecha para la protagonista (solo se pisan las 'relacionada': relleno sin dato exacto).
 // Devuelve { elecciones: Map beat → {id, ss, motivo, nivel, persona, carpeta}, rutas: Map id → carpeta, avisos }.
 // cargar(carpeta) → { etiquetas, clips } (inyectable); indexar(carpeta) → Promise (inyectable); carpetasLocales/carpetasDrive: nombres.
@@ -48,7 +63,7 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
     const carpeta = buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta) continue;
     let datos = cargar(carpeta);
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
-    const tomas = tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} }).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(`${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
+    const col = colectivoDe(carpeta, p.nombre), tomas = (col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} })).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
     const frases = frasesQueLaNombran(beats, p.nombre).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
     frases.forEach((i, n) => {
       const t = tomas[n]; if (!t) return; usadas.add(t.id);
@@ -60,4 +75,4 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
   return { elecciones, carpetaDe, avisos };
 }
 
-module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, planificar, norm };
+module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, planificar, norm };
