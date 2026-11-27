@@ -76,35 +76,59 @@ function tomasColectivo(etiquetas, { integrantes = 0, duraciones = {}, minDuraci
 // beats: [{frase}]; personas: [{nombre}]; existentes: Map beat(0-based) → elección ya hecha para la protagonista (solo se pisan las 'relacionada': relleno sin dato exacto).
 // Devuelve { elecciones: Map beat → {id, ss, motivo, nivel, persona, carpeta}, rutas: Map id → carpeta, avisos }.
 // cargar(carpeta) → { etiquetas, clips } (inyectable); indexar(carpeta) → Promise (inyectable); carpetasLocales/carpetasDrive: nombres.
-// Reparto con Gemini (el mismo elegidor de la protagonista): ve el catálogo de ESA persona/grupo y decide qué toma calza con cada frase donde se la nombra.
-async function elegirConGemini(beatsSub, etiquetas, nombre) { const r = await require('./biblioteca').elegirClips(beatsSub, etiquetas, { protagonista: nombre }); return r.elecciones; }
+// REPARTO POR CARPETA (barato): UNA sola llamada a Gemini por video que, viendo las frases y los NOMBRES de las carpetas candidatas, dice de quién (de qué carpeta) habla
+// cada frase. Dentro de la carpeta, la toma la elige el código por calidad (ya filtrada), etiquetas con algo de relación con la frase y rostro visible: sin más Gemini.
+// Si hay una sola persona candidata no se llama a Gemini (basta con que la frase la nombre). Si la llamada falla, se usan las frases que nombran a la persona.
+const PROMPT_CARPETAS = candidatos => `Eres editor de videos de farándula. Te doy las frases de un guion (numeradas) y una lista de personas o grupos que tienen carpeta de videos. Para cada frase, di de CUÁL de ellos habla (por su nombre, apodo o una referencia clara como "ella"/"el grupo" que apunta a uno solo), o null si no trata de ninguno de la lista. No inventes: ante la duda, null. La protagonista del video NO está en la lista.
+Personas/grupos (carpeta → quién es):
+${candidatos.map(c => `- ${c.carpeta} → ${c.nombre}${c.colectivo ? ' (grupo)' : ''}`).join('\n')}
+Responde SOLO JSON: {"frases":[{"beat":1,"carpeta":"<carpeta>"|null}]}`;
 
-async function planificar({ elegir = null, beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 3, log = () => {} }) {
+async function elegirCarpetas(beats, candidatos, { llamar = null } = {}) {
+  llamar = llamar || ((p, m) => { const g = require('../gemini'); return g.llamarJSON(p, m, g.TAREAS.etiquetaClip); });
+  const r = await llamar(PROMPT_CARPETAS(candidatos), JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase }))));
+  const validas = new Set(candidatos.map(c => c.carpeta)), out = new Map();
+  for (const f of (r && r.frases) || []) if (Number.isInteger(f.beat) && f.beat >= 1 && f.beat <= beats.length && validas.has(f.carpeta)) out.set(f.beat - 1, f.carpeta);
+  return out;
+}
+
+// Relación mínima de una toma con la frase: palabras de la frase (4+ letras) que aparecen en sus etiquetas, más un punto si es una toma de acción (no "otro") y otro si se ve su rostro.
+// Una toma sin ninguna relación ni rostro (puntaje < 1) no se usa.
+function puntuarToma(t, fraseToks) {
+  const meta = new Set(toks([t.descripcion, t.lugar, t.vestuario, t.tipo, t.dice, t.texto_en_pantalla].filter(Boolean).join(' ')));
+  const coincide = fraseToks.filter(x => x.length >= 4 && meta.has(x)).length;
+  return coincide * 2 + (t.tipo && t.tipo !== 'otro' ? 1 : 0) + (t.rostro ? 1 : 0) + ((t.rostro && t.rostro.r) || 0);
+}
+
+async function planificar({ asignar = null, beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 3, log = () => {} }) {
   const elecciones = new Map(), carpetaDe = new Map(), avisos = [], usadas = new Set();
-  const todas = [...new Set([...carpetasLocales, ...carpetasDrive])];
+  const todas = [...new Set([...carpetasLocales, ...carpetasDrive])], libre = i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada');
+  // 1) por persona: su carpeta y sus tomas posibles (indexa si hace falta; así Gemini solo ve carpetas que sí pueden aportar)
+  const cands = [];
   for (const p of personas || []) {
-    const carpeta = p.carpeta && todas.includes(p.carpeta) ? p.carpeta : buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta) continue;
+    const carpeta = p.carpeta && todas.includes(p.carpeta) ? p.carpeta : buscarCarpeta(p.nombre, todas, { excluir: protagonista }); if (!carpeta || cands.some(c => c.carpeta === carpeta)) continue;
     let datos = cargar(carpeta);
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
-    const col = colectivoDe(carpeta, p.nombre), tomas = (col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} })).filter(t => !usadas.has(t.id)); if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
-    const frases = [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y).filter(i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada')).slice(0, maxPorPersona);
-    let porGemini = new Map();
-    if (elegir && frases.length && tomas.length) {
-      try {
-        const catalogo = Object.fromEntries(tomas.slice(0, 40).map(t => [t.id, { ...t, duracion: t.duracion || 3.2 }])), sub = frases.map(i => beats[i]);
-        for (const [j, c] of await elegir(sub, catalogo, p.nombre)) { const t = catalogo[c.id]; if (t && !usadas.has(t.id) && frases[j] !== undefined) porGemini.set(frases[j], { t, ss: c.ss, motivo: c.motivo }); }
-        if (porGemini.size) avisos.push(`${p.nombre}: Gemini repartió ${porGemini.size} toma(s) de ${carpeta}`);
-      } catch (e) { avisos.push(`${p.nombre}: Gemini no pudo repartir (${String(e.message).slice(0, 60)}); se usa el orden por reglas`); }
-    }
-    frases.forEach((i, n) => {
-      if (porGemini.has(i)) { const { t, ss, motivo } = porGemini.get(i); usadas.add(t.id); elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `${motivo} (${p.nombre})`, nivel: 'exacta', persona: p.nombre, carpeta }); carpetaDe.set(t.id, carpeta); return; }
-      const t = tomas.find(x => !usadas.has(x.id)); if (!t) return; usadas.add(t.id);
+    const col = colectivoDe(carpeta, p.nombre), tomas = col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} });
+    if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
+    cands.push({ p, carpeta, tomas, nombre: p.nombre, colectivo: Boolean(col), porNombre: [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y) });
+  }
+  // 2) qué carpeta va en cada frase: 1 llamada a Gemini si hay 2+ candidatas; con 1 sola (o si falla), las frases que la nombran
+  let asignadas = null;
+  if (asignar && cands.length >= 2) { try { asignadas = await asignar(beats, cands.map(c => ({ nombre: c.nombre, carpeta: c.carpeta, colectivo: c.colectivo }))); avisos.push(`Gemini repartió las frases entre ${cands.length} carpetas (1 llamada)`); } catch (e) { avisos.push(`no pude repartir con Gemini (${String(e.message).slice(0, 60)}); se usan las frases que nombran a cada persona`); } }
+  // 3) por carpeta, las tomas de mejor calidad y relación con su frase
+  for (const c of cands) {
+    const frases = (asignadas && asignadas.size ? [...asignadas].filter(([, k]) => k === c.carpeta).map(([i]) => i).sort((x, y) => x - y) : c.porNombre).filter(libre).slice(0, maxPorPersona);
+    let puestas = 0;
+    for (const i of frases) {
+      const ft = toks(beats[i].frase), mejor = c.tomas.filter(t => !usadas.has(t.id)).map(t => ({ t, s: puntuarToma(t, ft) })).filter(x => x.s >= 1).sort((a, b) => b.s - a.s)[0]; if (!mejor) continue;
+      const t = mejor.t; usadas.add(t.id); puestas++;
       const ss = Math.max(0, Math.min(((t.rostro && t.rostro.t) || 0.5) - 0.4, (t.duracion || 3.2) - 3.2));
-      elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `toma de ${p.nombre} (se la nombra en esta frase)`, nivel: 'exacta', persona: p.nombre, carpeta }); carpetaDe.set(t.id, carpeta);
-    });
-    if (frases.length) avisos.push(`${p.nombre}: ${Math.min(frases.length, tomas.length)} toma(s) de su carpeta ${carpeta}`);
+      elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `toma de ${c.nombre} (frase sobre ${c.nombre})`, nivel: 'exacta', persona: c.nombre, carpeta: c.carpeta }); carpetaDe.set(t.id, c.carpeta);
+    }
+    if (frases.length) avisos.push(`${c.nombre}: ${puestas} toma(s) de su carpeta ${c.carpeta}`);
   }
   return { elecciones, carpetaDe, avisos };
 }
 
-module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, elegirConGemini, planificar, norm };
+module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, elegirCarpetas, puntuarToma, planificar, norm };

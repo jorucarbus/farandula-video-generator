@@ -69,11 +69,22 @@ test('personasEnTexto: detecta nombres de carpeta dentro del guion aunque la lec
   assert.deepEqual(C.personasEnTexto('Kike Jav habló', car, { yaListadas: ['Kike Jav'] }), []);
 });
 
-test('planificar con elegir (Gemini): usa su reparto; si falla, cae a las reglas', async () => {
-  const et = { a: { id: 'a', rostro: { r: 0.2, t: 1 }, personas: 1, duracion: 9, tipo: 'selfie' }, b: { id: 'b', rostro: { r: 0.1, t: 1 }, personas: 1, duracion: 9, tipo: 'baile' } };
-  const base = { beats: [{ frase: 'x' }, { frase: 'Marcela baila' }], personas: [{ nombre: 'Marcela Ruiz' }], protagonista: [], carpetasLocales: ['Marcela_Ruiz'], cargar: () => ({ etiquetas: et }) };
-  const ok = await C.planificar({ ...base, elegir: async () => new Map([[0, { id: 'b', ss: 2, motivo: 'baila' }]]) });
-  assert.equal(ok.elecciones.get(1).id, 'b'); assert.equal(ok.elecciones.get(1).ss, 2);
-  const mal = await C.planificar({ ...base, elegir: async () => { throw new Error('429'); } });
-  assert.equal(mal.elecciones.get(1).id, 'a'); assert.ok(mal.avisos.some(a => /reglas/.test(a)));
+test('planificar: Gemini asigna carpeta por frase (1 llamada) y el código elige la toma por calidad y relación', async () => {
+  const mk = (id, extra) => ({ id, rostro: { r: 0.2, t: 1 }, personas: 1, duracion: 9, tipo: 'selfie', ...extra });
+  const datos = { Marcela_Ruiz: { a: mk('a'), b: mk('b', { tipo: 'baile', descripcion: 'baila en una fiesta' }) }, Pedro_Gil: { c: mk('c') } };
+  const beats = [{ frase: 'x' }, { frase: 'Ella baila en la fiesta' }, { frase: 'Luego Pedro habló' }];
+  let llamadas = 0; const asignar = async () => { llamadas++; return new Map([[1, 'Marcela_Ruiz'], [2, 'Pedro_Gil']]); };
+  const r = await C.planificar({ beats, personas: [{ nombre: 'Marcela Ruiz' }, { nombre: 'Pedro Gil' }], protagonista: [], carpetasLocales: Object.keys(datos), cargar: c => ({ etiquetas: datos[c] }), asignar });
+  assert.equal(llamadas, 1); assert.equal(r.elecciones.get(1).id, 'b'); assert.equal(r.elecciones.get(2).id, 'c'); // 'b' por relación con "baila"/"fiesta"
+  const mal = await C.planificar({ beats, personas: [{ nombre: 'Marcela Ruiz' }, { nombre: 'Pedro Gil' }], protagonista: [], carpetasLocales: Object.keys(datos), cargar: c => ({ etiquetas: datos[c] }), asignar: async () => { throw new Error('429'); } });
+  assert.equal(mal.elecciones.get(2).id, 'c'); assert.ok(mal.avisos.some(a => /no pude repartir/.test(a)));
+});
+test('planificar: con una sola persona no llama a Gemini; una toma sin relación ni rostro no se usa', async () => {
+  let llamadas = 0; const et = { z: { id: 'z', tipo: 'otro', personas: 1, duracion: 9 } };
+  const r = await C.planificar({ beats: [{ frase: 'Marcela habló' }], personas: [{ nombre: 'Marcela Ruiz' }], protagonista: [], carpetasLocales: ['Marcela_Ruiz'], cargar: () => ({ etiquetas: et }), asignar: async () => { llamadas++; return new Map(); } });
+  assert.equal(llamadas, 0); assert.equal(r.elecciones.size, 0);
+});
+test('elegirCarpetas: solo acepta carpetas de la lista', async () => {
+  const m = await C.elegirCarpetas([{ frase: 'a' }, { frase: 'b' }], [{ nombre: 'X', carpeta: 'X_1' }], { llamar: async () => ({ frases: [{ beat: 1, carpeta: 'X_1' }, { beat: 2, carpeta: 'Inventada' }] }) });
+  assert.deepEqual([...m], [[0, 'X_1']]);
 });

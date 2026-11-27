@@ -92,7 +92,7 @@ function sinNegro(ruta, ss) {
         const r = await AL.resolver(p.nombre, { carpetas: todasC, reg, excluir: excl, contexto: (g.hechos || []).slice(0, 3).map(h => h.texto).join(' ') });
         if (r.carpeta && r.carpeta !== carpeta) { resueltas.push({ nombre: p.nombre, carpeta: r.carpeta, alias: [p.nombre] }); console.log(`OTROS: "${p.nombre}" es ${r.carpeta} (${r.origen})`); }
       }
-      const otros = await CO.planificar({ elegir: process.argv.includes('--sin-gemini-otros') ? null : CO.elegirConGemini, beats: g.beats, personas: [...(g.personas || []).filter(p => !resueltas.some(r => r.nombre === p.nombre)), ...extra, ...aprendidos, ...resueltas], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
+      const otros = await CO.planificar({ asignar: process.argv.includes('--sin-gemini-otros') ? null : CO.elegirCarpetas, beats: g.beats, personas: [...(g.personas || []).filter(p => !resueltas.some(r => r.nombre === p.nombre)), ...extra, ...aprendidos, ...resueltas], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
       const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
       for (const [c, ids] of porCarpeta) { // bajar de Drive solo esas tomas y medirlas
         const clipsC = leerJ(path.join(RAIZ, `${c}.clips.json`), []), ros = leerJ(path.join(RAIZ, `${c}.rostros.json`), {}), et = cargar(c).etiquetas, ruta = Object.fromEntries(clipsC.map(x => [x.id, x.ruta]));
