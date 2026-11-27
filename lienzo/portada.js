@@ -89,18 +89,20 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   });
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
-  // 4) fila inferior (debajo del titular, nada toca la cara ni las letras): círculos de los otros participantes a la izquierda y el logo del canal a la derecha
-  const otros = (circulos || []).slice(0, 3), logo = pal.logo ? await cargar(path.join(MARCAS_DIR, pal.logo)) : null;
-  const R = u * 0.078, yFila = h * 0.905, paso = R * 2.5;
-  for (const [i, c] of otros.entries()) {
-    const cx = margen + R + i * paso, im = await cargar(c.foto); if (!im) continue;
-    B.retratoCircular(ctx, im, cx, yFila, R, { u: R * 6 });
-    if (c.nombre) { c.nombre = nombreCorto(c.nombre); const tn = Math.round(u * 0.03); ctx.font = `${tn}px ${TEXTO}`; const wn = ctx.measureText(c.nombre).width + tn * 1.3, hn = tn * 1.7; ctx.fillStyle = 'rgba(0,0,0,0.72)'; B.rectRedondo(ctx, cx - wn / 2, yFila + R + 6, wn, hn, hn / 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.nombre, cx, yFila + R + 6 + hn / 2 + 1); ctx.textAlign = 'left'; }
-  }
+  // 4) logo del canal: solo, abajo y centrado (no toca letras ni cara)
+  const logo = pal.logo ? await cargar(path.join(MARCAS_DIR, pal.logo)) : null;
   if (logo) {
-    const rL = R * 1.05, cx = otros.length ? w - margen - rL : w / 2, cy = yFila; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rL + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
+    const rL = u * 0.078, cx = w / 2, cy = h * 0.915; ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(cx, cy, rL + 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, rL, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = pal.fondoLogo; ctx.fillRect(cx - rL, cy - rL, rL * 2, rL * 2);
     const lado = Math.min(logo.width, logo.height), esc = (rL * 2) / lado; ctx.drawImage(logo, cx - (logo.width * esc) / 2, cy - (logo.height * esc) / 2, logo.width * esc, logo.height * esc); ctx.restore();
+  }
+
+  // 5) segundo protagonista: una sola foto en círculo, grande y sin nombre, justo encima del titular (a la izquierda, fuera del rostro)
+  const otro = (circulos || [])[0], imOtro = otro ? await cargar(otro.foto) : null;
+  if (imOtro) {
+    const R = u * 0.115, cx = margen + R + 7, cy = inicioTexto - R - u * 0.025;
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(cx, cy, R + 7, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
+    B.retratoCircular(ctx, imOtro, cx, cy, R, { u: R * 6 });
   }
   return canvas.toBuffer('image/png');
 }
