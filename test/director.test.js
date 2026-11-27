@@ -189,3 +189,11 @@ test('ensamblar: la cita entra en su primera palabra, y con montaje la frase que
   const conM = ensamblar([cita], beats, V, palabras, { ...cfg, montaje }).elementos;
   assert.ok(conM.some(e => e.cortes && e.cortes.length && e.t0 <= V[1].t0 + 0.01 && e.t1 >= V[1].t1 - 0.5), 'la frase de la cita lleva montaje debajo');
 });
+
+test('dirigir: una escena mala no tumba las buenas (se reemplaza solo la inválida por reglas)', async () => {
+  const llamar = async () => ({ escenas: [E1(), E2(), { beat: 3, principal: 'hologramas' }] });
+  const r = await dirigir(beats, hechos, { llamar, maxReintentos: 0 });
+  assert.equal(r.origen, 'mixto'); assert.deepEqual(validarDireccion(r.escenas, beats, hechos), []);
+  assert.equal(r.escenas[0].principal, 'muneco'); assert.equal(r.escenas[1].principal, 'cifra', 'las buenas del modelo se conservan');
+  assert.ok(r.avisos.some(a => /acertó 2 de 3/.test(a)));
+});

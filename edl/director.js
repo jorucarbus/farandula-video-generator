@@ -279,10 +279,10 @@ function normalizarEscena(e) {
 
 async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1, clips = null, sinMuneco = false } = {}) {
   const avisos = [], mensaje = JSON.stringify(beats.map((b, i) => ({ beat: i + 1, frase: b.frase, ...(clips && clips.get(i) ? { clipCandidato: { id: clips.get(i).id, ss: clips.get(i).ss, motivo: clips.get(i).motivo } } : {}), noConfirmado: (b.hechos || []).some(r => hechos[r - 1] && hechos[r - 1].confirmado === false) })));
-  let errores = [];
+  let errores = [], ultimas = null;
   for (let intento = 0; intento <= maxReintentos; intento++) {
     let r; try { r = await llamar(sinMuneco ? PROMPT_SIN_MUNECO(errores) : PROMPT(errores), mensaje); } catch (e) { avisos.push(`el modelo falló (${e.message})`); break; }
-    const escenas = ((r && r.escenas) || []).map(normalizarEscena); if (sinMuneco) escenas.forEach(quitarMuneco);
+    const escenas = ((r && r.escenas) || []).map(normalizarEscena); if (sinMuneco) escenas.forEach(quitarMuneco); ultimas = escenas;
     errores = validarDireccion(escenas, beats, hechos, clips);
     if (!errores.length) {
       // Tras los 3 s del clip la pantalla no puede quedar vacía: si el modelo no dio muñeco para una frase con clip, lo completa el código.
@@ -293,7 +293,14 @@ async function dirigir(beats, hechos, { llamar = llamarGemini, maxReintentos = 1
       return { escenas, origen: 'llm', avisos };
     }
   }
-  const escenas = directorPorReglas(beats, hechos, clips, { sinMuneco }), malas = validarDireccion(escenas, beats, hechos, clips);
+  // Una sola escena mala no tumba las demás: se conserva lo que el modelo hizo bien y solo las escenas inválidas (o ausentes) se reemplazan por las de las reglas.
+  const reglas = directorPorReglas(beats, hechos, clips, { sinMuneco });
+  if (ultimas && ultimas.length) {
+    const buenas = new Map(ultimas.filter(e => e && Number.isInteger(e.beat) && !validarEscena(e, beats, hechos, clips).length).map(e => [e.beat, e]));
+    const mezcla = reglas.map(r => buenas.get(r.beat) || r), mezclaMala = validarDireccion(mezcla, beats, hechos, clips);
+    if (buenas.size && !mezclaMala.length) { avisos.push(`el modelo acertó ${buenas.size} de ${beats.length} escenas; el resto se completó por reglas (${errores.join('; ')})`); return { escenas: mezcla, origen: 'mixto', avisos }; }
+  }
+  const escenas = reglas, malas = validarDireccion(escenas, beats, hechos, clips);
   avisos.push(`director por reglas de respaldo (${errores.join('; ') || 'sin respuesta'})`);
   if (malas.length) avisos.push(`el respaldo tiene avisos: ${malas.join('; ')}`);
   return { escenas, origen: 'respaldo', avisos };

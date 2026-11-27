@@ -70,6 +70,30 @@ function sinNegro(ruta, ss) {
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
 
+  // VIDEOS DE OTRAS PERSONAS: si el guion nombra a alguien con carpeta propia (aquí o en Drive), en las frases que la nombran van tomas SUYAS (--sin-clips-otros lo salta)
+  if (!process.argv.includes('--sin-clips-otros') && !process.argv.includes('--sin-clips') && Array.isArray(g.personas) && g.personas.length) {
+    try {
+      const CO = require('../edl/clipsDeOtros'), leerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+      let mapaDrive = {}; try { mapaDrive = process.env.RESPALDO_DRIVE === '0' ? {} : await require('../drive').obtenerCarpetasFamosos(); } catch { /* sin Drive: solo carpetas locales */ }
+      const locales = fs.readdirSync(RAIZ).filter(f => f.endsWith('.etiquetas.json')).map(f => f.replace(/\.etiquetas\.json$/, ''));
+      const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; return { etiquetas: et }; };
+      const indexar = async c => { require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), c], { stdio: 'inherit' }); };
+      const otros = await CO.planificar({ beats: g.beats, personas: g.personas, protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
+      const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
+      for (const [c, ids] of porCarpeta) { // bajar de Drive solo esas tomas y medirlas
+        const clipsC = leerJ(path.join(RAIZ, `${c}.clips.json`), []), ros = leerJ(path.join(RAIZ, `${c}.rostros.json`), {}), et = cargar(c).etiquetas, ruta = Object.fromEntries(clipsC.map(x => [x.id, x.ruta]));
+        const faltan = ids.filter(id => ruta[id] && !fs.existsSync(ruta[id]));
+        if (faltan.length) { try { const h = await require('../edl/clipsDrive').asegurar(c, faltan, { log: m => console.log('  ' + m) }); console.log(`DRIVE: ${h.bajados} clip(s) de ${c} bajados`); } catch (e) { console.log('no pude bajar clips de ' + c + ':', String(e.message).slice(0, 120)); } }
+        for (const id of ids) {
+          const beat = [...otros.elecciones].find(([, v]) => v.id === id)[0];
+          if (!ruta[id] || !fs.existsSync(ruta[id])) { otros.elecciones.delete(beat); continue; }
+          cfgClips[id] = { ruta: ruta[id], ...dimensiones(ruta[id]), rostro: et[id].rostro, duracion: et[id].duracion, caras: ros[id] ? ros[id].cuadros : null };
+        }
+      }
+      for (const [i, c] of otros.elecciones) { elecciones.set(i, c); console.log(`  [otra persona] frase ${i + 1} ← ${c.persona}: ${c.motivo}`); }
+      otros.avisos.forEach(a => console.log('OTROS:', a));
+    } catch (e) { console.log('sin clips de otras personas:', String(e.message).slice(0, 140)); }
+  }
   const SIN_MUNECO = process.argv.includes('--sin-muneco'); // sin personajes: tomas reales + motion graphics
   const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: SIN_MUNECO }), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones, sinMuneco: SIN_MUNECO });
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);
