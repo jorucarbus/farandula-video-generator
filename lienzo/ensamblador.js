@@ -149,9 +149,11 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     let ciclo = 0; const MAXC = USO_MAX_S - E.TRANS - 0.1, usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id)), tramos4 = [];
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
     for (let k = 0; k < beats.length; k++) {
-      const e = porBeat.get(k); if (!e) continue;
+      const e = porBeat.get(k);
       const ivs = []; // [inicio, fin, esDato]
-      if ((e.principal === 'cifra' || e.principal === 'lista' || e.principal === 'mapa' || e.principal === 'grafico' || e.principal === 'video') && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
+      // Sin muñeco no hay pieza central: TODA frase que no sea un clip pedido lleva montaje de fondo (antes, las de escenario/muñeco/sin escena quedaban solo con subtítulos). Con muñeco, el centro es el muñeco y no hay video.
+      if (!e) ivs.push([V[k].t0, fin(k), true]);
+      else if (e.principal !== 'clip' && !e.muneco) ivs.push([V[k].t0, fin(k), true]);
       else if (e.principal === 'clip' && finClip.has(k)) { ivs.push([V[k].t0, finClip.get(k), false]); if (!e.muneco && fin(k) - finClip.get(k) > 0.5) ivs.push([finClip.get(k), fin(k), true]); } // sin muñeco, lo que queda de la frase tras el clip (≤ 3 s) se llena con otras tomas
       for (const [ia, ib, dato] of ivs) {
         const u = tramos4[tramos4.length - 1];
