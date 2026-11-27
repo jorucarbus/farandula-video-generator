@@ -23,7 +23,8 @@ const g = JSON.parse(fs.readFileSync(arg('--guion', path.join(DM, 'guion-reina.j
 const w = JSON.parse(fs.readFileSync(arg('--palabras', path.join(DM, 'narrativo-voz', 'palabras-whisper.json')), 'utf8'));
 const AUDIO = arg('--audio', path.join(DM, 'audios', '2026-11-23 Narrativo con voz.mp3'));
 // MÍNIMO 60 s (los programas que pagan por vistas exigen más de un minuto): si la voz es más corta se completa con SILENCIO hasta 62,4 s y ahí sigue la música de fondo y las tomas (la voz queda intacta, sin reescalar tiempos).
-const OBJETIVO_MIN = Number(arg('--minimo', 62.4)), durVideo = Math.max(w.duracion, OBJETIVO_MIN), hasta = Number(arg('--hasta', Math.min(durVideo, 74)));
+const OBJETIVO_MIN = Number(arg('--minimo', 62.4)), durVideo = Math.max(w.duracion, OBJETIVO_MIN), hasta = Number(arg('--hasta', Math.max(Math.min(durVideo, 74), w.duracion + 0.8))); // el tope de 74 s NUNCA corta la voz: la narración termina completa y queda 0,8 s de aire al final
+if (w.duracion + 0.8 > 74.05) console.log(`AVISO: la narración dura ${w.duracion.toFixed(1)} s (más de 74 s); el video la respeta completa. Conviene un guion más corto.`);
 let AUDIO_VIDEO = AUDIO;
 if (w.duracion < OBJETIVO_MIN) { const tmp = path.join(require('os').tmpdir(), `voz_${process.pid}.mp3`); require('child_process').execFileSync(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-loglevel', 'error', '-i', AUDIO, '-af', `apad=whole_dur=${OBJETIVO_MIN}`, '-c:a', 'libmp3lame', '-q:a', '2', tmp]); AUDIO_VIDEO = tmp; console.log(`MÍNIMO ${OBJETIVO_MIN} s: la voz dura ${w.duracion.toFixed(1)} s; se completa con ${(OBJETIVO_MIN - w.duracion).toFixed(1)} s de música/tomas`); }
 const carpeta = arg('--carpeta', 'Leidy_Alvarez');
