@@ -161,3 +161,31 @@ test('gráfico de barras: dos o más cifras con su palabra lo activan y el valid
   const mala = { beat: 1, principal: 'grafico', grafico: { items: [{ etiqueta: 'años', valor: 6, ancla: 'seis' }, { etiqueta: 'premios', valor: 9, ancla: 'nueve' }] }, extras: [] };
   assert.ok(validarEscena(mala, beats, []).length > 0, 'una cifra o etiqueta que la frase no dice no pasa');
 });
+
+test('cita: se acepta si es literal de la frase y se rechaza si no lo es o es muy corta', () => {
+  const bs = [{ frase: 'Mara respondió: «No voy a permitir que me falten el respeto» y se fue.', rol: 'persona', hechos: [] }];
+  const ok = { beat: 1, principal: 'cita', cita: { texto: 'No voy a permitir que me falten el respeto', autor: 'Mara', ancla: 'No' }, extras: [] };
+  assert.deepEqual(validarEscena(ok, bs, []), []);
+  assert.ok(validarEscena({ ...ok, cita: { ...ok.cita, texto: 'No voy a permitir que me insulten' } }, bs, []).some(x => /literalmente/.test(x)));
+  assert.ok(validarEscena({ ...ok, cita: { ...ok.cita, texto: 'No voy' } }, bs, []).some(x => /4 a 22/.test(x)));
+  assert.ok(validarEscena({ ...ok, cita: { ...ok.cita, autor: 'Pedro' } }, bs, []).some(x => /autor/.test(x)));
+});
+
+test('director por reglas sin muñeco: lo entrecomillado pasa a tarjeta de cita', () => {
+  const bs = [{ frase: 'Mara respondió: «No voy a permitir que me falten el respeto» y se fue.', rol: 'persona', hechos: [] }];
+  const [e] = directorPorReglas(bs, [], null, { sinMuneco: true });
+  assert.equal(e.principal, 'cita'); assert.equal(e.cita.texto, 'No voy a permitir que me falten el respeto'); assert.deepEqual(validarEscena(e, bs, []), []);
+  assert.notEqual(directorPorReglas(bs, [], null, { sinMuneco: false })[0].principal, 'cita'); // con muñeco no hay tarjeta de cita
+});
+
+test('ensamblar: la cita entra en su primera palabra, y con montaje la frase queda cubierta por tomas (sin hueco)', () => {
+  const cita = { beat: 2, principal: 'cita', cita: { texto: 'Compitió contra 12 aspirantes', autor: '', ancla: 'Compitió' }, extras: [] };
+  const r = ensamblar([cita], beats, V, palabras, cfg).elementos;
+  assert.equal(r.length, 1);
+  const tIni = palabras.find((p, i) => i >= V[1].desde && /Compiti/.test(p.palabra)).t0;
+  assert.ok(Math.abs(r[0].t0 - Math.max(0, tIni - 0.3)) < 1e-6, 'aparece 0,3 s antes de decir la primera palabra');
+  // con montaje y sin muñeco: un principal que antes dejaba la pantalla vacía (cita) ahora lleva tomas de fondo
+  const montaje = { ids: ['a', 'b', 'c', 'd', 'e', 'f'], info: id => ({ ruta: id + '.mp4', rostro: { t: 0, cx: 0.5, cy: 0.4, r: 0.2 }, duracion: 20, ancho: 720, alto: 1280 }) };
+  const conM = ensamblar([cita], beats, V, palabras, { ...cfg, montaje }).elementos;
+  assert.ok(conM.some(e => e.cortes && e.cortes.length && e.t0 <= V[1].t0 + 0.01 && e.t1 >= V[1].t1 - 0.5), 'la frase de la cita lleva montaje debajo');
+});

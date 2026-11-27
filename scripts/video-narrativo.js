@@ -91,7 +91,7 @@ function sinNegro(ruta, ss) {
             figuras.push({ nombre: protagonista, foto: pc.foto, alias: protagonista.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/s+/).filter(w => w.length >= 4).concat(require('../edl/storyboard').REACCIONES.protagonista.alias) });
           } catch (e) { console.log('sin foto de la protagonista para VS/apoyo:', e.message.slice(0, 100)); }
         }
-        const so = require('../edl/graficosSociales').asignarSociales(dir.escenas, g.beats, figuras); so.avisos.forEach(x => console.log('SOCIAL:', x));
+        const so = require('../edl/graficosSociales').asignarSociales(dir.escenas, g.beats, figuras, { abajo: SIN_MUNECO }); so.avisos.forEach(x => console.log('SOCIAL:', x));
       }
     } catch (e) { console.log('sin fotos de personas:', e.message.slice(0, 140)); }
   }

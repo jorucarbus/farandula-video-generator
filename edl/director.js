@@ -43,7 +43,7 @@ function rutaDeFrase(frase) {
   return { desde: salida.nombre, hasta: llegada.nombre };
 }
 
-const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video', 'grafico']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
+const PRINCIPALES = ['muneco', 'mapa', 'cifra', 'lista', 'escenario', 'clip', 'video', 'grafico', 'cita']; // 'video' = montaje de tomas reales de fondo (sin dato): lo usa el modo sin muñeco y el storyboard
 const GESTOS = Object.keys(require('../lienzo/titere-rig').GESTOS); // reacciones de las manos del muñeco (catálogo cerrado)
 const POSES = ['reposo', 'senalar', 'celebrar'], EMOCIONES = ['normal', 'feliz', 'sorpresa', 'enojo', 'triste', 'duda', 'orgullo', 'asco', 'preocupacion', 'amor'], TRAJES = ['bastonera', 'gala'];
 const ACCESORIOS = ['corona'], PEGATINAS = ['guante-pulgar', 'guante-abierto', 'baston'], ESCENARIOS = ['casa', 'escenario', 'cartel'];
@@ -98,6 +98,11 @@ function validarEscena(e, beats, hechos, clips = null) {
     if (!Array.isArray(it) || it.length < 2 || it.length > 5) err('el gráfico necesita de 2 a 5 barras');
     else { const nums = numerosEnFrase(frase); for (const b of it) { if (!nums.has(b.valor)) err(`la cifra ${b.valor} del gráfico no está en la frase`); literal(b.etiqueta, 'etiqueta de barra'); ancla(b.ancla, 'barra'); } }
     if (g.titulo && !/^[\p{L} ]{3,22}$/u.test(g.titulo)) err('título de gráfico inválido');
+  }
+  if (e.principal === 'cita') { // frase textual que la frase cita: se muestra tal cual, palabra por palabra, en una tarjeta
+    const c = e.cita || {}, nPal = tokens(c.texto || '').length;
+    if (nPal < 4 || nPal > 22) err('la cita debe tener de 4 a 22 palabras'); else literal(c.texto, 'cita');
+    if (c.autor) literal(c.autor, 'autor de la cita'); ancla(c.ancla, 'cita');
   }
   if (e.principal === 'lista') {
     const l = e.lista || {};
@@ -188,6 +193,8 @@ function escenaPorReglas(b, i, hechos, previa, clips = null, sinMuneco = false) 
     return m;
   };
   if (e.principal === 'clip' && !e.muneco) e.muneco = muneco(); // tras los 3 s del clip, el muñeco actúa lo narrado
+  const citaTxt = sinMuneco && !e.principal ? (frase.match(/[«“"]([^»”"]{18,200})[»”"]/) || [])[1] : null; // lo entrecomillado de la frase, tal cual
+  if (citaTxt && tokens(citaTxt).length >= 4 && tokens(citaTxt).length <= 22) { e.principal = 'cita'; e.cita = { texto: citaTxt.trim(), ancla: tokens(citaTxt)[0] }; }
   if (!e.principal && escen) { e.principal = 'escenario'; e.escenario = { tipo: 'casa', texto: escen[0], ancla: tokens(escen[0])[0] }; e.muneco = { traje: 'bastonera', pose: 'senalar', emocion: 'normal', ancla_pose: tokens(escen[0])[0] }; }
   if (!e.principal) { e.principal = 'muneco'; e.muneco = muneco(); }
   if (sinMuneco) quitarMuneco(e); // modo sin muñeco: lo que iba al muñeco pasa a tomas reales de video
@@ -235,7 +242,7 @@ Responde SOLO JSON: {"escenas":[ ... una por frase ... ]}${errores.length ? `\nT
 
 const PROMPT_SIN_MUNECO = (errores) => `Eres director de escena de un video corto de farándula, estilo "noticia contada", SIN personajes ni ilustraciones: la pantalla la llevan tomas de video REAL y piezas de datos. Para CADA frase del guion decide qué se ve.
 Catálogo cerrado:
-- principal: "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; dura 3 s) | "mapa" (ciudad de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}, o un PAÍS de esta lista: ${Object.keys(PAISES).join(', ')}; usa {"lugar":...} o {"pais":...}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "video" (montaje de tomas reales de fondo, sin dato: úsalo cuando no haya mapa, cifra, lista, escenario ni clipCandidato; el sistema escoge las tomas).
+- principal: "clip" (VIDEO REAL de la protagonista: SOLO si la frase trae "clipCandidato"; copia su id y ss tal cual; "marca" opcional {"tipo":"circulo","ancla":palabra} encierra su rostro con un círculo rojo dibujado a mano; dura 3 s) | "mapa" (ciudad de Ecuador de esta lista: ${Object.keys(LUGARES).join(', ')}, o un PAÍS de esta lista: ${Object.keys(PAISES).join(', ')}; usa {"lugar":...} o {"pais":...}) | "cifra" (un número que la frase dice) | "lista" (2-4 elementos que la frase enumera) | "escenario" (casa/escenario/cartel con un letrero) | "grafico" (barras que crecen: 2 a 5 cifras que la frase dice, cada una con su etiqueta y su ancla: {"grafico":{"titulo"?:"...","items":[{"etiqueta":"años","valor":6,"ancla":"seis"}]}}) | "cita" (la frase CITA textualmente lo que alguien dijo o escribió: copia esas palabras exactas, de 4 a 22; {"cita":{"texto":"...","autor":"quien lo dijo, solo si la frase lo nombra","ancla":"primera palabra de la cita"}}) | "video" (montaje de tomas reales de fondo, sin dato: úsalo cuando no haya mapa, cifra, lista, escenario ni clipCandidato; el sistema escoge las tomas).
 - extras (máx. ${MAX_EXTRAS}): {tipo:"insignia", icono: uno de [${disponibles().join(', ')}], etiqueta, ancla, color?: negro|rojo|verde} o {tipo:"sello", ancla} (solo si la frase usa un hecho no confirmado).
 Reglas:
 - Toda frase lleva al menos una pieza. Todo texto en pantalla (etiqueta, letrero, elementos de lista, sufijo) COPIA palabras exactas de la frase; nunca añadas nada que la frase no diga.
@@ -243,6 +250,7 @@ Reglas:
 - GRAFICA CUANDO QUEDE BONITO: si la frase nombra un lugar o país, un número, una enumeración o un letrero, prefiere mapa/cifra/lista/escenario sobre un video genérico (la pieza de datos se dibuja sobre la tarjeta del video, que sigue de fondo). El video solo queda como principal cuando nada de eso aplica o cuando hay un clipCandidato que ilustra exacto.
 - Los elementos de una lista son las cosas nombradas (nombres propios, títulos, cifras), no palabras sueltas como "primera" o "segunda"; si no hay al menos 2 así, usa otro principal.
 - Si la frase trae clipCandidato, úsalo como principal "clip"; solo descártalo si la frase pide un mapa, una cifra o una lista.
+- Si la frase cita lo que alguien dijo o escribió (entre comillas o con "dijo", "escribió", "respondió"), usa "cita": remarca esas palabras en una tarjeta. Si la frase da 2 a 5 cifras comparables, usa "grafico". Cada pieza de datos se dibuja en una tarjeta blanca abajo del video: aprovéchalas, el video sin dato es lo último.
 - NO uses "muneco" (no existe en este modo). Varía: no repitas el mismo principal más de 2 frases seguidas.
 Formas EXACTAS:
 {"beat":1,"principal":"video","extras":[{"tipo":"insignia","icono":"crown","etiqueta":"corona","ancla":"corona","color":"rojo"}]}
@@ -251,6 +259,8 @@ Formas EXACTAS:
 {"beat":3,"principal":"cifra","cifra":{"valor":12,"sufijo":"aspirantes","ancla":"doce"},"extras":[]}
 {"beat":4,"principal":"lista","lista":{"titulo":"Títulos","items":[{"texto":"Chonera Bonita 2023","ancla":"Chonera"},{"texto":"Miss Turismo Manabí 2024","ancla":"Miss"}]},"extras":[]}
 {"beat":5,"principal":"escenario","escenario":{"tipo":"casa","texto":"Unidad Educativa Amazonas","ancla":"Unidad"},"extras":[]}
+{"beat":7,"principal":"grafico","grafico":{"titulo":"Su trayectoria","items":[{"etiqueta":"años","valor":6,"ancla":"seis"},{"etiqueta":"títulos","valor":3,"ancla":"tres"}]},"extras":[]}
+{"beat":8,"principal":"cita","cita":{"texto":"no voy a permitir que me falten el respeto","autor":"Mara","ancla":"no"},"extras":[]}
 {"beat":6,"principal":"clip","clip":{"id":"<id del clipCandidato>","ss":2,"marca":{"tipo":"circulo","ancla":"corona"}},"extras":[]}
 Responde SOLO JSON: {"escenas":[ ... una por frase ... ]}${errores.length ? `\nTu respuesta anterior tuvo estos problemas, corrígelos:\n- ${errores.join('\n- ')}` : ''}`;
 

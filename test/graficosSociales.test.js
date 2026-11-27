@@ -60,3 +60,12 @@ test('ensamblar: la escena con `social` agrega el VS y el apoyo en la palabra an
   assert.ok(r.elementos.some(e => (e.eventos || []).some(x => x.sonido === 'golpe')), 'hay un VS (suena el golpe)');
   assert.ok(r.claves.size >= 1);
 });
+
+test('abajo (video de fondo, sin muñeco): el VS no se bloquea por insignias ni personas de arriba, y caben 2', () => {
+  const figuras = [{ nombre: 'Mara', foto: 'a.jpg', alias: ['mara'] }, { nombre: 'Conny', foto: 'b.jpg', alias: ['conny'] }];
+  const bs = [{ frase: 'Mara criticó a Conny.' }, { frase: 'Otra frase.' }, { frase: 'Conny respondió contra Mara.' }];
+  const mk = () => [{ beat: 1, principal: 'video', extras: [{ tipo: 'insignia' }] }, { beat: 2, principal: 'video', extras: [] }, { beat: 3, principal: 'video', extras: [{ tipo: 'insignia' }] }];
+  assert.equal(G.asignarSociales(mk(), bs, figuras).escenas.filter(e => e.social).length, 0); // arriba: las insignias lo bloquean
+  assert.equal(G.asignarSociales(mk(), bs, figuras, { abajo: true }).escenas.filter(e => e.social && e.social.tipo === 'vs').length, 2);
+  assert.equal(G.asignarSociales([{ beat: 1, principal: 'cita', extras: [] }, ...mk().slice(1)], bs, figuras, { abajo: true }).escenas[0].social, undefined); // no se pisa una cita
+});

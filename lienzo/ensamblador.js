@@ -82,6 +82,11 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
       const its = e.grafico.items.map(b => ({ etiqueta: b.etiqueta, valor: b.valor, t: tPal(k, b.ancla) })), ta = Math.max(0, Math.min(...its.map(b => b.t)) - 0.3);
       elementos.push(E.grafico({ titulo: e.grafico.titulo, items: its, cy: e.muneco ? 0.36 : M ? 0.83 : 0.42, alto: 0.30, t0: ta, t1 })); card([ta, t1]); e.grafico.items.forEach(b => { marca(k, b.ancla); zoomsT.push(tPal(k, b.ancla)); });
     }
+    if (e.principal === 'cita') { // lo citado, palabra por palabra, en una tarjeta abajo del video
+      const c = e.cita, ws = c.texto.trim().split(/\s+/); let j = Math.max(0, idxEn(k, c.ancla)); const tp = [];
+      for (let n = 0; n < ws.length; n++) { const tw = tokens(ws[n])[0]; let m = j; while (m < V[k].hasta && tokens(palabras[m].palabra)[0] !== tw) m++; if (m < V[k].hasta) { tp.push({ t: palabras[m].t0 }); j = m + 1; } else tp.push({}); } // el momento en que la voz dice cada palabra
+      const ta = Math.max(0, tPal(k, c.ancla) - 0.3); elementos.push(E.cita({ texto: c.texto.trim(), autor: c.autor || '', palabras: tp, cy: M ? 0.80 : 0.5, t0: ta, t1 })); card([ta, t1]); marca(k, c.ancla); zoomsT.push(tPal(k, c.ancla));
+    }
     if (e.principal === 'lista') { // la tarjeta aparece cuando se dice el primer elemento: una tarjeta vacía no cuenta como pieza
       const items = e.lista.items.map(it => ({ texto: it.texto, t: tPal(k, it.ancla) })), ta = Math.max(t0 + 0.2, Math.min(t0 + 1.2, items[0].t - 0.3));
       elementos.push(E.listaNumerada({ titulo: e.lista.titulo, cy: e.muneco ? 0.36 : M ? 0.83 : 0.40, t0: Math.min(ta, items[0].t - 0.1), t1, items })); card([Math.min(ta, items[0].t - 0.1), t1]);
@@ -124,7 +129,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3) extras (insignias, sello) en sus posiciones
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
-    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && ['cifra', 'lista', 'mapa', 'grafico'].includes(e.principal)) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
+    const der = Boolean(e.muneco && e.muneco.lado === 'der'), slots = (e.muneco && ['mapa', 'cifra', 'lista'].includes(e.principal) ? SLOTS_COMP : (M && ['cifra', 'lista', 'mapa', 'grafico', 'cita'].includes(e.principal)) || e.principal === 'video' ? SLOTS_VIDEO : (SLOTS[e.principal] || SLOTS.muneco).map(p => espejar(p, der))); let s = 0;
     for (const x of e.extras || []) {
       if (x.tipo === 'insignia') { zoomsT.push(tPal(k, x.ancla)); const p = slots[Math.min(s++, slots.length - 1)]; elementos.push(P.insignia({ icono: x.icono, color: x.color || 'negro', etiqueta: x.etiqueta, cx: p.cx, cy: p.cy, r: 0.07, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
       if (x.tipo === 'sello') { elementos.push(P.sello({ cy: 0.5, t0: tPal(k, x.ancla), t1: fin(k) })); marca(k, x.ancla); }
@@ -138,7 +143,8 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   // 3c) VS y apoyo (ver edl/graficosSociales.js): esquinas de arriba del recuadro; la escena ya trae `social` solo si la frase lo pide
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e || !e.social) continue; const so = e.social, ta = Math.max(0, tPal(k, so.ancla) - 0.2), tf = Math.min(fin(k) + 0.4, ta + 3.2);
-    elementos.push(so.tipo === 'vs' ? E.vs({ a: so.a, b: so.b, t0: ta, t1: tf }) : E.apoyo({ fotos: so.fotos, icono: so.icono, t0: ta, t1: tf })); marca(k, so.ancla);
+    const abajo = Boolean(M) && !e.muneco, pos = abajo ? { tarjeta: true, cy: 0.80, r: 0.075 } : {}; // con el video de fondo, VS y apoyo van en una tarjeta blanca abajo (como el mapa); con muñeco, en las esquinas de arriba
+    elementos.push(so.tipo === 'vs' ? E.vs({ a: so.a, b: so.b, ...pos, t0: ta, t1: tf }) : E.apoyo({ fotos: so.fotos, icono: so.icono, ...pos, t0: ta, t1: tf })); if (abajo) card([ta, tf]); marca(k, so.ancla);
   }
   // 4) sin huecos: todo tramo de más de 0.5 s sin pieza principal se llena con clips reales de la protagonista (cada uno ≤ 3 s en total).
   // cfg.relleno = { ids: [ids de clips candidatos], info: id → { ruta, ancho, alto, rostro, duracion } }

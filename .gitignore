@@ -25,3 +25,6 @@ logins.json
 logins.db
 prefs.js
 sessionstore-backups/
+
+AlternateServices.bin
+ExperimentStoreData.json

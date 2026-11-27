@@ -6,7 +6,7 @@
 // Todo es determinista: no gasta llamadas al modelo.
 const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-const RE_CONFRONTA = /\b(contra|enfrent\w*|pele\w*|critic\w*|polemic\w*|discu\w*|acus\w*|respond\w*|disput\w*|choque|cruce|rival\w*|ataca\w*|reclam\w*|desafi\w*)\b/;
+const RE_CONFRONTA = /\b(contra|enfrent\w*|pele\w*|critic\w*|polemic\w*|discu\w*|acus\w*|respond\w*|disput\w*|choque|cruce|rival\w*|ataca\w*|reclam\w*|desafi\w*|recrimin\w*|insult\w*|denunci\w*|indirecta\w*|se burl\w*|versus|vs)\b/;
 const RE_APOYO = /\b(apoy\w*|respald\w*|aplaud\w*|felicit\w*|aclam\w*|defend\w*|animar\w*|alent\w*|cari[nñ]\w*|mensajes? de amor|orgull\w*)\b/;
 const RE_PUBLICO = /\b(publico|fans?|seguidores|admiradores|ecuatorianos|internautas|gente|redes|compa[nñ]eros|colegas|familia|amigos)\b/;
 
@@ -24,13 +24,14 @@ function palabraAncla(frase, re) { const m = norm(frase).match(re); return m ? m
 
 // escenas: las del director (se les agrega `social`); beats: [{ frase }]; figuras: personas con foto + la protagonista (si tiene).
 // maxVs / maxApoyo: tope por video. Devuelve las escenas y los avisos.
-function asignarSociales(escenas, beats, figuras, { maxVs = 1, maxApoyo = 1 } = {}) {
+function asignarSociales(escenas, beats, figuras, { maxVs = 1, maxApoyo = 1, abajo = false } = {}) { // abajo: van en una tarjeta debajo del video (sin muñeco): ya no compiten con las esquinas de arriba
+  if (abajo) maxVs = Math.max(maxVs, 2);
   const avisos = []; let vs = 0, apoyo = 0, ultima = -9;
   for (let k = 0; k < beats.length; k++) {
     const e = escenas.find(x => x.beat === k + 1); if (!e || e.social) continue;
     if (k - ultima < 2) continue; // nunca dos seguidos
-    if ((e.personas && e.personas.length) || (e.extras || []).some(x => x.tipo === 'insignia')) continue; // las esquinas de arriba ya están ocupadas
-    if (e.principal === 'mapa' || e.principal === 'lista' || e.principal === 'cifra' || e.principal === 'grafico') continue; // ya hay un gráfico principal
+    if (!abajo && ((e.personas && e.personas.length) || (e.extras || []).some(x => x.tipo === 'insignia'))) continue; // las esquinas de arriba ya están ocupadas
+    if (e.principal === 'mapa' || e.principal === 'lista' || e.principal === 'cifra' || e.principal === 'grafico' || e.principal === 'cita' || e.principal === 'escenario') continue; // ya hay un gráfico principal
     const frase = beats[k].frase, nom = figurasEnFrase(frase, figuras.filter(f => f.foto));
     if (vs < maxVs && RE_CONFRONTA.test(norm(frase)) && nom.length >= 2) {
       e.social = { tipo: 'vs', a: { nombre: nom[0].nombre, foto: nom[0].foto }, b: { nombre: nom[1].nombre, foto: nom[1].foto }, ancla: palabraAncla(frase, RE_CONFRONTA) };
