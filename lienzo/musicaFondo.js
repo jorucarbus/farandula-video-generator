@@ -19,6 +19,15 @@ function tonoDeGuion(texto) {
   return 'neutral';
 }
 
+// Las carpetas de Drive se llaman "ALEGRE", "TENSIÓN", "ESCÁDALO"…: se cotejan con los tonos sin mayúsculas ni tildes y por las 4 primeras letras (tolera erratas).
+// Antes se buscaba carpetas['alegre'] a secas, nunca coincidía y TODOS los videos caían en la primera carpeta (misterio) con su primera pista.
+const sinTildes = t => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+function tonosDeCarpetas(mapa) {
+  const out = {}, nombres = Object.keys(mapa);
+  for (const t of TONOS) { const n = nombres.find(x => sinTildes(x) === t) || nombres.find(x => sinTildes(x).slice(0, 4) === t.slice(0, 4)); if (n) out[t] = mapa[n]; }
+  return out;
+}
+
 // Elige una pista del tono (determinista por semilla, para que repetir el video repita la música) y la descarga; devuelve { ruta, nombre, offset, gananciaDb, tono }.
 // Sin semilla explícita, la pista rota: se evitan las últimas usadas en ese tono (data-motor/musica-uso.json) y entre las demás se elige por la clave del video
 // (así el mismo video repite su música, pero dos videos seguidos —y un video y su gemelo— no suenan igual).
@@ -31,7 +40,7 @@ function indiceRotado(nombres, tono, clave, uso) {
   return (libres.length ? libres : nombres.map((n, i) => i))[hashDe(clave) % (libres.length || nombres.length)];
 }
 async function elegirPista(tono, semilla = null, clave = '') {
-  const carpetas = await drive.obtenerCarpetasMusica(); const id = carpetas[tono] || carpetas.neutral || Object.values(carpetas)[0];
+  const carpetas = tonosDeCarpetas(await drive.obtenerCarpetasMusica()); const id = carpetas[tono] || carpetas.neutral;
   if (!id) throw new Error('no hay carpetas de música en Drive');
   const pistas = (await drive.listarMusica(id)).sort((a, b) => a.name.localeCompare(b.name)); if (!pistas.length) throw new Error(`la carpeta de música "${tono}" está vacía`);
   const uso = leerUso(), nombres = pistas.map(x => x.name), i = semilla != null && semilla !== 0 ? Math.abs(semilla) % pistas.length : indiceRotado(nombres, tono, clave || String(Date.now()), uso);
@@ -48,4 +57,4 @@ async function prepararFondo({ tono, duracion, jobId = 'motor', semilla = null, 
   return { ...pista, listo };
 }
 
-module.exports = { TONOS, tonoDeGuion, elegirPista, prepararFondo, indiceRotado };
+module.exports = { TONOS, tonoDeGuion, elegirPista, prepararFondo, indiceRotado, tonosDeCarpetas };

@@ -100,3 +100,8 @@ test('música: la pista rota (evita las últimas usadas) y es estable para la mi
   for (const r of ['a', 'b', 'c']) assert.notStrictEqual(n[indiceRotado(n, 't', 'x', { t: ['a', 'b', 'c'] })], r);
   assert.strictEqual(indiceRotado(['sola'], 't', 'x', { t: ['sola'] }), 0);
 });
+
+test('música: las carpetas de Drive (MAYÚSCULAS, tildes, erratas) se cotejan con los tonos', () => {
+  const { tonosDeCarpetas } = require('../lienzo/musicaFondo'), m = tonosDeCarpetas({ 'MISTERIO': 1, 'NEUTRAL': 2, 'ROMÁNTICO': 3, 'ALEGRE': 4, 'ESCÁDALO': 5, 'TENSIÓN': 6, 'TRAGEDIA': 7 });
+  assert.deepStrictEqual(m, { tragedia: 7, tension: 6, escandalo: 5, alegre: 4, romantico: 3, misterio: 1, neutral: 2 });
+});
