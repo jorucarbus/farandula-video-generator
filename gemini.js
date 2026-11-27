@@ -52,6 +52,8 @@ const TAREAS = {
   juez:          { nombre: 'juez',          cadena: CADENAS.mecanico },
   // Revisor del plan (antes de renderizar): texto puro; sus cambios pasan por los validadores del director.
   revisorPlan:   { nombre: 'revisor del plan', cadena: CADENAS.mecanico },
+  // Puntaje ciego de un guion (rúbrica fija; el total se calcula en código). Otro modelo que el que escribe el guion.
+  puntajeGuion:  { nombre: 'puntaje de guion', cadena: CADENAS.mecanico },
   // Búsqueda web: tarea de investigación, no de redacción. Va por la cadena creativa porque tiene
   // que decidir QUÉ buscar y qué descartar, no solo rellenar un formato.
   contexto:      { nombre: 'contexto web',  cadena: CADENAS.creativo },

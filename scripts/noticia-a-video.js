@@ -133,6 +133,11 @@ const log = (...a) => console.log(...a);
     if (final.lista.length) log('  ATENCIÓN tras la revisión:', final.lista.join(' ; '));
     fs.writeFileSync(fGuion, JSON.stringify(g, null, 2));
     log(`Guion: ${g.palabras} palabras, ${g.beats.length} frases → ${path.relative(RAIZ, fGuion)}`);
+    // Puntaje ciego (EXPERIMENTAL, solo se registra): una llamada barata con la rúbrica fija. NO decide nada; sirve para compararlo luego con las vistas reales (scripts/probar-puntaje.js).
+    if (!bandera('--sin-puntaje')) {
+      try { const pg = await require('../edl/puntajeGuion').puntuar(script); fs.writeFileSync(path.join(dir, 'puntaje.json'), JSON.stringify(pg, null, 1)); log(`Puntaje ciego del guion (experimental): ${pg.total}/10${pg.plantillasDetectadas.length ? ` · ${pg.plantillasDetectadas.length} frase(s) de plantilla` : ''}${pg.resumen ? ' · ' + pg.resumen : ''}`); }
+      catch (e) { log('(puntaje ciego no disponible: ' + String(e.message).slice(0, 80) + ')'); }
+    }
   } else {
     log(`Guion ya escrito (${g.palabras} palabras); se reutiliza`);
     if (!g.personas && lectura.acta) { g.personas = (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })); fs.writeFileSync(fGuion, JSON.stringify(g, null, 2)); }
