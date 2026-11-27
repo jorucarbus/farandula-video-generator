@@ -73,6 +73,21 @@ app.get('/video', (req, res) => {
 app.post('/api/papelera', (req, res) => { try { ok(res, G.aPapelera(Array.isArray(req.body.rutas) ? req.body.rutas : [], { motivo: req.body.motivo || 'manual' })); } catch (e) { mal(res, e); } });
 app.post('/api/restaurar', (req, res) => { try { ok(res, G.restaurar(Array.isArray(req.body.rutas) ? req.body.rutas : [])); } catch (e) { mal(res, e); } });
 app.post('/api/limpiar-faltantes', (req, res) => { try { if (!G.carpetasBiblioteca().includes(req.body.carpeta)) throw new Error('carpeta desconocida'); ok(res, G.limpiarFaltantes(req.body.carpeta)); } catch (e) { mal(res, e); } });
+// Sube lo que bajó el Selector a Drive: carpeta del artista (existente = actualización; si no existe se crea). Va por la cola porque tarda; el índice se arma solo la próxima vez que se use el artista (o ahora, si se pide).
+app.post('/api/subir-selector', async (req, res) => {
+  try {
+    const { rutas, carpeta, indexar, borrar } = req.body || {};
+    if (!Array.isArray(rutas) || !rutas.length) throw new Error('elige al menos un video');
+    const buenas = rutas.filter(r => G.rutaPermitida(r, [path.join(G.SELECTOR_DIR, 'Descargas')]) && fs.existsSync(r)); if (!buenas.length) throw new Error('esos videos no están en las descargas del Selector');
+    const nombre = require('../edl/subirFamosos').nombreDeCarpeta(carpeta); if (!/^[\w.-]{2,60}$/.test(nombre)) throw new Error('nombre de carpeta inválido (letras, números, guion o guion bajo)');
+    let mapa = {}; try { mapa = await carpetasDrive(true); } catch (e) { throw new Error('No pude leer Drive: ' + String(e.message).slice(0, 120)); }
+    const existe = require('../edl/subirFamosos').buscarExistente(nombre, mapa); // lanza si es ambigua
+    const tmp = path.join(G.DM, 'tmp'); fs.mkdirSync(tmp, { recursive: true }); const lista = path.join(tmp, `subida-${Date.now()}.json`); fs.writeFileSync(lista, JSON.stringify({ rutas: buenas }));
+    const pasos = [{ ...node('subir-selector-a-drive.js', nombre, lista, ...(borrar ? ['--borrar'] : [])), titulo: `Subir ${buenas.length} video(s) a Drive: ${existe ? existe.nombre + ' (carpeta existente)' : nombre + ' (carpeta NUEVA)'}` }];
+    if (indexar) pasos.push({ ...node('biblioteca-indexar-nuevos.js', existe ? existe.nombre : nombre), opcional: true, titulo: 'Indexar lo nuevo (etiquetas con Gemini, calidad, rostros)' });
+    ok(res, { id: encolar(`Selector → Drive: ${buenas.length} video(s) a ${existe ? existe.nombre : nombre}`, pasos).id, carpeta: existe ? existe.nombre : nombre, nueva: !existe, omitidos: rutas.length - buenas.length });
+  } catch (e) { mal(res, e); }
+});
 app.post('/api/importar', (req, res) => { try { ok(res, G.importarDeSelector(Array.isArray(req.body.rutas) ? req.body.rutas : [], req.body.carpeta, { mover: Boolean(req.body.mover) })); } catch (e) { mal(res, e); } });
 
 // ---------------------------------------------------------------- trabajos en segundo plano (uno a la vez: comparten GPU/CPU y la rotación de clips)

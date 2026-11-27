@@ -185,7 +185,7 @@ function pintarBarra() {
     el('button', { className: 'b', textContent: 'Seleccionar los de calidad mala', onclick: () => { estado.clips.filter(c => c.calidad && !c.calidad.apto).forEach(c => estado.sel.add(c.ruta)); pintarGrid(); pintarBarra(); } }),
     el('button', { className: 'b r', textContent: `A la papelera (${n})`, disabled: !n, onclick: papelera }));
   if (esBib) { const rec = (estado.resumen.biblioteca.find(x => x.nombre === estado.actual.nombre) || {}).recurrente; b.append(el('button', { className: 'b', textContent: 'Actualizar índice: medir calidad y rostros (gratis)', title: 'baja de Drive lo que falte, lo analiza y libera el disco', onclick: () => preparar(false) }), el('button', { className: 'b', textContent: 'Etiquetar con Gemini', onclick: () => preparar(true) }), el('button', { className: 'b', textContent: rec ? '★ Se mantiene en disco (quitar)' : '☆ Mantener en disco (artista recurrente)', onclick: async () => { await api('/api/recurrente', { carpeta: estado.actual.nombre, si: !rec }); await cargarResumen(); pintarBarra(); } }), el('button', { className: 'b', textContent: 'Liberar espacio en disco', onclick: liberar })); }
-  else b.append(el('input', { type: 'text', id: 'destImp', placeholder: 'Carpeta de la biblioteca (p. ej. Mara_Topic)', value: leerLS('destImp') || '' }), el('button', { className: 'b p', textContent: `Importar (${n})`, disabled: !n, onclick: importar }));
+  else b.append(el('input', { type: 'text', id: 'destImp', placeholder: 'Carpeta de la biblioteca (p. ej. Mara_Topic)', value: leerLS('destImp') || '' }), el('button', { className: 'b p', textContent: `Importar (${n})`, disabled: !n, onclick: importar }), el('button', { className: 'b p', textContent: `Subir a Drive (${n})`, disabled: !n, title: 'Sube los videos marcados a la carpeta del artista en Drive (si no existe, la crea)', onclick: subirADrive }));
 }
 function pintarGrid() {
   const g = $('#grid'); g.replaceChildren(); const lista = visibles();
@@ -213,6 +213,15 @@ async function papelera() {
 }
 async function liberar() { if (!confirm('Se borran de este equipo los videos de esta carpeta que vienen de Drive (el índice, las etiquetas y las miniaturas se quedan; se vuelven a bajar solos cuando se editen). ¿Seguir?')) return; const r = await api('/api/purgar', { carpeta: estado.actual.nombre }); mensaje(`${r.borrados} videos liberados (${(r.bytes / 1e6).toFixed(0)} MB).`); abrirCarpeta('biblioteca', estado.actual.nombre); }
 async function limpiar() { const r = await api('/api/limpiar-faltantes', { carpeta: estado.actual.nombre }); mensaje(`${r.quitados} entrada(s) sin archivo quitadas de la carpeta`); abrirCarpeta('biblioteca', estado.actual.nombre); }
+async function subirADrive() {
+  const dest = $('#destImp').value.trim(); if (!dest) return mensaje('Escribe el nombre de la carpeta del artista (ej. Mara_Topic). Si ya existe en Drive se agregan ahí; si no, se crea.'); guardar('destImp', dest);
+  let existe = null; try { const d = await api('/api/drive/carpetas'); const n = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, ''); existe = d.find(c => n(c.nombre) === n(dest)); } catch (e) { return mensaje('No pude leer Drive: ' + e.message); }
+  const n = estado.sel.size, aviso = existe ? `Se agregan ${n} video(s) a la carpeta EXISTENTE "${existe.nombre}" de Drive (los que ya estén allí no se repiten).` : `"${dest}" NO existe en Drive: se crea una carpeta NUEVA con ese nombre y se suben ${n} video(s).`;
+  if (!confirm(aviso + '\n\nNo se borra nada de Drive. ¿Continuar?')) return;
+  const indexar = confirm('¿Etiquetar ahora los videos nuevos con Gemini?\n\nAceptar = sí (unos centavos por clip; no repite los ya etiquetados).\nCancelar = no: se etiquetan solos la primera vez que uses a este artista en un video.');
+  try { const r = await api('/api/subir-selector', { rutas: [...estado.sel], carpeta: dest, indexar }); mensaje(`Trabajo #${r.id} en marcha: ${n} video(s) → Drive/${r.carpeta}${r.nueva ? ' (carpeta nueva)' : ''}. Míralo en la pestaña Trabajos.`); }
+  catch (e) { mensaje('No se pudo: ' + e.message); }
+}
 async function importar() {
   const dest = $('#destImp').value.trim(); if (!dest) return mensaje('Escribe la carpeta de destino.'); guardar('destImp', dest);
   const r = await api('/api/importar', { rutas: [...estado.sel], carpeta: dest }); mensaje(`${r.hechos.length} importados a ${dest}${r.fallos.length ? `; ${r.fallos.length} con error: ${r.fallos[0].error}` : ''}. Ahora pulsa “Medir calidad y rostros” y “Etiquetar con Gemini” en esa carpeta.`); abrirCarpeta('selector', estado.actual.nombre);

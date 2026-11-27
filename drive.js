@@ -59,6 +59,13 @@ async function obtenerCarpetasFamosos() {
   return mapa;
 }
 
+// Crea la carpeta de un artista NUEVO dentro de la carpeta de famosos. Con OAuth (la cuenta del usuario) si está configurado: es quien tiene permiso de escritura con cuota.
+async function crearCarpetaFamoso(nombre) {
+  const cliente = getDriveOAuth() || getDrive();
+  const res = await cliente.files.create({ requestBody: { name: nombre, mimeType: 'application/vnd.google-apps.folder', parents: [process.env.GOOGLE_DRIVE_FOLDER_ID] }, fields: 'id, name', supportsAllDrives: true });
+  return res.data.id;
+}
+
 // Fase 8b (música por sentido): carpeta Musica/ con 7 subcarpetas, una por tono (ver
 // gemini.js TONOS). Mismo patrón que obtenerCarpetasFamosos(), pero con OAuth preferido
 // (mismo criterio que driveCache.js) — esta carpeta todavía no está compartida con el
@@ -528,7 +535,7 @@ async function enviarAPapelera(fileId) {
 }
 
 module.exports = {
-  obtenerCarpetasFamosos,
+  obtenerCarpetasFamosos, crearCarpetaFamoso,
   listarContenido, infoArchivo, streamArchivo, CITAS_FOLDER_ID,
   listarVideos,
   descargarVideo,
