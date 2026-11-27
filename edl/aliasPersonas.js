@@ -39,7 +39,8 @@ async function resolver(nombre, { carpetas, reg = null, buscar = buscarNombresWe
   const neg = reg.sinCarpeta[k]; if (neg && neg.carpetas === carpetas.length && hoy - Date.parse(neg.fecha) < DIAS_NEGATIVO * 864e5) return { carpeta: null, origen: 'registro', alias: [] };
   let hallados = []; try { hallados = (await buscar(nombre, { contexto })).nombres || []; } catch { return { carpeta: null, origen: null, alias: [] }; } // sin internet: no se anota nada, se reintenta otro día
   const cand = new Set(); for (const h of hallados) { const c = buscarCarpeta(h, carpetas, { excluir }); if (c) cand.add(c); }
-  if (cand.size === 1) { const c = [...cand][0]; registrar(reg, [nombre, ...hallados.filter(h => !/^(los|las)\s/i.test(h.trim()))], c, 'web'); // no se anotan nombres de grupos/familias ("Los Morales"): pueden ser otra gente guardar(reg, guardarEn); return { carpeta: c, origen: 'web', alias: aliasDe(c) }; }
+  // no se anotan nombres de grupos/familias ("Los Morales"): pueden ser otra gente
+  if (cand.size === 1) { const c = [...cand][0]; registrar(reg, [nombre, ...hallados.filter(h => !/^(los|las)\s/i.test(h.trim()))], c, 'web'); guardar(reg, guardarEn); return { carpeta: c, origen: 'web', alias: aliasDe(c) }; }
   reg.sinCarpeta[k] = { fecha: new Date(hoy).toISOString().slice(0, 10), carpetas: carpetas.length, ...(cand.size > 1 ? { ambiguo: [...cand] } : {}) }; guardar(reg, guardarEn);
   return { carpeta: null, origen: 'web', alias: [] };
 }
