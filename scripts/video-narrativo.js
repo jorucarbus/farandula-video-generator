@@ -71,14 +71,17 @@ function sinNegro(ruta, ss) {
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
 
   // VIDEOS DE OTRAS PERSONAS: si el guion nombra a alguien con carpeta propia (aquí o en Drive), en las frases que la nombran van tomas SUYAS (--sin-clips-otros lo salta)
-  if (!process.argv.includes('--sin-clips-otros') && !process.argv.includes('--sin-clips') && Array.isArray(g.personas) && g.personas.length) {
+  if (!process.argv.includes('--sin-clips-otros') && !process.argv.includes('--sin-clips') && (g.script || g.beats)) {
     try {
       const CO = require('../edl/clipsDeOtros'), leerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
       let mapaDrive = {}; try { mapaDrive = process.env.RESPALDO_DRIVE === '0' ? {} : await require('../drive').obtenerCarpetasFamosos(); } catch { /* sin Drive: solo carpetas locales */ }
       const locales = fs.readdirSync(RAIZ).filter(f => f.endsWith('.etiquetas.json')).map(f => f.replace(/\.etiquetas\.json$/, ''));
       const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; const duraciones = {}; for (const x of leerJ(path.join(RAIZ, `${c}.clips.json`), [])) if (x && x.duracion) duraciones[x.id] = x.duracion; return { etiquetas: et, duraciones }; };
       const indexar = async c => { require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), c], { stdio: 'inherit' }); };
-      const otros = await CO.planificar({ beats: g.beats, personas: g.personas, protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
+      // además de las personas que listó la lectura, las que el guion nombra y tienen carpeta (p. ej. Kike Jav → Kike_Jav_Cuy)
+      const textoGuion = g.script || g.beats.map(b => b.frase).join(' '), extra = CO.personasEnTexto(textoGuion, [...new Set([...locales, ...Object.keys(mapaDrive)])], { excluir: [carpeta, protagonista], yaListadas: (g.personas || []).map(p => p.nombre) });
+      if (extra.length) console.log('OTROS: nombrados con carpeta propia: ' + extra.map(x => x.nombre + ' → ' + x.carpeta).join(', '));
+      const otros = await CO.planificar({ beats: g.beats, personas: [...(g.personas || []), ...extra], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
       const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
       for (const [c, ids] of porCarpeta) { // bajar de Drive solo esas tomas y medirlas
         const clipsC = leerJ(path.join(RAIZ, `${c}.clips.json`), []), ros = leerJ(path.join(RAIZ, `${c}.rostros.json`), {}), et = cargar(c).etiquetas, ruta = Object.fromEntries(clipsC.map(x => [x.id, x.ruta]));

@@ -14,6 +14,25 @@ function buscarCarpeta(nombre, carpetas, { excluir = [] } = {}) {
   return ok.length === 1 ? ok[0] : null;
 }
 
+// Personas NOMBRADAS EN EL TEXTO que tienen carpeta (aunque la lectura del guion no las haya listado): se recorre el nombre de cada carpeta y se busca en el guion.
+// 2+ palabras: las dos primeras seguidas (Kike_Jav_Cuy → "Kike Jav"); 1 palabra: debe ir con mayúscula inicial y 5+ letras (evita falsos positivos).
+// Si dos carpetas calzan, gana la de nombre exacto; si sigue empatado, se omite (ambigua). Devuelve [{ nombre, carpeta }].
+function personasEnTexto(texto, carpetas, { excluir = [], yaListadas = [] } = {}) {
+  const T = ' ' + toks(texto).join(' ') + ' ', ex = new Set(excluir.map(c => norm(String(c).replace(/_/g, ' ')))), ya = new Set(yaListadas.map(norm)), orig = String(texto || '');
+  const out = new Map();
+  for (const c of carpetas) {
+    const ct = toks(String(c).replace(/_/g, ' ')); if (!ct.length || ex.has(ct.join(' '))) continue;
+    let clave = null, largo = 0;
+    if (ct.length >= 2 && ct[0].length >= 2 && ct[1].length >= 2) { const sec = ct.slice(0, 2).join(' '); if (T.includes(' ' + sec + ' ')) { clave = sec; largo = ct.length; } }
+    else if (ct.length === 1 && ct[0].length >= 5 && new RegExp('(^|[^\p{L}])' + ct[0][0].toUpperCase() + ct[0].slice(1) + '(?![\p{L}])', 'u').test(orig.normalize('NFD').replace(/[̀-ͯ]/g, ''))) { clave = ct[0]; largo = 1; }
+    if (!clave || ya.has(clave)) continue;
+    const prev = out.get(clave); if (!prev) out.set(clave, [{ c, exacto: ct.length === clave.split(' ').length }]); else prev.push({ c, exacto: ct.length === clave.split(' ').length });
+  }
+  const res = [];
+  for (const [clave, cs] of out) { const ex2 = cs.filter(x => x.exacto), el = ex2.length === 1 ? ex2[0] : cs.length === 1 ? cs[0] : null; if (el) res.push({ nombre: clave.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' '), carpeta: el.c }); }
+  return res;
+}
+
 // Frases (0-based) que nombran a la persona (por su nombre o su apellido, 4+ letras).
 function frasesQueLaNombran(beats, nombre) {
   const alias = new Set(toks(nombre).filter(t => t.length >= 4)); if (!alias.size) return [];
@@ -75,4 +94,4 @@ async function planificar({ beats, personas, protagonista = [], existentes = new
   return { elecciones, carpetaDe, avisos };
 }
 
-module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, planificar, norm };
+module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, planificar, norm };

@@ -61,3 +61,10 @@ test('colectivos: solo tomas del grupo, nunca una integrante sola; Tamara (carpe
   assert.deepEqual(C.tomasColectivo(et, { integrantes: 4 }).map(t => t.id), ['c4', 'c3']);
   assert.deepEqual(C.tomasColectivo({ s: et.s, d: et.d }, { integrantes: 4 }), []);
 });
+
+test('personasEnTexto: detecta nombres de carpeta dentro del guion aunque la lectura no los listara', () => {
+  const car = ['Kike_Jav_Cuy', 'Las_ñañas', 'Tamara_Pardo', 'Nando', 'Vicente_Fernandez', 'Vicente_Fernandez_jr', 'Kerly_Moran'];
+  const r = C.personasEnTexto('Kike Jav y Las Ñañas aparecen con Vicente Fernández en la noche. Nando no vino. Kerly Morán canta.', car, { excluir: ['Kerly_Moran'] });
+  assert.deepEqual(r.map(x => x.carpeta).sort(), ['Kike_Jav_Cuy', 'Las_ñañas', 'Nando', 'Vicente_Fernandez']);
+  assert.deepEqual(C.personasEnTexto('Kike Jav habló', car, { yaListadas: ['Kike Jav'] }), []);
+});
