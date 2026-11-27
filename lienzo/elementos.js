@@ -358,7 +358,7 @@ function ventanaClip({ clip, ss = 0, marcas = [], cy = 0.63, ancho = 0.616, t0, 
 // discurso (cada toma, un clip distinto), unidas por transiciones. Los datos van ENCIMA como tarjetas independientes; donde hay tarjeta
 // el video se oscurece un poco para que el texto se lea. cortes: [{ clip, ss, t0, t1, trans?, marcas? }] (t ABSOLUTO; las marcas como en ventanaClip).
 // Cada toma sigue corriendo TRANS s después de su t1 mientras la siguiente entra: el ensamblador deja eso dentro de los 3 s por clip.
-const TRANS = 0.3, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
+const TRANS = 0.45, TRANSICIONES = ['empuja', 'zoom', 'abajo', 'fundido'];
 function montaje({ cortes, t0, t1, cy = 0.54, ancho = 0.616, atenuar = [], base = 0.08, fuerte = 0.30, zooms = [] }) {
   let dir = null, fpsM = 30, WW = 0, HH = 0; const cuadros = [], memo = new Map();
   const cola = cortes.map((c, i) => ({ ...c, trans: c.trans || (i === 0 ? 'fundido' : TRANSICIONES[(i - 1) % TRANSICIONES.length]) }));
@@ -373,7 +373,7 @@ function montaje({ cortes, t0, t1, cy = 0.54, ancho = 0.616, atenuar = [], base 
     return cargarArch(arch);
   };
   return {
-    t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => (c.trans === 'fundido' ? { t: c.t0, sonido: 'clic', db: -10 } : { t: c.t0, sonido: 'whoosh', db: -4 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
+    t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => (c.trans === 'fundido' ? { t: c.t0, sonido: 'clic', db: -10 } : { t: c.t0, sonido: 'whoosh', db: -9 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
     async preparar({ w, h, fps }) {
       fpsM = fps; WW = Math.round(w * ancho); HH = Math.round(WW * 16 / 9); dir = fs.mkdtempSync(path.join(os.tmpdir(), 'montaje-'));
       const ffmpeg = process.env.FFMPEG_BIN || require('ffmpeg-static');
@@ -387,15 +387,15 @@ function montaje({ cortes, t0, t1, cy = 0.54, ancho = 0.616, atenuar = [], base 
       let i = 0; for (let k = 0; k < cola.length; k++) if (cola[k].t0 <= tAbs) i = k;
       const X = (w - WW) / 2, Y = h * cy - HH / 2, e = pop(t, 0.34), c = cola[i], tt = tAbs - c.t0;
       const imgA = await cuadro(i, tAbs);
-      const enTrans = i > 0 && tt < TRANS, imgP = enTrans ? await cuadro(i - 1, tAbs) : null, p = enTrans ? easeOutCubic(tt / TRANS) : 1;
+      const enTrans = i > 0 && tt < TRANS, imgP = enTrans ? await cuadro(i - 1, tAbs) : null, p = enTrans ? (x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2))(acotar(tt / TRANS)) : 1; // entrada y salida suaves (antes arrancaba de golpe)
       ctx.save(); ctx.globalAlpha = acotar(t / 0.12) * acotar((t1 - tAbs) / 0.2); ctx.translate(w / 2, h * cy); ctx.scale(e, e); ctx.translate(-w / 2, -h * cy);
       B.sombraDeCapa(ctx, u, 1.0, 0.42); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 10, Y - 10, WW + 20, HH + 20, u * 0.06); ctx.fill(); B.sinSombra(ctx);
       ctx.save(); B.rectRedondo(ctx, X, Y, WW, HH, u * 0.05); ctx.clip();
       const zm = zoomEn(tAbs), pon = (img, dx, dy, s = 1, a = 1, enc = null) => { if (!img) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(X + WW / 2 + dx, Y + HH / 2 + dy + (enc ? enc.dy * HH : 0)); ctx.scale(s * zm * (enc ? enc.s : 1), s * zm * (enc ? enc.s : 1)); ctx.drawImage(img, -WW / 2, -HH / 2, WW, HH); ctx.restore(); }; // enc: reencuadre de la toma para que una tarjeta encima no tape la cara
       const eA = c.enc || null, eP = i > 0 ? cola[i - 1].enc || null : null;
       if (!enTrans) pon(imgA, 0, 0, 1, 1, eA);
-      else if (c.trans === 'empuja') { pon(imgP, -p * WW, 0, 1, 1, eP); pon(imgA, (1 - p) * WW, 0, 1, 1, eA); }
-      else if (c.trans === 'abajo') { pon(imgP, 0, p * HH, 1, 1, eP); pon(imgA, 0, -(1 - p) * HH, 1, 1, eA); }
+      else if (c.trans === 'empuja') { pon(imgP, -p * WW * 0.6, 0, 1, 1 - 0.5 * p, eP); pon(imgA, (1 - p) * WW * 0.6, 0, 1, Math.min(1, p * 2.2), eA); }
+      else if (c.trans === 'abajo') { pon(imgP, 0, p * HH * 0.5, 1, 1 - 0.5 * p, eP); pon(imgA, 0, -(1 - p) * HH * 0.5, 1, Math.min(1, p * 2.2), eA); }
       else if (c.trans === 'zoom') { pon(imgP, 0, 0, 1, 1, eP); pon(imgA, 0, 0, lerp(1.28, 1, p), p, eA); }
       else { pon(imgP, 0, 0, 1, 1, eP); pon(imgA, 0, 0, 1, p, eA); }
       ctx.fillStyle = `rgba(20,16,12,${(velo(tAbs) || 0).toFixed(3)})`; ctx.fillRect(X, Y, WW, HH); // velo: más oscuro donde hay tarjetas
