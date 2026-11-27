@@ -7,7 +7,7 @@ const TOPE_ESTIMADO = 69;   // por encima de esto el guion se acorta antes de ge
 const OBJETIVO = 66.5;      // a cuánto se acorta (ventana buscada 62-70 s)
 
 function estimar(texto) {
-  const t = String(texto || '').replace(/\[[^\]]*\]/g, ''); // las etiquetas de emoción entre corchetes no se pronuncian
+  const t = String(texto || '').replace(/\[[^\]]*\]\s*/g, ''); // las etiquetas de emoción entre corchetes no se pronuncian
   return (t.length + 10 * (t.match(/[.,;:?!¿¡…]/g) || []).length) / K;
 }
 const palabras = t => (String(t || '').match(/\S+/g) || []).length;
