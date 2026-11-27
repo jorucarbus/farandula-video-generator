@@ -215,8 +215,28 @@ const leerPublicados = () => { try { return JSON.parse(fs.readFileSync(F_PUBLICA
 app.get('/api/renders', (req, res) => {
   const dir = path.join(G.DM, 'renders'); if (!fs.existsSync(dir)) return ok(res, []); const est = leerPublicados();
   const guion = n => { try { return JSON.parse(fs.readFileSync(path.join(G.DM, 'noticias', n.replace(/\.mp4$/i, ''), 'guion.json'), 'utf8')); } catch { return null; } };
-  ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
+  ok(res, fs.readdirSync(dir).filter(f => /\.mp4$/i.test(f) && !/\.(anterior|rerender)\.mp4$/i.test(f) && !/^prueba/.test(f) && !/^layout-prueba/.test(f)).map(f => { const st = fs.statSync(path.join(dir, f)), g = guion(f), e = est[f] || {};
     return { nombre: f, ruta: path.join(dir, f), tam: st.size, fecha: st.mtime, canal: (g && g.canal) || '(sin canal)', titulo: g && g.titulo || '', publicado: Boolean(e.publicado), fechaPublicado: e.fecha || null, linkPost: e.linkPost || '', enDrive: fs.existsSync(path.join(dir, f.replace(/.mp4$/i, '.drive.json'))) }; }).sort((a, b) => b.fecha - a.fecha).slice(0, 200));
+});
+// Volver a renderizar un video que ya existe, con el código actual: reutiliza lectura, guion y voz (no gasta ElevenLabs ni vuelve a leer la noticia).
+// Renderiza a un archivo aparte y SOLO si termina bien reemplaza el video (si falla, el anterior queda intacto). Subir a Drive es opcional.
+app.post('/api/rerender', (req, res) => {
+  try {
+    const { nombre, subir } = req.body || {}, n = path.basename(String(nombre || '')).replace(/\.mp4$/i, '');
+    if (!/^[\w-]+$/.test(n) || !fs.existsSync(path.join(G.DM, 'renders', n + '.mp4'))) throw new Error('video desconocido');
+    const dirN = path.join(G.DM, 'noticias', n), leerJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+    const g = leerJ(path.join(dirN, 'guion.json')), lec = leerJ(path.join(dirN, 'lectura.json'));
+    if (!g || !lec || !fs.existsSync(path.join(dirN, 'palabras.json'))) throw new Error('este video no tiene guion/lectura/voz guardados (¿es de una prueba?); no se puede rehacer sin volver a pagar la lectura y la voz');
+    const ficha = canales.obtener(g.canal); if (!ficha) throw new Error(`el canal "${g.canal}" ya no existe en canales.json`);
+    const carpeta = (leerJ(path.join(dirN, 'render.json')) || {}).carpeta || 'auto';
+    const temp = `${n}.rerender`, salidaTemp = path.join(G.DM, 'renders', `${temp}.mp4`);
+    const pasos = [
+      node('noticia-a-video.js', '--canal', ficha.nombre, '--carpeta', carpeta, '--nombre', n, '--salida', salidaTemp),
+      { ...node('reemplazar-render.js', n), titulo: 'Reemplazar el video anterior por el nuevo' },
+      ...(subir ? [{ ...node('publicar-en-drive.js', n, '--canal', ficha.nombre, '--forzar'), opcional: true, titulo: `Subir a Drive: para publicar / ${ficha.nombre} (copia nueva; la anterior no se borra)` }] : []),
+    ];
+    ok(res, { id: encolar(`Rehacer: ${g.titulo || n}${subir ? ' + subir a Drive' : ''}`, pasos).id, carpeta });
+  } catch (e) { mal(res, e); }
 });
 app.post('/api/render-publicado', (req, res) => {
   try {

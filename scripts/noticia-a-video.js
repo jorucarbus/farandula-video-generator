@@ -134,11 +134,14 @@ const log = (...a) => console.log(...a);
     if (!r) throw new Error(`No encontré en Drive una carpeta para ninguna de las personas de la noticia (${(lectura.acta.personas || []).join(', ') || 'ninguna'}). Elige la carpeta a mano; la lectura y el guion ya hechos se reutilizan.`);
     carpeta = r.carpeta; log(`CARPETA automática: ${carpeta} (por "${r.persona}", coincidencia ${r.confianza}, ${r.menciones} menciones${r.otras.length ? '; otras posibles: ' + r.otras.map(o => o.carpeta).join(', ') : ''})`);
   }
-  const audio = arg('--audio', path.join(DM, 'audios', `${new Date().toISOString().slice(0, 10)} ${nombre}.mp3`));
+  // La voz lleva la fecha de cuando se generó: al rehacer un video otro día se reutiliza la que ya existe (no se vuelve a pagar ElevenLabs).
+  const voces = fs.existsSync(path.join(DM, 'audios')) ? fs.readdirSync(path.join(DM, 'audios')).filter(f => f.endsWith(` ${nombre}.mp3`) && /^\d{4}-\d{2}-\d{2} /.test(f)).sort() : [];
+  const audio = arg('--audio', path.join(DM, 'audios', voces.length && !rehacer ? voces[voces.length - 1] : `${new Date().toISOString().slice(0, 10)} ${nombre}.mp3`));
   const correr = (script, a) => { const r = spawnSync(process.execPath, [path.join(__dirname, script), ...a], { stdio: 'inherit', cwd: RAIZ, env: { ...process.env, ...(ficha && ficha.vozId ? { ELEVENLABS_VOICE_ID: ficha.vozId } : {}) } }); if (r.status !== 0) throw new Error(`${script} falló (código ${r.status})`); };
   if (fs.existsSync(audio) && fs.existsSync(fPal) && !rehacer) log('Voz ya generada; se reutiliza');
   else { log(`Voz: ${g.script.length} caracteres…`); correr('noticia-voz.js', ['--guion', fGuion, '--audio', audio, '--palabras', fPal]); }
 
+  try { fs.writeFileSync(path.join(DM, 'noticias', nombre, 'render.json'), JSON.stringify({ carpeta, canal, actualizado: new Date().toISOString() }, null, 1)); } catch { /* opcional: sin esto el re-render detecta la carpeta solo */ }
   // ---- 5) director + ensamblador + render (motor sin muñeco). Mínimo de 60 s solo si el canal NO es corto.
   const salida = arg('--salida', path.join(DM, 'renders', `${nombre}.mp4`));
   const minimo = objetivo.id === 'corto' ? ['--minimo', '0'] : [];

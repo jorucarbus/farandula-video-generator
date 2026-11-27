@@ -279,8 +279,15 @@ async function cargarVideos() {
     for (const v of vs) g.append(el('div', { className: 'clip' },
       el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
       el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
-        el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }))));
+        el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }),
+        el('button', { className: 'b', style: 'margin-top:4px;width:100%', title: 'Vuelve a armar el video con el código actual, reutilizando guion y voz (no gasta ElevenLabs)', textContent: '↻ Volver a renderizar', onclick: () => rehacerVideo(v) }))));
   }
+}
+async function rehacerVideo(v) {
+  if (!confirm(`Volver a renderizar "${v.titulo || v.nombre}" con el código actual.\n\nSe reutilizan el guion y la voz (no gasta ElevenLabs). Tarda unos minutos y, solo si termina bien, reemplaza el video de tu PC.\n\n¿Continuar?`)) return;
+  const subir = confirm('¿Subir también la versión nueva a Drive (para publicar / su canal)?\n\nAceptar = sí, se sube una copia nueva (la anterior de Drive NO se borra; bórrala tú si quieres).\nCancelar = solo rehacerlo en tu PC.');
+  try { const r = await api('/api/rerender', { nombre: v.nombre, subir }); alert(`Trabajo #${r.id} en marcha. Míralo en la pestaña Trabajos; cuando termine, recarga Videos listos.`); pestana('trabajos'); }
+  catch (e) { alert('No se pudo: ' + e.message); }
 }
 async function cargarVideosViejo() {
   const g = $('#gridVideos'); g.replaceChildren(); const l = await api('/api/renders');

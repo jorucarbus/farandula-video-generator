@@ -68,3 +68,35 @@ test('limpiarFaltantes: solo quita lo que no se puede recuperar; lo que está en
   assert.strictEqual(G.limpiarFaltantes('Solo_Drive').quitados, 1);
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf8')).map(c => c.id), ['1AbCdriveId']);
 });
+
+test('rerender: arma la cola (render aparte → reemplazo → subida opcional) y rechaza videos sin guion/voz guardados', async () => {
+  const http = require('http'), S = require('../gestor/servidor'), DM = G.DM;
+  const n = 'zz-rerender-' + process.pid, poner2 = (f, t = 'x') => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, t); };
+  poner2(path.join(DM, 'renders', n + '.mp4')); poner2(path.join(DM, 'renders', 'sin-datos.mp4'));
+  poner2(path.join(DM, 'noticias', n, 'guion.json'), JSON.stringify({ canal: 'Embajadores del Chisme', titulo: 'T' })); poner2(path.join(DM, 'noticias', n, 'lectura.json'), '{}'); poner2(path.join(DM, 'noticias', n, 'palabras.json'), '{}');
+  poner2(path.join(DM, 'noticias', n, 'render.json'), JSON.stringify({ carpeta: 'Mara_Topic' }));
+  const srv = http.createServer(S.app).listen(0), puerto = srv.address().port, llamar = async (cuerpo) => { const r = await fetch(`http://127.0.0.1:${puerto}/api/rerender`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cuerpo) }); return { st: r.status, j: await r.json() }; };
+  try {
+    const a = await llamar({ nombre: n + '.mp4' }); assert.strictEqual(a.st, 200); assert.strictEqual(a.j.carpeta, 'Mara_Topic');
+    const t = S.trabajos.find(x => x.id === a.j.id); assert.deepStrictEqual(t.pasos.map(p => path.basename(p.args[0])), ['noticia-a-video.js', 'reemplazar-render.js']);
+    assert.ok(t.pasos[0].args.includes(path.join(DM, 'renders', n + '.rerender.mp4')), 'renderiza a un archivo aparte');
+    const b = await llamar({ nombre: n, subir: true }); const t2 = S.trabajos.find(x => x.id === b.j.id);
+    assert.deepStrictEqual(t2.pasos.map(p => path.basename(p.args[0])), ['noticia-a-video.js', 'reemplazar-render.js', 'publicar-en-drive.js']); assert.ok(t2.pasos[2].args.includes('--forzar') && t2.pasos[2].opcional);
+    assert.strictEqual((await llamar({ nombre: 'sin-datos.mp4' })).st, 400);
+    assert.strictEqual((await llamar({ nombre: '../x' })).st, 400);
+    const lista = await (await fetch(`http://127.0.0.1:${puerto}/api/renders`)).json();
+    poner2(path.join(DM, 'renders', n + '.anterior.mp4')); poner2(path.join(DM, 'renders', n + '.rerender.mp4'));
+    const lista2 = await (await fetch(`http://127.0.0.1:${puerto}/api/renders`)).json();
+    assert.strictEqual(lista2.filter(v => v.nombre.startsWith(n)).length, 1, 'los archivos de trabajo (.anterior / .rerender) no salen como videos'); assert.ok(lista.length >= 1);
+  } finally { srv.close(); S.trabajos.splice(0, S.trabajos.length); }
+});
+
+test('reemplazar-render: reemplaza solo si el nuevo existe y no está vacío; guarda el anterior y mueve la portada', () => {
+  const R = require('../scripts/reemplazar-render'), d = fs.mkdtempSync(path.join(tmp, 'rr-')), w = (f, t) => fs.writeFileSync(path.join(d, f), t);
+  w('v.mp4', 'viejo'); assert.throws(() => R.reemplazar('v', d), /no se generó/); assert.strictEqual(fs.readFileSync(path.join(d, 'v.mp4'), 'utf8'), 'viejo');
+  w('v.rerender.mp4', 'corto'); assert.throws(() => R.reemplazar('v', d), /vacío/); assert.strictEqual(fs.readFileSync(path.join(d, 'v.mp4'), 'utf8'), 'viejo', 'un video nuevo roto no pisa al bueno');
+  w('v.rerender.mp4', 'n'.repeat(60000)); w('v.rerender.portada.jpg', 'p'); w('v.portada.jpg', 'vieja');
+  R.reemplazar('v', d);
+  assert.strictEqual(fs.statSync(path.join(d, 'v.mp4')).size, 60000); assert.strictEqual(fs.readFileSync(path.join(d, 'v.anterior.mp4'), 'utf8'), 'viejo');
+  assert.strictEqual(fs.readFileSync(path.join(d, 'v.portada.jpg'), 'utf8'), 'p'); assert.ok(!fs.existsSync(path.join(d, 'v.rerender.mp4')));
+});
