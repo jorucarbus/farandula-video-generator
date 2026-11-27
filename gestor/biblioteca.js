@@ -125,7 +125,7 @@ function limpiarFaltantes(carpeta) {
 
 // ---- importar descargas del Selector a una carpeta de la biblioteca (copia el archivo; el Selector sigue recordando lo bajado)
 function importarDeSelector(rutas, carpeta, { mover = false } = {}) {
-  if (!/^[\w .-]+$/.test(carpeta || '')) throw new Error('nombre de carpeta inválido');
+  if (!/^[\p{L}\p{N}_ .-]+$/u.test(carpeta || '')) throw new Error('nombre de carpeta inválido');
   const destDir = path.join(BIB, carpeta), fClips = path.join(BIB, `${carpeta}.clips.json`), clips = leer(fClips, []), ya = new Set(clips.map(c => c.ruta)), hechos = [], fallos = [];
   fs.mkdirSync(destDir, { recursive: true });
   for (const ruta of rutas) {

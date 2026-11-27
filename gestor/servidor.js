@@ -19,7 +19,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const ok = (res, datos) => res.json(datos), mal = (res, e, c = 400) => res.status(c).json({ error: e.message || String(e) });
-const carpetaValida = c => /^[\w .-]+$/.test(c || '');
+const carpetaValida = c => /^[\p{L}\p{N}_ .-]+$/u.test(c || '');
 
 // ---------------------------------------------------------------- lectura
 app.get('/api/resumen', (req, res) => { try { ok(res, { ...G.resumenCarpetas(), canales: Object.values(canales.cargar()).map(f => ({ clave: canales.normalizar(f.nombre), nombre: f.nombre, hermano: f.hermano || null, monetiza: f.monetiza !== false })) }); } catch (e) { mal(res, e, 500); } });
@@ -49,7 +49,7 @@ app.get('/miniatura', (req, res) => {
 
 // Miniatura guardada en el índice (sirve aunque el video ya no esté en disco).
 app.get('/mini', (req, res) => {
-  const { carpeta, id } = req.query; if (!/^[\w .-]+$/.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
+  const { carpeta, id } = req.query; if (!/^[\p{L}\p{N}_ .-]+$/u.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
   const f = path.join(G.BIB, `${carpeta}.minis`, `${id}.jpg`); if (!fs.existsSync(f)) return res.status(404).end();
   res.sendFile(f, { maxAge: '30d' });
 });
@@ -57,7 +57,7 @@ app.get('/mini', (req, res) => {
 // Reproducir un clip que está solo en Drive: se transmite desde Drive, con rangos, sin guardarlo en el disco.
 app.get('/video-drive', async (req, res) => {
   try {
-    const { carpeta, id } = req.query; if (!/^[\w .-]+$/.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
+    const { carpeta, id } = req.query; if (!/^[\p{L}\p{N}_ .-]+$/u.test(carpeta || '') || !/^[\w-]+$/.test(id || '')) return res.status(400).end();
     if (!G.clipsDeBiblioteca(carpeta).some(c => c.id === id && !/^loc_/.test(c.id))) return res.status(404).end();
     const r = await require('../drive').streamArchivo(id, req.headers.range || null);
     res.status(r.status || 200); const cab = h => (r.headers && typeof r.headers.get === 'function' ? r.headers.get(h) : r.headers && r.headers[h]); for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) { const v = cab(h); if (v) res.setHeader(h, v); }

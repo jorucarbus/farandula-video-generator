@@ -19,7 +19,7 @@ const esDeDrive = nombre => /^src_(?!loc_).+\.mp4$/i.test(nombre);
 
 const leer = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const rutaClip = (carpeta, id) => path.join(BIB, carpeta, `src_${id}.mp4`);
-const carpetaOk = c => /^[\w .-]+$/.test(c || '');
+const carpetaOk = c => /^[\p{L}\p{N}_ .-]+$/u.test(c || '');
 
 function recurrentesManuales() { const l = leer(F_RECURRENTES, []); return Array.isArray(l) ? l : []; }
 // Cada vez que el motor baja o reutiliza clips de una carpeta se anota el día. Un artista usado ≥ 3 veces en 30 días es recurrente solo: sus videos se conservan.

@@ -15,7 +15,7 @@ const DM = process.env.DATA_MOTOR_DIR || path.join(__dirname, '..', 'data-motor'
 const BIB = path.join(DM, 'biblioteca');
 const TIPOS = ['clips', 'etiquetas', 'calidad', 'rostros'];
 const PREFIJO = 'indice-';
-const carpetaOk = c => /^[\w .-]+$/.test(c || '');
+const carpetaOk = c => /^[\p{L}\p{N}_ .-]+$/u.test(c || '');
 const rutaLocal = (carpeta, tipo) => path.join(BIB, `${carpeta}.${tipo}.json`);
 const nombreRemoto = (carpeta, tipo) => `${PREFIJO}${carpeta}.${tipo}.json`;
 const leer = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };

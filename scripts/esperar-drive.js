@@ -3,7 +3,7 @@
 // Uso: node scripts/esperar-drive.js <carpeta>
 require('dotenv').config({ quiet: true });
 const fs = require('fs'), path = require('path');
-const carpeta = process.argv[2]; if (!carpeta || !/^[\w .-]+$/.test(carpeta)) { console.error('carpeta inválida'); process.exit(1); }
+const carpeta = process.argv[2]; if (!carpeta || !/^[\p{L}\p{N}_ .-]+$/u.test(carpeta)) { console.error('carpeta inválida'); process.exit(1); }
 const RAIZ_DRIVE = process.env.SELECTOR_DESTINO_DRIVE || 'G:\\Mi unidad\\Redes_Canales\\Videos_Famosos_Carpetas';
 const EXT = /\.(mp4|mov|webm|mkv|m4v)$/i, dormir = ms => new Promise(r => setTimeout(r, ms));
 (async () => {

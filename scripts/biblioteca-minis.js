@@ -2,7 +2,7 @@
 // sin tener los videos en disco. Usa el mejor momento del rostro si ya se conoce. No repite las que ya existen.
 // Uso: node scripts/biblioteca-minis.js <carpeta>
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
-const nombre = process.argv[2]; if (!nombre || !/^[\w .-]+$/.test(nombre)) { console.error('falta la carpeta'); process.exit(1); }
+const nombre = process.argv[2]; if (!nombre || !/^[\p{L}\p{N}_ .-]+$/u.test(nombre)) { console.error('falta la carpeta'); process.exit(1); }
 const BIB = path.join(__dirname, '..', 'data-motor', 'biblioteca'), dir = path.join(BIB, `${nombre}.minis`);
 const leer = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const clips = leer(path.join(BIB, `${nombre}.clips.json`), []), et = leer(path.join(BIB, `${nombre}.etiquetas.json`), {});

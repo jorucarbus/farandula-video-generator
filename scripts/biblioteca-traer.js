@@ -5,7 +5,7 @@ require('dotenv').config({ quiet: true });
 const fs = require('fs'), path = require('path');
 const drive = require('../drive');
 const { descargarCarpeta, RAIZ } = require('../edl/biblioteca');
-const nombre = process.argv[2]; if (!nombre || !/^[\w .-]+$/.test(nombre)) { console.error('falta el nombre de la carpeta (o es inválido)'); process.exit(1); }
+const nombre = process.argv[2]; if (!nombre || !/^[\p{L}\p{N}_ .-]+$/u.test(nombre)) { console.error('falta el nombre de la carpeta (o es inválido)'); process.exit(1); }
 const max = Number(process.argv[process.argv.indexOf('--max') + 1]) || Infinity;
 (async () => {
   const t0 = Date.now(), nuevos = await descargarCarpeta(drive, nombre, { max, progreso: (i, n) => console.log(`descargando ${i}/${n}`) });

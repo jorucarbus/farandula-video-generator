@@ -5,7 +5,7 @@
 require('dotenv').config({ quiet: true });
 const fs = require('fs'), path = require('path'), { spawnSync } = require('child_process');
 const R = require('../edl/respaldoIndice'), { etiquetarClips, RAIZ, fechaDeNombre } = require('../edl/biblioteca');
-const nombre = process.argv[2]; if (!nombre || !/^[\w .-]+$/.test(nombre)) { console.error('falta la carpeta (o es inválida)'); process.exit(1); }
+const nombre = process.argv[2]; if (!nombre || !/^[\p{L}\p{N}_ .-]+$/u.test(nombre)) { console.error('falta la carpeta (o es inválida)'); process.exit(1); }
 const sinGemini = process.argv.includes('--sin-gemini'), leer = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
 const correr = (script, ...a) => spawnSync(script.endsWith('.py') ? 'python' : process.execPath, [path.join(__dirname, script), ...a], { stdio: 'inherit', cwd: path.join(__dirname, '..') });
 
