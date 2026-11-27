@@ -31,9 +31,10 @@ async function renderizar({ musica = null, w = 1080, h = 1920, fps = 30, duracio
   const ff = spawn(ffmpeg, args, { stdio: ['pipe', 'ignore', 'pipe'] });
   let err = ''; ff.stderr.on('data', d => { err += d; });
   const fin = new Promise((res, rej) => { ff.on('close', c => (c === 0 ? res() : rej(new Error(`ffmpeg: ${err.slice(-500)}`)))); ff.on('error', rej); });
+  const T = { dibujo: 0, copia: 0, espera: 0 }, ahora = () => Number(process.hrtime.bigint()) / 1e6, t00 = ahora();
   try {
     for (let i = 0; i < n; i++) {
-      const t = i / fps;
+      const t = i / fps, a0 = ahora();
       B.fondo(ctx, w, h, estilo);
       const fl = estilo.movimiento.flote;
       for (const [k, el] of elementos.entries()) {
@@ -49,12 +50,15 @@ async function renderizar({ musica = null, w = 1080, h = 1920, fps = 30, duracio
       }
       if (subtitulos) subtitulos.dibujar(ctx, t);
       if (imgPortada && i === 0) ctx.drawImage(imgPortada, 0, 0, w, h); // frame 0: la portada tapa todo
-      const buf = Buffer.from(canvas.data());
+      const a1 = ahora(); const buf = canvas.data(); const a2 = ahora(); // canvas.data() ya devuelve una copia propia: no hace falta copiarla otra vez
       if (!ff.stdin.write(buf)) await once(ff.stdin, 'drain');
+      T.dibujo += a1 - a0; T.copia += a2 - a1; T.espera += ahora() - a2;
       if (alCuadro && i % 30 === 0) alCuadro(i, n);
     }
     ff.stdin.end();
     await fin;
+    if (process.env.RENDER_TIEMPOS) console.log(`
+TIEMPOS ${n} cuadros: total ${((ahora() - t00) / 1000).toFixed(1)}s · dibujo ${(T.dibujo / 1000).toFixed(1)}s · copia ${(T.copia / 1000).toFixed(1)}s · esperando a ffmpeg ${(T.espera / 1000).toFixed(1)}s`);
   } catch (e) { try { ff.kill(); } catch {} throw e; } finally { for (const el of elementos) if (el.limpiar) el.limpiar(); if (wav) try { fs.unlinkSync(wav); } catch {} }
   return salida;
 }

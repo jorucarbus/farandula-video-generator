@@ -10,11 +10,18 @@ function rng(semilla) { // mulberry32: mismo trazo a mano en cada render
 }
 
 // Papel crema con una viñeta apenas perceptible: el fondo no es plano del todo (da lugar a que las sombras se noten).
-function fondo(ctx, w, h, estilo) {
+// El fondo no cambia entre cuadros: se dibuja una vez en un lienzo aparte y después solo se copia (copiar es mucho más barato que recalcular el degradado).
+let _fondoCache = null;
+function fondoDirecto(ctx, w, h, estilo) {
   ctx.fillStyle = estilo.colores.fondo; ctx.fillRect(0, 0, w, h);
   const g = ctx.createRadialGradient(w / 2, h * 0.5, Math.min(w, h) * 0.35, w / 2, h * 0.5, Math.max(w, h) * 0.75);
   g.addColorStop(0, 'rgba(255,255,255,0.28)'); g.addColorStop(1, 'rgba(120,105,80,0.07)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+function fondo(ctx, w, h, estilo) {
+  const clave = `${w}x${h}|${estilo.colores.fondo}`;
+  if (!_fondoCache || _fondoCache.clave !== clave) { const c = require('@napi-rs/canvas').createCanvas(w, h); fondoDirecto(c.getContext('2d'), w, h, estilo); _fondoCache = { clave, c }; }
+  ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'copy'; ctx.drawImage(_fondoCache.c, 0, 0); ctx.restore();
 }
 
 // Sombra de capa. `altura` 0..1: más alto = sombra más larga y difusa (el elemento "flota" más).

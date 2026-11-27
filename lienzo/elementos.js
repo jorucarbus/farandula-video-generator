@@ -331,8 +331,10 @@ function montaje({ cortes, t0, t1, cy = 0.54, ancho = 0.616, atenuar = [], base 
   const velo = tAbs => { let a = base; for (const v of atenuar) { const k = acotar((tAbs - v.t0) / 0.3) * acotar((v.t1 - tAbs) / 0.3); a = Math.max(a, lerp(base, fuerte, k)); } return a; };
   const cuadro = async (ci, tAbs) => {
     const c = cola[ci], idx = Math.min(cuadros[ci], Math.max(1, Math.floor((tAbs - c.t0) * fpsM) + 1)), arch = path.join(dir, `c${ci}_${String(idx).padStart(4, '0')}.jpg`);
-    if (!memo.has(arch)) { if (memo.size > 8) memo.delete(memo.keys().next().value); memo.set(arch, fs.existsSync(arch) ? loadImage(fs.readFileSync(arch)) : Promise.resolve(null)); }
-    return memo.get(arch);
+    const cargarArch = a => { if (!memo.has(a)) { if (memo.size > 24) memo.delete(memo.keys().next().value); memo.set(a, fs.existsSync(a) ? loadImage(fs.readFileSync(a)) : Promise.resolve(null)); } return memo.get(a); };
+    // se pide ya la decodificación de los 3 cuadros siguientes: corre en otro hilo mientras este cuadro se dibuja
+    for (let k = 1; k <= 3 && idx + k <= cuadros[ci]; k++) cargarArch(path.join(dir, `c${ci}_${String(idx + k).padStart(4, '0')}.jpg`));
+    return cargarArch(arch);
   };
   return {
     t0, t1, cortes: cola, eventos: [{ t: t0, sonido: 'pop' }, ...cola.slice(1).map(c => (c.trans === 'fundido' ? { t: c.t0, sonido: 'clic', db: -10 } : { t: c.t0, sonido: 'whoosh', db: -4 })), ...cola.flatMap(c => (c.marcas || []).map(m => ({ t: m.t, sonido: 'trazo' })))],
