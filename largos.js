@@ -23,11 +23,13 @@
 // El largo de un solo pase. A este número se vuelve al apagar el guion en dos tiempos.
 const NORMAL = {
   id: 'normal',
-  min: 185,
-  max: 200,
+  // LECCIÓN (2026-11-27): con 185-200 el guion salía de 209 palabras y la voz de 83 s, y el video tiene tope de 74 s (se cortaba el final). La voz real rinde ~2,54 palabras/s
+  // y el modelo se pasa ~10 % de lo pedido: se pide 160-176 (≈ 63-69 s) para que SALGA bien a la primera, sin acortar después ni pagar otra voz.
+  min: 160,
+  max: 176,
   // Debajo de esto, `escribirGuion` pide otro: la longitud no es cosmética, de ella sale la
   // duración del video — y de ella depende que el video califique para monetizar.
-  minAceptable: 178,
+  minAceptable: 154,
   segundos: 'poco más de un minuto',
 };
 
@@ -40,17 +42,17 @@ const NORMAL = {
 // se queda hasta el final. Núcleo ≈ 30-31 s y complemento ≈ 36-37 s, que sumados dan los 185 del total.
 const NUCLEO = {
   id: 'nucleo',
-  min: 82,
-  max: 90,
-  minAceptable: 76,
+  min: 72,
+  max: 80,
+  minAceptable: 68,
   segundos: 'unos 30 segundos',
 };
 
 const COMPLEMENTO = {
   id: 'complemento',
-  min: 98,
-  max: 106,
-  minAceptable: 92,
+  min: 86,
+  max: 94,
+  minAceptable: 82,
   segundos: 'unos 35 segundos',
 };
 

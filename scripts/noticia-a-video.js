@@ -99,7 +99,7 @@ const log = (...a) => console.log(...a);
     const palabrasDatos = lectura.hechos.reduce((n, h) => n + contarPalabras(h.texto), 0);
     let objUsado = objetivo, dos = dosTiempos;
     if (objetivo.id === 'normal' && palabrasDatos < 200) {
-      objUsado = { ...largos.NORMAL, min: 165, max: 185, minAceptable: 158 }; dos = false;
+      objUsado = { ...largos.NORMAL, min: 158, max: 172, minAceptable: 152 }; dos = false;
       log(`Pocos datos (${palabrasDatos} palabras): guion de ${objUsado.min}-${objUsado.max} palabras, de un solo pase, para no rellenar`);
     }
     const corto = objUsado.id === 'corto'; // los canales cortos eligen los datos más fuertes en vez de cubrirlos todos
@@ -122,16 +122,8 @@ const log = (...a) => console.log(...a);
     (rev.avisos || []).forEach(a => log('  AVISO de revisión:', typeof a === 'string' ? a : JSON.stringify(a)));
     script = rev.guion;
     if ((rev.cambios || []).length) { const rev2 = await require('../revisionGuion').revisar(script, base); script = rev2.guion; rev.cambios = [...rev.cambios, ...(rev2.cambios || [])]; log(`  segunda pasada de revisión: ${(rev2.cambios || []).length} cambio(s)`); }
-    // 3c-bis) PRESUPUESTO DE TIEMPO antes de pagar la voz: se estima cuánto dura hablado; si se pasa del tope del video (74 s), se acorta ahora (1 llamada de texto, barata) y no después (otro cobro de ElevenLabs)
-    {
-      const DU = require('../edl/duracionEstimada'); let est = DU.estimar(script);
-      log(`Duración estimada de la voz: ${est.toFixed(0)} s (tope del video ${DU.LIMITE_VIDEO} s)`);
-      for (let i = 0; i < 2 && est > DU.TOPE_ESTIMADO; i++) {
-        try { script = await DU.acortar(script, { actual: est }); } catch (e) { log('  no pude acortar el guion: ' + String(e.message).slice(0, 80)); break; }
-        const nuevo = DU.estimar(script); if (nuevo >= est - 0.5) break; est = nuevo; log(`  guion acortado a ${DU.palabras(script)} palabras · voz estimada ${est.toFixed(0)} s`);
-      }
-      if (est > DU.LIMITE_VIDEO - DU.COLA) log(`  ATENCIÓN: la voz estimada (${est.toFixed(0)} s) sigue pasando el tope; el video respetará la narración completa`);
-    }
+    // 3c-bis) aviso de tiempo (SIN llamadas extra): cuánto durará la voz según la calibración. Si el guion sale largo, la lección está en largos.js (se pide menos desde el primer pase).
+    { const DU = require('../edl/duracionEstimada'), est = DU.estimar(script); log(`Duración estimada de la voz: ${est.toFixed(0)} s (tope del video ${DU.LIMITE_VIDEO} s)${est > DU.LIMITE_VIDEO - DU.COLA ? ' ⚠ pasa el tope: el video respetará la narración completa' : ''}`); }
     const final = pauta.problemas(script, lectura.hechos, base, { maxPalabras, corto });
     // 3d) frases con rol y hechos para el director
     const { guionABeats } = require('../edl/guionABeats'), b = await guionABeats(script, cronica, { hechosDados: lectura.hechos });

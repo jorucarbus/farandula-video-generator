@@ -7,11 +7,5 @@ test('estimar: crece con el texto y no cuenta las etiquetas entre corchetes', ()
 });
 test('estimar: un guion de ~210 palabras pasa el tope y uno de ~170 no', () => {
   const g = n => Array.from({ length: n }, () => 'palabra').join(' ').replace(/(palabra ){8}/g, '$&. ');
-  assert.ok(DU.estimar(frase.repeat(11)) > DU.TOPE_ESTIMADO); assert.ok(DU.estimar(frase.repeat(8)) < DU.TOPE_ESTIMADO);
-});
-test('acortar: usa la respuesta si es más corta; si no sirve, conserva el original', async () => {
-  const largo = frase.repeat(11), corto = frase.repeat(7);
-  assert.equal(await DU.acortar(largo, { llamar: async () => ({ guion: corto }) }), corto.trim());
-  assert.equal(await DU.acortar(largo, { llamar: async () => ({ guion: 'muy corto' }) }), largo);
-  assert.equal(await DU.acortar(largo, { llamar: async () => ({ guion: largo + ' más' }) }), largo);
+  assert.ok(DU.estimar(frase.repeat(12)) > DU.LIMITE_VIDEO - DU.COLA); assert.ok(DU.estimar(frase.repeat(8)) < DU.LIMITE_VIDEO - DU.COLA);
 });
