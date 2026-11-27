@@ -298,7 +298,7 @@ async function cargarVideos() {
     const vs = lista.filter(v => v.canal === canal); cont.append(el('h3', {}, `${canal} · ${vs.length}`));
     const g = el('div', { className: 'grid' }); cont.append(g);
     for (const v of vs) g.append(el('div', { className: 'clip' },
-      el('img', { src: '/miniatura?ruta=' + q(v.ruta), alt: '', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
+      el('img', { src: '/miniatura?primero=1&ruta=' + q(v.ruta) + '&v=' + Math.round(new Date(v.fecha).getTime() / 1000), alt: 'Portada', onclick: () => ver('/render?nombre=' + q(v.nombre), v.titulo || v.nombre, v.nombre) }),
       el('div', { className: 'info' }, el('div', { className: 'nom', title: v.nombre }, v.titulo || v.nombre), v.juicio ? juicioChip(v.juicio) : '', el('div', { style: 'color:var(--suave)' }, new Date(v.publicado ? v.fechaPublicado : v.fecha).toLocaleDateString(), ' · ', (v.tam / 1e6).toFixed(1), ' MB', v.enDrive ? ' · ✓ en Drive' : ' · solo local'),
         el('button', { className: 'b' + (v.publicado ? '' : ' p'), style: 'margin-top:4px;width:100%', textContent: v.publicado ? 'Volver a “por publicar”' : 'Marcar como publicado', onclick: async () => { await api('/api/render-publicado', { nombre: v.nombre, publicado: !v.publicado }); cargarVideos(); } }),
         el('button', { className: 'b', style: 'margin-top:4px;width:100%', title: 'Anota cuántas vistas tuvo: los que pasan de 100 mil sirven de referencia para mejorar guiones y planes', textContent: v.vistas === null ? '👁 Anotar vistas' : `👁 ${v.vistas.toLocaleString()} vistas${v.vistas >= 100000 ? ' ★' : ''}`, onclick: () => anotarVistas(v) }),

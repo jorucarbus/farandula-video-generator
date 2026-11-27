@@ -34,11 +34,14 @@ app.get('/api/papelera', (req, res) => ok(res, G.enPapelera()));
 app.get('/miniatura', (req, res) => {
   const ruta = String(req.query.ruta || '');
   if (!G.rutaPermitida(ruta) || !fs.existsSync(ruta)) return res.status(404).end();
-  const mini = path.join(MINIS, crypto.createHash('sha1').update(ruta).digest('hex').slice(0, 20) + '.jpg');
-  const servir = () => res.sendFile(mini, { maxAge: '7d' });
+  // ?primero=1 (videos listos): el PRIMER cuadro, que es la portada; sin eso, un cuadro del segundo 1 (clips de la biblioteca).
+  // La clave incluye la fecha y el tamaño del archivo: si el video se vuelve a renderizar, la miniatura se rehace sola.
+  const primero = req.query.primero === '1', st = fs.statSync(ruta);
+  const mini = path.join(MINIS, crypto.createHash('sha1').update(ruta + (primero ? `|p|${st.mtimeMs}|${st.size}` : '')).digest('hex').slice(0, 20) + '.jpg');
+  const servir = () => res.sendFile(mini, { maxAge: primero ? 0 : '7d' });
   if (fs.existsSync(mini)) return servir();
   fs.mkdirSync(MINIS, { recursive: true });
-  execFile(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-v', 'error', '-ss', '1', '-i', ruta, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', mini], { timeout: 20000 }, e => {
+  execFile(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-v', 'error', ...(primero ? [] : ['-ss', '1']), '-i', ruta, '-frames:v', '1', '-vf', primero ? 'scale=360:-2' : 'scale=270:-2', '-q:v', primero ? '3' : '5', mini], { timeout: 20000 }, e => {
     if (e) return execFile(process.env.FFMPEG_BIN || require('ffmpeg-static'), ['-y', '-v', 'error', '-i', ruta, '-frames:v', '1', '-vf', 'scale=270:-2', '-q:v', '5', mini], { timeout: 20000 }, e2 => (e2 ? res.status(500).end() : servir()));
     servir();
   });
