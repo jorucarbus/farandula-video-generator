@@ -81,3 +81,13 @@ test('balanza: el círculo va del lado más liviano (sin cara ni fondo recargado
   assert.strictEqual(elegirLado(d, { fx: 540, fy: 600, rpx: 100 }, { R, cy, xIzq, xDer }), 'der');
   assert.ok(['izq', 'der'].includes(elegirLado(null, null, { R, cy, xIzq, xDer })));
 });
+
+test('gemelo: título propio distinto al del hermano; rechaza copias y respuestas inválidas', async () => {
+  const G = require('../edl/tituloGemelo'), orig = { titulo: 'Mara Topic queda varada en medio del Atlántico', descripcion: 'Mara Topic enfrenta una odisea tras un aterrizaje de emergencia.' };
+  assert.ok(G.parecidos(orig.titulo, 'Mara Topic queda varada en el Atlántico'));
+  assert.strictEqual(G.limpiar({ titulo: orig.titulo, descripcion: 'otra descripción larga que no es igual' }, orig), null);
+  assert.strictEqual(G.limpiar({ titulo: 'Corto', descripcion: 'una descripción suficientemente larga' }, orig), null);
+  let n = 0; const r = await G.generar({ script: 'x', original: orig, llamar: async () => (++n === 1 ? { titulo: orig.titulo, descripcion: 'copia' } : { titulo: 'Reina ecuatoriana atrapada en isla azoreña sin hotel', descripcion: 'Un aterrizaje forzoso dejó a la modelo sin cuartos ni trámite migratorio.' }) });
+  assert.strictEqual(n, 2); assert.strictEqual(r.titulo, 'Reina ecuatoriana atrapada en isla azoreña sin hotel');
+  assert.strictEqual(await G.generar({ script: 'x', original: orig, llamar: async () => { throw new Error('sin red'); } }), null);
+});

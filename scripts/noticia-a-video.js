@@ -112,6 +112,17 @@ const log = (...a) => console.log(...a);
     log(`Guion ya escrito (${g.palabras} palabras); se reutiliza`);
     if (!g.personas && lectura.acta) { g.personas = (lectura.acta.personas || []).map(nombre => ({ nombre, rol: 'persona mencionada en la noticia' })); fs.writeFileSync(fGuion, JSON.stringify(g, null, 2)); }
   }
+  // Gemelo: título y descripción propios (la lectura compartida los trae iguales a los del hermano). Solo una vez; se anota en el guion.
+  if (desde && !g.tituloPropio) {
+    try {
+      const gh = JSON.parse(fs.readFileSync(path.join(DM, 'noticias', desde, 'guion.json'), 'utf8'));
+      if (gh.titulo && g.titulo === gh.titulo) {
+        const tg = await require('../edl/tituloGemelo').generar({ script: g.script, original: { titulo: gh.titulo, descripcion: gh.descripcion || '' }, sesgo: ficha ? ficha.sesgo : '' });
+        if (tg) { g.tituloHeredado = g.titulo; g.titulo = tg.titulo; g.descripcion = tg.descripcion; g.tituloPropio = true; fs.writeFileSync(fGuion, JSON.stringify(g, null, 2)); log(`Gemelo: título propio → "${g.titulo}"`); }
+        else log('Gemelo: no se pudo generar un título distinto; se conserva el heredado');
+      } else g.tituloPropio = true;
+    } catch (e) { log('Gemelo: sin título propio (' + String(e.message).slice(0, 80) + ')'); }
+  }
   if (bandera('--hasta-guion')) { log('\nSe detiene en el guion (--hasta-guion). Revísalo/edítalo y vuelve a correr sin la bandera para seguir.\n\n' + g.script); return; }
 
   // ---- 4) voz + tiempos por palabra (ElevenLabs) — se paga una vez por guion
