@@ -14,12 +14,17 @@ set "SELECTOR_NAVEGADOR=firefox"
 set "SELECTOR_PERFIL_FIREFOX=%PERFIL%"
 
 if exist "%SELECTOR_DIR%\selector_tiktok.py" (
-  start "Selector de videos" /min cmd /c "cd /d %SELECTOR_DIR% && (where py >nul 2>nul && py selector_tiktok.py --sin-navegador || python selector_tiktok.py --sin-navegador)"
+  start "Selector de videos" /min "%~dp0gestor\lanzar-selector.bat" "%SELECTOR_DIR%" "%~dp0data-motor\selector.log"
 ) else (
   echo No encuentro el Selector en %SELECTOR_DIR% - solo se abre el gestor.
 )
 start "Gestor de la superapp" /min cmd /c "node gestor\servidor.js"
-timeout /t 3 /nobreak >nul
+for /l %%i in (1,1,15) do (
+  powershell -NoProfile -Command "try{(New-Object Net.Sockets.TcpClient('127.0.0.1',8765)).Close();exit 0}catch{exit 1}" >nul 2>nul && goto :listo
+  timeout /t 1 /nobreak >nul
+)
+echo Aviso: el Selector no respondio en el puerto 8765; revisa data-motor\selector.log
+:listo
 
 where firefox >nul 2>nul
 if %errorlevel%==0 (
