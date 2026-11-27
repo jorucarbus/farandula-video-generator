@@ -256,7 +256,7 @@ app.get('/api/renders', (req, res) => {
 // Renderiza a un archivo aparte y SOLO si termina bien reemplaza el video (si falla, el anterior queda intacto). Subir a Drive es opcional.
 app.post('/api/rerender', (req, res) => {
   try {
-    const { nombre, subir } = req.body || {}, n = path.basename(String(nombre || '')).replace(/\.mp4$/i, '');
+    const { nombre, subir = true } = req.body || {}, n = path.basename(String(nombre || '')).replace(/\.mp4$/i, ''); // la subida a Drive es automática (subir:false solo si se pide a propósito)
     if (!/^[\w-]+$/.test(n) || !fs.existsSync(path.join(G.DM, 'renders', n + '.mp4'))) throw new Error('video desconocido');
     const dirN = path.join(G.DM, 'noticias', n), leerJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
     const g = leerJ(path.join(dirN, 'guion.json')), lec = leerJ(path.join(dirN, 'lectura.json'));

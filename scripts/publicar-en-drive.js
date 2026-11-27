@@ -27,12 +27,14 @@ async function publicar(nombre, canal, { forzar = false, log = console.log, clie
   // Nombre como la app vieja: "<fecha> <Protagonista> - <Secundario> - <hecho corto>" (sale de la crónica que ya se leyó: sin llamadas extra)
   const leerJ = f => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return {}; } }, NA = require('../edl/nombreArchivo');
   const lec = leerJ(path.join(DM, 'noticias', nombre, 'lectura.json')), rj = leerJ(path.join(DM, 'noticias', nombre, 'render.json'));
-  const base = nombreSeguro(NA.nombreCompleto(nombre, lec.cronica && (lec.cronica.protagonista || lec.cronica.accion) ? lec.cronica : { titulo: g.titulo || nombre }, { carpeta: rj.carpeta }));
+  const previa = fs.existsSync(marca) ? leerJ(marca) : null, version = previa ? (previa.version || 1) + 1 : 1; // al subir otra vez el mismo video, la copia nueva lleva "v2", "v3"… para no confundirla con la anterior
+  const base0 = nombreSeguro(NA.nombreCompleto(nombre, lec.cronica && (lec.cronica.protagonista || lec.cronica.accion) ? lec.cronica : { titulo: g.titulo || nombre }, { carpeta: rj.carpeta }));
+  const base = version > 1 ? `${base0} v${version}` : base0;
   log(`Subiendo a "para publicar/${carpeta.name}": ${base}.mp4`);
   const v = await subir(mp4, `${base}.mp4`, carpeta.id);
   let portadaId = null; const jpg = path.join(DM, 'renders', `${nombre}.portada.jpg`);
   if (fs.existsSync(jpg)) { try { portadaId = (await subir(jpg, `${base}.jpg`, carpeta.id, 'image/jpeg')).id; } catch (e) { log('  la portada no subió: ' + String(e.message).slice(0, 100)); } }
-  const out = { nombreArchivo: `${base}.mp4`, driveId: v.id, link: v.webViewLink || null, portadaId, carpeta: carpeta.name, carpetaId: carpeta.id, subido: new Date().toISOString() };
+  const out = { version, nombreArchivo: `${base}.mp4`, driveId: v.id, link: v.webViewLink || null, portadaId, carpeta: carpeta.name, carpetaId: carpeta.id, subido: new Date().toISOString() };
   fs.writeFileSync(marca, JSON.stringify(out, null, 2)); log('Listo en Drive:', out.link || out.driveId);
   return out;
 }

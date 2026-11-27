@@ -77,10 +77,10 @@ test('rerender: arma la cola (render aparte → reemplazo → subida opcional) y
   poner2(path.join(DM, 'noticias', n, 'render.json'), JSON.stringify({ carpeta: 'Mara_Topic' }));
   const srv = http.createServer(S.app).listen(0), puerto = srv.address().port, llamar = async (cuerpo) => { const r = await fetch(`http://127.0.0.1:${puerto}/api/rerender`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cuerpo) }); return { st: r.status, j: await r.json() }; };
   try {
-    const a = await llamar({ nombre: n + '.mp4' }); assert.strictEqual(a.st, 200); assert.strictEqual(a.j.carpeta, 'Mara_Topic');
+    const a = await llamar({ nombre: n + '.mp4', subir: false }); assert.strictEqual(a.st, 200); assert.strictEqual(a.j.carpeta, 'Mara_Topic');
     const t = S.trabajos.find(x => x.id === a.j.id); assert.deepStrictEqual(t.pasos.map(p => path.basename(p.args[0])), ['noticia-a-video.js', 'reemplazar-render.js']);
     assert.ok(t.pasos[0].args.includes(path.join(DM, 'renders', n + '.rerender.mp4')), 'renderiza a un archivo aparte');
-    const b = await llamar({ nombre: n, subir: true }); const t2 = S.trabajos.find(x => x.id === b.j.id);
+    const b = await llamar({ nombre: n }); /* por defecto SÍ sube a Drive */ const t2 = S.trabajos.find(x => x.id === b.j.id);
     assert.deepStrictEqual(t2.pasos.map(p => path.basename(p.args[0])), ['noticia-a-video.js', 'reemplazar-render.js', 'publicar-en-drive.js']); assert.ok(t2.pasos[2].args.includes('--forzar') && t2.pasos[2].opcional);
     assert.strictEqual((await llamar({ nombre: 'sin-datos.mp4' })).st, 400);
     assert.strictEqual((await llamar({ nombre: '../x' })).st, 400);

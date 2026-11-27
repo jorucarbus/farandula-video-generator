@@ -306,8 +306,8 @@ async function cargarVideos() {
   }
 }
 async function rehacerVideo(v) {
-  if (!confirm(`Volver a renderizar "${v.titulo || v.nombre}" con el código actual.\n\nSe reutilizan el guion y la voz (no gasta ElevenLabs). Tarda unos minutos y, solo si termina bien, reemplaza el video de tu PC.\n\n¿Continuar?`)) return;
-  const subir = confirm('¿Subir también la versión nueva a Drive (para publicar / su canal)?\n\nAceptar = sí, se sube una copia nueva (la anterior de Drive NO se borra; bórrala tú si quieres).\nCancelar = solo rehacerlo en tu PC.');
+  if (!confirm(`Volver a renderizar "${v.titulo || v.nombre}" con el código actual.\n\nSe reutilizan el guion y la voz (no gasta ElevenLabs). Tarda unos minutos y, solo si termina bien, reemplaza el video de tu PC y sube una copia nueva a Drive (para publicar / su canal) con "v2" en el nombre; la anterior de Drive NO se borra.\n\n¿Continuar?`)) return;
+  const subir = true; // la subida a Drive es automática: así lo corregido nunca se queda solo en la PC
   try { const r = await api('/api/rerender', { nombre: v.nombre, subir }); alert(`Trabajo #${r.id} en marcha. Míralo en la pestaña Trabajos; cuando termine, recarga Videos listos.`); pestana('trabajos'); }
   catch (e) { alert('No se pudo: ' + e.message); }
 }
