@@ -124,6 +124,9 @@ function sinNegro(ruta, ss) {
       revisionPlan.aplicados.forEach(c => console.log(`  frase ${c.beat}: ${c.de} -> ${c.a} · ${c.motivo}`));
     } catch (e) { console.log('(el revisor del plan no pudo correr: ' + String(e.message).slice(0, 100) + ')'); }
   }
+  // PRIORIDAD: donde hay una toma de otra persona nombrada, la escena es ese clip (el director o el revisor podían haberla cambiado por mapa/lista/video y la toma se perdía)
+  { const D = require('../edl/director'), pr = D.directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: process.argv.includes('--sin-muneco') });
+    dir.escenas = dir.escenas.map(e => { const c = elecciones.get(e.beat - 1), r = pr[e.beat - 1]; if (c && c.persona && e.principal !== 'clip' && r && r.principal === 'clip' && !D.validarEscena(r, g.beats, g.hechos, elecciones).length) { console.log(`  frase ${e.beat}: ${e.principal} -> clip (toma de ${c.persona}, tiene prioridad)`); return { ...r, extras: e.extras || r.extras }; } return e; }); }
   dir.escenas.forEach(e => console.log(`  ${e.beat}. ${e.principal}${e.muneco ? ` + muñeco ${e.muneco.pose}/${e.muneco.emocion}${e.muneco.accesorio ? '/' + e.muneco.accesorio : ''}` : ''} | extras: ${(e.extras || []).map(x => x.icono || x.tipo).join(', ') || '-'}`));
   // fotos de las otras personas nombradas (círculos flotantes); --sin-personas las quita
   if (!process.argv.includes('--sin-personas')) {
