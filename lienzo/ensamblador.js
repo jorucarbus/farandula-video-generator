@@ -54,7 +54,7 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
   for (let k = 0; k < beats.length; k++) {
     const e = porBeat.get(k); if (!e) continue;
     const t0 = V[k].t0, t1 = fin(k);
-    if (e.principal === 'clip' && M) { pedidos.push({ k, id: e.clip.id, ss: e.clip.ss, marca: e.clip.marca }); finClip.set(k, t0 + Math.min(USO_MAX_S - E.TRANS - 0.1, Math.max(1.2, fin(k) - t0))); continue; } // el clip pedido será una toma del montaje
+    if (e.principal === 'clip' && M) { pedidos.push({ k, id: e.clip.id, ss: e.clip.ss, marca: e.clip.marca }); const M1 = USO_MAX_S - E.TRANS - 0.1, L1 = fin(k) - t0; finClip.set(k, t0 + Math.min(L1, e.muneco ? Math.min(M1, Math.max(1.2, L1)) : Math.max(1.2, L1 / Math.max(1, Math.ceil(L1 / M1 - 1e-9))))); continue; } // el clip pedido será una toma del montaje
     if (e.principal === 'clip') {
       const info = (cfg.clips || {})[e.clip.id];
       if (!info) { avisos.push('frase ' + (k + 1) + ': el clip ' + e.clip.id + ' no está disponible; se omite'); continue; }
@@ -153,6 +153,15 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
     // centro es la pieza, sin video. Dentro de cada tramo: tomas de ~2 s cortadas en una palabra, cada una de un clip distinto (nunca se repite).
     // Cada toma ≤ USO_MAX_S − TRANS − 0.1 porque la transición la deja correr TRANS s más: así ningún clip pasa de 3 s en pantalla.
     let ciclo = 0; const MAXC = USO_MAX_S - E.TRANS - 0.1, usados = new Set(pedidos.map(p => p.id)), pool = M.ids.filter(id => !usados.has(id)), tramos4 = [];
+    // De qué carpeta salen las tomas de cada frase (cfg.montaje.porBeat; sin dato, la de la protagonista) y cuánto tiempo REAL le toca a cada tramo de una misma carpeta.
+    const beatEn = t => { let kk = 0; for (let j = 0; j < beats.length; j++) if (V[j].t0 <= t + 0.05) kk = j; return kk; };
+    const claveBeat = kk => (M.porBeat && M.porBeat.get(kk) ? M.porBeat.get(kk).clave : 'protagonista');
+    const finSeg = (kb, clv, tb) => { let ee = fin(kb); for (let j = kb + 1; j < beats.length && V[j].t0 < tb - 0.01 && claveBeat(j) === clv; j++) ee = fin(j); if (kb === beats.length - 1 && tb > ee) ee = tb; return Math.min(ee, tb); };
+    const colas = new Map(), colaDe = clv => {
+      if (colas.has(clv)) return colas.get(clv);
+      const propios = clv === 'protagonista' ? M.ids : (([...(M.porBeat ? M.porBeat.values() : [])].find(x => x.clave === clv)) || { ids: [] }).ids;
+      const c = { ids: propios.length ? propios : M.ids, pool: clv === 'protagonista' || !propios.length ? pool : propios.filter(id => !usados.has(id)), ciclo: 0 }; colas.set(clv, c); return c;
+    };
     const alPalabra = (t, lo, hi) => { let mejor = null; for (const p of palabras) if (p.t0 >= lo && p.t0 <= hi && (mejor === null || Math.abs(p.t0 - t) < Math.abs(mejor - t))) mejor = p.t0; return mejor === null ? Math.min(hi, Math.max(lo, t)) : mejor; };
     for (let k = 0; k < beats.length; k++) {
       const e = porBeat.get(k);
@@ -175,9 +184,14 @@ function ensamblar(escenas, beats, V, palabras, cfg) {
         const r = pendientes[ri]; let id, dur, pedido = null;
         if (r && V[r.k].t0 >= tr.a - 0.01 && V[r.k].t0 < tr.b && V[r.k].t0 - cur < 1.0) { pedido = r; ri++; id = r.id; dur = Math.min(MAXC, Math.max(1.2, Math.min(tr.b, fin(r.k)) - cur)); }
         else {
-          const tope = r && V[r.k].t0 < tr.b ? V[r.k].t0 : tr.b; dur = alPalabra(cur + 1.6 + 0.8 * ((cortes.length * 3) % 5) / 4, cur + 1.2, Math.min(cur + MAXC, tope)) - cur;
-          if (!(dur >= 1.0)) dur = Math.min(MAXC, tope - cur);
-          id = pool.shift(); if (!id) { if (!M.ids.length) { avisos.push('el montaje no tiene clips'); break; } ciclo++; pool.push(...M.ids); id = pool.shift(); if (ciclo === 1) avisos.push('el montaje reutiliza tomas (otro tramo del mismo clip) a los ' + cur.toFixed(1) + ' s'); }
+          // tomas PAREJAS: el tiempo que le toca a esta carpeta en el tramo se divide en n tomas iguales (n = lo mínimo para que ninguna pase de MAXC); se corta en la palabra más cercana
+          const kb = beatEn(cur), clv = claveBeat(kb), segB = finSeg(kb, clv, tr.b), tope = Math.min(r && V[r.k].t0 < tr.b ? V[r.k].t0 : tr.b, Math.max(segB, Math.min(tr.b, cur + 0.6)));
+          const resto = Math.max(0.6, segB - cur), obj = resto / Math.max(1, Math.ceil(resto / MAXC - 1e-9));
+          dur = alPalabra(cur + obj, Math.max(cur + 1.0, cur + obj - 0.35), Math.min(cur + MAXC, tope, cur + obj + 0.35)) - cur;
+          if (!(dur >= 1.0)) dur = Math.min(MAXC, Math.max(obj, 1.0), tope - cur);
+          const cq = colaDe(clv); id = cq.pool.shift();
+          if (!id) { if (!cq.ids.length) { avisos.push('el montaje no tiene clips'); break; } cq.ciclo++; cq.pool.push(...cq.ids); id = cq.pool.shift(); if (cq.ciclo === 1) avisos.push('el montaje reutiliza tomas (otro tramo del mismo clip) a los ' + cur.toFixed(1) + ' s'); }
+          ciclo = cq.ciclo;
         }
         const info = (cfg.clips || {})[id] || M.info(id); if (!info) { avisos.push('clip ' + id + ' no disponible; se omite'); continue; }
         const ss = pedido ? pedido.ss : Math.max(0, Math.min(((info.rostro && info.rostro.t) || 0) + (ciclo ? ciclo * 1.1 : 0), Math.max(0, (info.duracion || USO_MAX_S) - dur - E.TRANS))), marcas = []; // al reutilizar un clip se toma otro tramo suyo

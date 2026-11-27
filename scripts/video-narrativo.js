@@ -70,13 +70,14 @@ function sinNegro(ruta, ss) {
     for (const [i, c] of elecciones) { const t = etiquetas[c.id]; cfgClips[c.id] = infoClip(c.id); console.log(`  [${c.nivel || 'exacta'}] frase ${i + 1} ← ${t.fecha} "${t.descripcion.slice(0, 80)}" | ${c.motivo}`); }
   } else console.log('sin clips reales (falta etiquetar la carpeta o --sin-clips)');
 
+  const porBeatMontaje = new Map(); // frase → { clave: carpeta, ids } : de qué carpeta salen las tomas de fondo de esa frase (si no está, la de la protagonista)
   // VIDEOS DE OTRAS PERSONAS: si el guion nombra a alguien con carpeta propia (aquí o en Drive), en las frases que la nombran van tomas SUYAS (--sin-clips-otros lo salta)
   if (!process.argv.includes('--sin-clips-otros') && !process.argv.includes('--sin-clips') && (g.script || g.beats)) {
     try {
       const CO = require('../edl/clipsDeOtros'), leerJ = (f, d) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
       let mapaDrive = {}; try { mapaDrive = process.env.RESPALDO_DRIVE === '0' ? {} : await require('../drive').obtenerCarpetasFamosos(); } catch { /* sin Drive: solo carpetas locales */ }
       const locales = fs.readdirSync(RAIZ).filter(f => f.endsWith('.etiquetas.json')).map(f => f.replace(/\.etiquetas\.json$/, ''));
-      const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; const duraciones = {}; for (const x of leerJ(path.join(RAIZ, `${c}.clips.json`), [])) if (x && x.duracion) duraciones[x.id] = x.duracion; return { etiquetas: et, duraciones }; };
+      const cargar = c => { let et = leerJ(path.join(RAIZ, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RAIZ, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; const duraciones = {}; for (const x of leerJ(path.join(RAIZ, `${c}.clips.json`), [])) if (x && x.duracion) duraciones[x.id] = x.duracion; return { etiquetas: et, duraciones, calidad: cal || {} }; };
       const indexar = async c => { require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), c], { stdio: 'inherit' }); };
       // además de las personas que listó la lectura, las que el guion nombra y tienen carpeta (p. ej. Kike Jav → Kike_Jav_Cuy)
       const textoGuion = g.script || g.beats.map(b => b.frase).join(' '), extra = CO.personasEnTexto(textoGuion, [...new Set([...locales, ...Object.keys(mapaDrive)])], { excluir: [carpeta, protagonista], yaListadas: (g.personas || []).map(p => p.nombre) });
@@ -92,18 +93,20 @@ function sinNegro(ruta, ss) {
         const r = await AL.resolver(p.nombre, { carpetas: todasC, reg, excluir: excl, contexto: (g.hechos || []).slice(0, 3).map(h => h.texto).join(' ') });
         if (r.carpeta && r.carpeta !== carpeta) { resueltas.push({ nombre: p.nombre, carpeta: r.carpeta, alias: [p.nombre] }); console.log(`OTROS: "${p.nombre}" es ${r.carpeta} (${r.origen})`); }
       }
-      const otros = await CO.planificar({ asignar: process.argv.includes('--sin-gemini-otros') ? null : CO.elegirCarpetas, beats: g.beats, personas: [...(g.personas || []).filter(p => !resueltas.some(r => r.nombre === p.nombre)), ...extra, ...aprendidos, ...resueltas], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
+      const otros = await CO.planificar({ asignar: process.argv.includes('--sin-gemini-otros') ? null : CO.elegirCarpetas, tiempos: V.map(v => ({ t0: v.t0, t1: v.t1 + 0.4 })), beats: g.beats, personas: [...(g.personas || []).filter(p => !resueltas.some(r => r.nombre === p.nombre)), ...extra, ...aprendidos, ...resueltas], protagonista: [carpeta, protagonista], existentes: elecciones, carpetasLocales: locales, carpetasDrive: Object.keys(mapaDrive), cargar, indexar, log: m => console.log('OTROS: ' + m) });
       const porCarpeta = new Map(); for (const [id, c] of otros.carpetaDe) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); porCarpeta.get(c).push(id); }
+      for (const [c, ids] of otros.pools) for (const id of ids) { if (!porCarpeta.has(c)) porCarpeta.set(c, []); if (!porCarpeta.get(c).includes(id)) porCarpeta.get(c).push(id); } // pool de tomas de calidad de cada carpeta (cubren el tiempo de sus frases)
       for (const [c, ids] of porCarpeta) { // bajar de Drive solo esas tomas y medirlas
         const clipsC = leerJ(path.join(RAIZ, `${c}.clips.json`), []), ros = leerJ(path.join(RAIZ, `${c}.rostros.json`), {}), et = cargar(c).etiquetas, ruta = Object.fromEntries(clipsC.map(x => [x.id, x.ruta]));
         const faltan = ids.filter(id => ruta[id] && !fs.existsSync(ruta[id]));
         if (faltan.length) { try { const h = await require('../edl/clipsDrive').asegurar(c, faltan, { log: m => console.log('  ' + m) }); console.log(`DRIVE: ${h.bajados} clip(s) de ${c} bajados`); } catch (e) { console.log('no pude bajar clips de ' + c + ':', String(e.message).slice(0, 120)); } }
         for (const id of ids) {
-          const beat = [...otros.elecciones].find(([, v]) => v.id === id)[0];
-          if (!ruta[id] || !fs.existsSync(ruta[id])) { otros.elecciones.delete(beat); continue; }
+          const par = [...otros.elecciones].find(([, v]) => v.id === id);
+          if (!ruta[id] || !fs.existsSync(ruta[id]) || !et[id]) { if (par) otros.elecciones.delete(par[0]); continue; }
           cfgClips[id] = { ruta: ruta[id], ...dimensiones(ruta[id]), rostro: et[id].rostro, duracion: et[id].duracion || (clipsC.find(x => x.id === id) || {}).duracion, caras: ros[id] ? ros[id].cuadros : null };
         }
       }
+      for (const [i, c] of otros.carpetaPorFrase) { const ids = (otros.pools.get(c) || []).filter(id => cfgClips[id]); if (ids.length) porBeatMontaje.set(i, { clave: c, ids }); }
       for (const [i, c] of otros.elecciones) { elecciones.set(i, c); console.log(`  [otra persona] frase ${i + 1} ← ${c.persona}: ${c.motivo}`); }
       otros.avisos.forEach(a => console.log('OTROS:', a)); await AL.sincronizar({});
     } catch (e) { console.log('sin clips de otras personas:', String(e.message).slice(0, 140)); }
@@ -154,9 +157,12 @@ function sinNegro(ruta, ss) {
   try { fs.writeFileSync(path.join(path.dirname(arg('--guion', path.join(DM, 'guion-reina.json'))), 'plan.json'), JSON.stringify({ escenas: dir.escenas.map(({ beat, principal, extras }) => ({ beat, principal, extras: (extras || []).map(x => x.tipo) })), origen: dir.origen, revisor: revisionPlan ? { aplicados: revisionPlan.aplicados, descartados: revisionPlan.descartados } : null, fecha: new Date().toISOString() }, null, 1)); } catch { /* opcional */ }
   // montaje de fondo: clips de la protagonista con rostro, primero los de acción y luego por tamaño del rostro (cada uno se usa una sola vez).
   // --sin-montaje vuelve al diseño anterior (ventana pequeña de 3 s + relleno de huecos).
-  const cand = etiquetas ? candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id])) : []; await hidratar(cand.slice(0, 16)); // solo se bajan los 16 mejores candidatos de relleno
+  // tiempo real que le toca a la protagonista (el resto es de otras carpetas) → cuántas tomas hacen falta → solo las de mejor calidad
+  const calProt = (() => { try { return JSON.parse(fs.readFileSync(path.join(RAIZ, `${carpeta}.calidad.json`), 'utf8')); } catch { return {}; } })();
+  const tProt = V.reduce((s, v, k) => s + (porBeatMontaje.has(k) ? 0 : Math.max(0, v.t1 + 0.4 - v.t0)), 0), necesariasProt = Math.min(40, Math.max(16, Math.ceil(tProt / 2.6) + 3));
+  const cand = etiquetas ? require('../edl/repartoTomas').ordenarPorCalidad(candidatosRelleno(Object.values(etiquetas).filter(t => t.rostro && rutaDe[t.id])), calProt, { necesarias: necesariasProt }) : []; await hidratar(cand.slice(0, necesariasProt)); // se bajan solo las que hacen falta
   const lista = cand.filter(id => fs.existsSync(rutaDe[id])); // relleno con criterio: tomas donde sale ella (≤ 2 personas, rostro visible)
-  const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, info: id => ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion, ...dimensiones(rutaDe[id]), caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }) } : null;
+  const montaje = etiquetas && !process.argv.includes('--sin-montaje') ? { ids: lista, porBeat: porBeatMontaje, info: id => cfgClips[id] && !rutaDe[id] ? { ...cfgClips[id] } : ({ ruta: rutaDe[id], rostro: etiquetas[id].rostro, duracion: etiquetas[id].duracion, ...dimensiones(rutaDe[id]), caras: rostrosSerie[id] ? rostrosSerie[id].cuadros : null }) } : null;
   const relleno = etiquetas && !montaje ? { ids: lista, info: infoClip } : null;
   // STORYBOARD: el experto decide el guion visual (muñeco con los datos, reacciones por plantilla, planos, lados, nunca parado; video que ilustra cuando el muñeco no aporta)
   const sb = process.argv.includes('--sin-storyboard') || SIN_MUNECO ? { escenas: dir.escenas, storyboard: [] } : planificar(dir.escenas, g.beats, { emocionesValidas: EMOCIONES, gestosValidos: GESTOS, hayVideo: Boolean(montaje) });

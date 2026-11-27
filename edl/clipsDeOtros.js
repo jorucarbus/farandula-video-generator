@@ -100,8 +100,11 @@ function puntuarToma(t, fraseToks) {
   return coincide * 2 + (t.tipo && t.tipo !== 'otro' ? 1 : 0) + (t.rostro ? 1 : 0) + ((t.rostro && t.rostro.r) || 0);
 }
 
-async function planificar({ asignar = null, beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 3, log = () => {} }) {
-  const elecciones = new Map(), carpetaDe = new Map(), avisos = [], usadas = new Set();
+// tiempos: [{ t0, t1 }] por frase (segundos reales de la voz). Con ellos, cada carpeta recibe un POOL de tomas de calidad suficientes para cubrir el tiempo de las frases que le tocan
+// (el ensamblador lo divide en tomas iguales). Devuelve además carpetaPorFrase (frase → carpeta) y pools (carpeta → ids en orden de preferencia).
+async function planificar({ asignar = null, beats, personas, protagonista = [], existentes = new Map(), carpetasLocales = [], carpetasDrive = [], cargar, indexar = null, maxPorPersona = 8, tiempos = null, log = () => {} }) {
+  const { ordenarPorCalidad, dividir } = require('./repartoTomas'), MAXC = 2.6; // toma de ≤ 2,6 s: con la transición no pasa de 3 s en pantalla
+  const elecciones = new Map(), carpetaDe = new Map(), avisos = [], usadas = new Set(), carpetaPorFrase = new Map(), pools = new Map();
   const todas = [...new Set([...carpetasLocales, ...carpetasDrive])], libre = i => !elecciones.has(i) && (!existentes.has(i) || existentes.get(i).nivel === 'relacionada');
   // 1) por persona: su carpeta y sus tomas posibles (indexa si hace falta; así Gemini solo ve carpetas que sí pueden aportar)
   const cands = [];
@@ -111,7 +114,7 @@ async function planificar({ asignar = null, beats, personas, protagonista = [], 
     if ((!datos.etiquetas || !Object.keys(datos.etiquetas).length) && indexar && carpetasDrive.includes(carpeta)) { log(`${p.nombre}: la carpeta ${carpeta} no estaba indexada; se indexa (una sola vez)`); try { await indexar(carpeta); datos = cargar(carpeta); } catch (e) { avisos.push(`${p.nombre}: no pude indexar ${carpeta} (${String(e.message).slice(0, 80)})`); continue; } }
     const col = colectivoDe(carpeta, p.nombre), tomas = col ? tomasColectivo(datos.etiquetas, { integrantes: col.integrantes, duraciones: datos.duraciones || {} }) : tomasPosibles(datos.etiquetas, { duraciones: datos.duraciones || {} });
     if (!tomas.length) { avisos.push(col ? `${p.nombre}: es un grupo y la carpeta ${carpeta} no tiene tomas donde aparezca el grupo; no se pone nada` : `${p.nombre}: la carpeta ${carpeta} no tiene tomas utilizables`); continue; }
-    cands.push({ p, carpeta, tomas, nombre: p.nombre, colectivo: Boolean(col), porNombre: [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y) });
+    cands.push({ p, carpeta, tomas, calidad: datos.calidad || {}, nombre: p.nombre, colectivo: Boolean(col), porNombre: [...new Set([...frasesQueLaNombran(beats, p.nombre), ...(p.alias || []).flatMap(n => frasesQueLaNombran(beats, n, { min: 3 }))])].sort((x, y) => x - y) });
   }
   // 2) qué carpeta va en cada frase: 1 llamada a Gemini si hay 2+ candidatas; con 1 sola (o si falla), las frases que la nombran
   let asignadas = null;
@@ -119,16 +122,20 @@ async function planificar({ asignar = null, beats, personas, protagonista = [], 
   // 3) por carpeta, las tomas de mejor calidad y relación con su frase
   for (const c of cands) {
     const frases = (asignadas && asignadas.size ? [...asignadas].filter(([, k]) => k === c.carpeta).map(([i]) => i).sort((x, y) => x - y) : c.porNombre).filter(libre).slice(0, maxPorPersona);
+    // tiempo real de sus frases → cuántas tomas hacen falta (tomas parejas de ≤ MAXC) → pool de las mejores (calidad), para que el ensamblador cubra TODO el tiempo con su carpeta
+    const T = tiempos ? frases.reduce((s, i) => s + Math.max(0, ((tiempos[i] || {}).t1 || 0) - ((tiempos[i] || {}).t0 || 0)), 0) : 0, necesarias = T ? dividir(T, MAXC).n + 1 : 4;
+    const pool = ordenarPorCalidad(c.tomas.map(t => t.id), c.calidad, { necesarias }).slice(0, necesarias + 2), enPool = new Set(pool);
+    if (frases.length && pool.length) { pools.set(c.carpeta, pool); for (const i of frases) carpetaPorFrase.set(i, c.carpeta); avisos.push(`${c.nombre}: ${frases.length} frase(s), ${T ? T.toFixed(1) + ' s' : 'sin tiempos'}; pool de ${pool.length} toma(s) de calidad ≥ ${require('./repartoTomas').MIN_CALIDAD()} (necesarias ${necesarias})`); }
     let puestas = 0;
     for (const i of frases) {
-      const ft = toks(beats[i].frase), mejor = c.tomas.filter(t => !usadas.has(t.id)).map(t => ({ t, s: puntuarToma(t, ft) })).filter(x => x.s >= 1).sort((a, b) => b.s - a.s)[0]; if (!mejor) continue;
+      const ft = toks(beats[i].frase), mejor = c.tomas.filter(t => !usadas.has(t.id) && (!pool.length || enPool.has(t.id))).map(t => ({ t, s: puntuarToma(t, ft) })).filter(x => x.s >= 1).sort((a, b) => b.s - a.s)[0]; if (!mejor) continue;
       const t = mejor.t; usadas.add(t.id); puestas++;
       const ss = Math.max(0, Math.min(((t.rostro && t.rostro.t) || 0.5) - 0.4, (t.duracion || 3.2) - 3.2));
       elecciones.set(i, { id: t.id, ss: Math.round(ss * 10) / 10, motivo: `toma de ${c.nombre} (frase sobre ${c.nombre})`, nivel: 'exacta', persona: c.nombre, carpeta: c.carpeta }); carpetaDe.set(t.id, c.carpeta);
     }
     if (frases.length) avisos.push(`${c.nombre}: ${puestas} toma(s) de su carpeta ${c.carpeta}`);
   }
-  return { elecciones, carpetaDe, avisos };
+  return { elecciones, carpetaDe, avisos, carpetaPorFrase, pools };
 }
 
 module.exports = { buscarCarpeta, frasesQueLaNombran, tomasAptas, tomasPosibles, tomasColectivo, colectivoDe, personasEnTexto, elegirCarpetas, puntuarToma, planificar, norm };
