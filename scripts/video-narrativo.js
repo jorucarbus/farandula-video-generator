@@ -108,6 +108,8 @@ function sinNegro(ruta, ss) {
       otros.avisos.forEach(a => console.log('OTROS:', a)); await AL.sincronizar({});
     } catch (e) { console.log('sin clips de otras personas:', String(e.message).slice(0, 140)); }
   }
+  // qué toma va en cada frase y de quién es (para revisar y depurar: noticias/<video>/tomas.json)
+  try { fs.writeFileSync(path.join(path.dirname(arg('--guion', path.join(DM, 'guion-reina.json'))), 'tomas.json'), JSON.stringify([...elecciones].sort((a, b) => a[0] - b[0]).map(([i, c]) => ({ frase: i + 1, clip: c.id, carpeta: c.carpeta || carpeta, persona: c.persona || null, nivel: c.nivel || 'exacta', motivo: c.motivo })), null, 1)); } catch { /* opcional */ }
   const SIN_MUNECO = process.argv.includes('--sin-muneco'); // sin personajes: tomas reales + motion graphics
   const dir = process.argv.includes('--sin-llm') ? { escenas: directorPorReglas(g.beats, g.hechos, elecciones, { sinMuneco: SIN_MUNECO }), origen: 'reglas', avisos: [] } : await dirigir(g.beats, g.hechos, { clips: elecciones, sinMuneco: SIN_MUNECO });
   console.log(`DIRECTOR (${dir.origen}) ${dir.avisos.join(' || ')}`);

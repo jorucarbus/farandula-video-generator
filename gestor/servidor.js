@@ -107,6 +107,7 @@ async function bombear() {
       if (i === t.pasos.length - 1) t.estado = 'listo';
     }
   } catch (e) { t.estado = 'falló'; t.log += String(e); }
+  try { const d = path.join(G.DM, 'gestor', 'logs'); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, `trabajo-${t.id}.log`), t.log); } catch { /* opcional */ }
   t.fin = new Date().toISOString(); corriendo = false; bombear();
 }
 // Índice de una carpeta: baja de Drive lo que falte (temporal), mide calidad y rostros, etiqueta (opcional), guarda miniaturas y libera el disco (salvo carpetas recurrentes).
