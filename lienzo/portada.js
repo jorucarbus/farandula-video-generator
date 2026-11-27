@@ -55,19 +55,21 @@ function ajustarTitular(ctx, palabras, { ancho, maxLineas, tamMax, tamMin, fuent
 async function cargar(x) { return x ? (Buffer.isBuffer(x) ? loadImage(x) : loadImage(fs.readFileSync(x))) : null; }
 
 // foto: Buffer|ruta. foco: { x, y } 0-1 (dónde está la cara en la foto). circulos: [{ foto, nombre }] (máx. 3).
-async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.35 }, titular, resalte = '', etiqueta = '', canal = '', circulos = [], estilo }) {
+async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.35 }, radio = 0.2, titular, resalte = '', etiqueta = '', canal = '', circulos = [], estilo }) {
   if (estilo) registrarFuentes(estilo);
   const pal = paletaDe(canal), canvas = createCanvas(w, h), ctx = canvas.getContext('2d'), u = Math.min(w, h);
   const FUENTE = '"Big Shoulders"', TEXTO = 'Outfit';
 
   // 1) foto a sangre (recorte "cover") con la cara en el tercio superior
-  const img = await cargar(foto);
+  const img = await cargar(foto); let geo = null;
   if (img) {
     // acercamiento leve (hasta 1,18×) solo si hace falta para subir la cara al tercio superior
     const z = Math.min(1.18, Math.max(1, 0.62 / Math.max(0.05, 1 - foco.y))), k = Math.max(w / img.width, h / img.height) * z, iw = img.width * k, ih = img.height * k;
     const ox = Math.min(0, Math.max(w - iw, w * 0.5 - foco.x * iw)), oy = Math.min(0, Math.max(h - ih, h * 0.34 - foco.y * ih));
-    ctx.drawImage(img, ox, oy, iw, ih);
+    ctx.drawImage(img, ox, oy, iw, ih); geo = { fx: ox + foco.x * iw, fy: oy + foco.y * ih, rpx: radio * img.width * k };
   } else { ctx.fillStyle = pal.degradado; ctx.fillRect(0, 0, w, h); }
+
+  const base0 = ctx.getImageData(0, 0, w, h); // la foto sin adornos: sirve para pesar cada lado
 
   // 2) degradado del canal desde la mitad hacia abajo + sombra suave arriba
   const g = ctx.createLinearGradient(0, h * 0.56, 0, h); g.addColorStop(0, hexa(pal.degradado, 0)); g.addColorStop(0.32, hexa(pal.degradado, 0.8)); g.addColorStop(0.6, hexa(pal.degradado, 0.95)); g.addColorStop(1, hexa(pal.degradado, 1));
@@ -97,12 +99,14 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
     const lado = Math.min(logo.width, logo.height), esc = (rL * 2) / lado; ctx.drawImage(logo, cx - (logo.width * esc) / 2, cy - (logo.height * esc) / 2, logo.width * esc, logo.height * esc); ctx.restore();
   }
 
-  // 5) segundo protagonista: una sola foto en círculo, grande y sin nombre, justo encima del titular (a la izquierda, fuera del rostro)
+  // 5) segundo protagonista: una sola foto en círculo, grande y sin nombre, sobre el titular. LA BALANZA decide de qué lado va (el más liviano) y mira hacia adentro.
   const otro = (circulos || [])[0], imOtro = otro ? await cargar(otro.foto) : null;
   if (imOtro) {
-    const R = u * 0.115, cx = margen + R + 7, cy = inicioTexto - R - u * 0.025;
+    const R = u * 0.115, cy = inicioTexto - R - u * 0.025, xIzq = margen + R + 7, xDer = w - margen - R - 7;
+    const lado = elegirLado(base0, geo, { R, cy, xIzq, xDer }), cx = lado === 'der' ? xDer : xIzq;
     ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(cx, cy, R + 7, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
-    if (otro.lado === 'der') { // preparado para el lado derecho (mira hacia la izquierda): aquí va a la izquierda, así que se espeja para que mire hacia adentro
+    // la foto del círculo viene preparada para mirar hacia adentro del lado en que se preparó (otro.lado); si va al lado contrario, se espeja
+    if (otro.lado && otro.lado !== lado) {
       const c = createCanvas(imOtro.width, imOtro.height), x = c.getContext('2d'); x.translate(imOtro.width, 0); x.scale(-1, 1); x.drawImage(imOtro, 0, 0);
       B.retratoCircular(ctx, c, cx, cy, R, { u: R * 6 });
     } else B.retratoCircular(ctx, imOtro, cx, cy, R, { u: R * 6 });
@@ -110,9 +114,31 @@ async function dibujarPortada({ w = 1080, h = 1920, foto, foco = { x: 0.5, y: 0.
   return canvas.toBuffer('image/png');
 }
 
+// BALANZA: el círculo va del lado más liviano. Peso de un lado = cuánto de la cara/cabello de la protagonista cae dentro del círculo (lo que más pesa)
+// + cuánto detalle visual hay ahí (fondo recargado pesa, fondo liso no). Con empate, va al lado contrario de donde está la cara.
+// base: ImageData de la foto; geo: { fx, fy, rpx } centro y radio de la cara en píxeles de la portada; devuelve 'izq' | 'der'.
+function elegirLado(base, geo, { R, cy, xIzq, xDer }) {
+  const peso = cx => {
+    let det = 0;
+    if (base && base.data) { // desviación de la luminosidad dentro del círculo (muestreo cada 6 px)
+      let n = 0, s1 = 0, s2 = 0; for (let y = Math.max(0, Math.round(cy - R)); y < Math.min(base.height, cy + R); y += 6) for (let x = Math.max(0, Math.round(cx - R)); x < Math.min(base.width, cx + R); x += 6) { if ((x - cx) ** 2 + (y - cy) ** 2 > R * R) continue; const i = (y * base.width + x) * 4, l = 0.3 * base.data[i] + 0.59 * base.data[i + 1] + 0.11 * base.data[i + 2]; n++; s1 += l; s2 += l * l; }
+      if (n) det = Math.sqrt(Math.max(0, s2 / n - (s1 / n) ** 2)) / 64;
+    }
+    let sol = 0;
+    if (geo) { // solape del círculo con la cabeza (cara + cabello: 1,7 radios a lo ancho, 2,2 a lo alto)
+      const dx = Math.max(0, Math.min(cx + R, geo.fx + geo.rpx * 1.7) - Math.max(cx - R, geo.fx - geo.rpx * 1.7)), dy = Math.max(0, Math.min(cy + R, geo.fy + geo.rpx * 2.2) - Math.max(cy - R, geo.fy - geo.rpx * 2.2));
+      sol = (dx * dy) / (4 * R * R);
+    }
+    return sol * 3 + det;
+  };
+  const pi = peso(xIzq), pd = peso(xDer);
+  if (Math.abs(pi - pd) < 0.05) return geo && geo.fx > (xIzq + xDer) / 2 ? 'izq' : 'der';
+  return pi < pd ? 'izq' : 'der';
+}
+
 // "Nawat Itsaragrisil" → "Nawat"; con nombres de una palabra larga se corta. Los nombres caben bajo cada círculo.
 function nombreCorto(n) { const p = String(n).trim().split(/\s+/); const s = p.length > 1 && p[0].length <= 3 ? p.slice(0, 2).join(' ') : p[0]; return s.length > 13 ? s.slice(0, 12) + '…' : s; }
 
 function hexa(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
 
-module.exports = { dibujarPortada, marcarResalte, ajustarTitular, paletaDe, PALETAS };
+module.exports = { elegirLado, dibujarPortada, marcarResalte, ajustarTitular, paletaDe, PALETAS };

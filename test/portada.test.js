@@ -69,3 +69,15 @@ test('foto de portada: prefiere el cuadro que mira al frente; si ninguno lo hace
     const r2 = await F.elegirFoto('X', { semilla: '', mirada: async () => 'derecha' }); assert.strictEqual(r2.mira, 'derecha'); assert.ok(r2.clipId);
   } finally { require('child_process').execFileSync = orig; delete process.env.DATA_MOTOR_DIR; delete require.cache[require.resolve('../edl/portadaFoto')]; }
 });
+
+test('balanza: el círculo va del lado más liviano (sin cara ni fondo recargado) y, con empate, al lado contrario de la cara', () => {
+  const { elegirLado } = require('../lienzo/portada'), W = 1080, H = 1920, R = 124, cy = 1000, xIzq = 210, xDer = 870;
+  const liso = () => ({ width: W, height: H, data: new Uint8ClampedArray(W * H * 4).fill(200) });
+  // cara centrada a la izquierda: el círculo se va a la derecha
+  assert.strictEqual(elegirLado(liso(), { fx: 330, fy: 900, rpx: 220 }, { R, cy, xIzq, xDer }), 'der');
+  assert.strictEqual(elegirLado(liso(), { fx: 760, fy: 900, rpx: 220 }, { R, cy, xIzq, xDer }), 'izq');
+  // cara en el centro, pero el lado izquierdo tiene el fondo recargado: va a la derecha
+  const d = liso(); for (let y = 0; y < H; y++) for (let x = 0; x < 420; x++) { const i = (y * W + x) * 4, v = ((x >> 3) + (y >> 3)) % 2 ? 20 : 235; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; }
+  assert.strictEqual(elegirLado(d, { fx: 540, fy: 600, rpx: 100 }, { R, cy, xIzq, xDer }), 'der');
+  assert.ok(['izq', 'der'].includes(elegirLado(null, null, { R, cy, xIzq, xDer })));
+});

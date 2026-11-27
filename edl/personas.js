@@ -80,6 +80,7 @@ async function prepararCirculo(ruta, an, { lado = null, salida }) {
   if (espejar) { x.translate(512, 0); x.scale(-1, 1); }
   x.drawImage(img, X0, Y0, px, px, 0, 0, 512, 512);
   fs.writeFileSync(salida, c.toBuffer('image/jpeg', 90));
+  try { fs.writeFileSync(salida.replace(/\.jpg$/i, '.json'), JSON.stringify({ lado: lad, espejada: espejar })); } catch { /* opcional */ }
   return { foto: salida, lado: lad, espejada: espejar };
 }
 

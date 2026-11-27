@@ -49,7 +49,7 @@ async function elegirFoto(carpeta, { semilla = '', top = 4, asegurar = null, mir
       const buffer = execFileSync(ffmpeg, ['-v', 'error', '-ss', String(t), '-i', ruta, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-'], { maxBuffer: 64 << 20 });
       if (!buffer.length) continue;
       let m = 'frente'; if (mirada) { try { m = await mirada(buffer); } catch { m = null; } }
-      const r = { buffer, foco: { x: x.et.rostro.cx, y: x.et.rostro.cy }, clipId: x.clip.id, ancho: x.q && x.q.ancho, alto: x.q && x.q.alto, puntaje: +x.p.toFixed(2), mira: m };
+      const r = { buffer, foco: { x: x.et.rostro.cx, y: x.et.rostro.cy }, radio: x.et.rostro.r, clipId: x.clip.id, ancho: x.q && x.q.ancho, alto: x.q && x.q.alto, puntaje: +x.p.toFixed(2), mira: m };
       if (m === 'frente' || m === null) return r; // null = no se pudo medir: se acepta
       if (!respaldo) respaldo = r;
     } catch { /* se prueba el siguiente */ }
