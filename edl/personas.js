@@ -44,6 +44,8 @@ async function fotoDe(persona) {
   fs.mkdirSync(DIR, { recursive: true });
   const s = slug(persona.nombre);
   for (const ext of ['jpg', 'jpeg', 'png', 'webp']) { const f = path.join(DIR, `${s}.${ext}`); if (fs.existsSync(f)) return { ruta: f, fuente: 'manual/caché' }; }
+  // Un nombre suelto ("Cristhian") NO se busca: Wikipedia devolvería a un homónimo famoso (un futbolista) y su foto saldría asociada a lo que cuenta la noticia. Solo nombre Y apellido, o una foto puesta a mano.
+  if (normalizar(persona.nombre).split(' ').filter(w => w.length >= 3).length < 2) return null;
   const w = await buscarEnWikipedia(persona.nombre, persona.rol);
   if (!w) return null;
   const r = await fetch(w.url, { headers: UA });

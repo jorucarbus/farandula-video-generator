@@ -23,3 +23,12 @@ test('prepararCirculo: la persona que mira hacia el borde se espeja para mirar h
   assert.equal(a.espejada, true); assert.equal(b.espejada, false); assert.equal(c2.lado, 'der'); assert.equal(c2.espejada, false);
   assert.ok(fs.existsSync(c2.foto));
 });
+
+test('fotoDe: un nombre suelto no se busca en Wikipedia (evita la foto de un homónimo famoso), pero una foto manual sí vale', async () => {
+  const P = require('../edl/personas'), fs = require('fs'), path = require('path');
+  const orig = global.fetch; let llamadas = 0; global.fetch = async () => { llamadas++; throw new Error('no debería consultar'); };
+  try {
+    assert.equal(await P.fotoDe({ nombre: 'Zzqx', rol: 'persona mencionada en la noticia' }), null);
+    assert.equal(llamadas, 0, 'sin apellido no hay búsqueda');
+  } finally { global.fetch = orig; }
+});
