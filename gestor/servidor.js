@@ -172,6 +172,15 @@ app.post('/api/drive/indexar', async (req, res) => {
   } catch (e) { mal(res, e); }
 });
 
+// Lo llama el Selector cuando termina de bajar videos directo al disco de Drive: espera a que Drive los termine de subir y etiqueta SOLO lo nuevo (Gemini).
+app.post('/api/drive/auto-etiquetar', (req, res) => {
+  try {
+    const { carpeta } = req.body || {}; if (!carpetaValida(carpeta)) throw new Error('carpeta inválida');
+    const pasos = [{ ...node('esperar-drive.js', carpeta), opcional: true, titulo: 'Esperar a que Drive termine de subir los videos' }, { ...node('biblioteca-indexar-nuevos.js', carpeta), titulo: 'Etiquetar lo nuevo (Gemini, calidad, rostros)' }];
+    ok(res, { id: encolar(`Etiquetar videos nuevos de ${carpeta}`, pasos).id });
+  } catch (e) { mal(res, e); }
+});
+
 // Corregir una etiqueta a mano (tipo, descripción, lugar, vestuario, personas). Queda marcada como editada: en una fusión con Drive gana sobre la automática.
 app.post('/api/etiqueta', async (req, res) => {
   try {
