@@ -1,0 +1,107 @@
+// COMPILADO DIARIO 16:9 (sin tiempo fijo): las últimas N noticias de un canal en un solo video horizontal, con guion y voz propios (no se reciclan los shorts).
+// Etapas (cada una deja su archivo en data-motor/compilados/<nombre>/ y se salta si ya existe; --rehacer la repite):
+//   1) guion  (1 llamada a Gemini)      2) voz (ElevenLabs, 1 cobro)      3) render 16:9
+// Uso: node scripts/compilado-diario.js --canal "Embajadores del Chisme" --youtube "La Naple" [--ultimas 4 | --ids id1,id2] [--hasta-guion] [--rehacer]
+require('dotenv').config();
+const fs = require('fs'), path = require('path');
+const RAIZ = path.join(__dirname, '..'), DM = path.join(RAIZ, 'data-motor'), NOT = path.join(DM, 'noticias');
+const args = process.argv.slice(2), arg = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; }, bandera = n => args.includes(n);
+const leerJ = (f, d = null) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } };
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
+const log = (...a) => console.log(...a);
+
+// Las últimas N noticias del canal (más recientes primero → se devuelven en orden cronológico). Una noticia cuenta si tiene guion y es de ese canal.
+function ultimasDelCanal(canal, n) {
+  const cand = fs.readdirSync(NOT).filter(d => /^gestor-/.test(d)).map(d => ({ d, g: leerJ(path.join(NOT, d, 'guion.json')) })).filter(x => x.g && norm(x.g.canal) === norm(canal))
+    .map(x => ({ ...x, t: fs.statSync(path.join(NOT, x.d, 'guion.json')).mtimeMs })).sort((a, b) => b.t - a.t).slice(0, n);
+  return cand.reverse().map(x => x.d);
+}
+
+function cargarNoticia(id) {
+  const g = leerJ(path.join(NOT, id, 'guion.json')), l = leerJ(path.join(NOT, id, 'lectura.json')), r = leerJ(path.join(NOT, id, 'render.json'), {});
+  if (!g || !l) throw new Error(`falta guion o lectura de ${id}`);
+  const cronica = typeof l.cronica === 'string' ? l.cronica : (l.cronica || {}).cronica || '';
+  return { id, titulo: g.titulo, hechos: (g.hechos && g.hechos.length ? g.hechos : l.hechos || []).filter(h => h && h.texto), cronica, personas: (g.personas || []).map(p => p.nombre), carpeta: r.carpeta || null, canal: g.canal };
+}
+
+(async () => {
+  const canal = arg('--canal', 'Embajadores del Chisme'), youtube = arg('--youtube', canal), n = Number(arg('--ultimas', 4)), rehacer = bandera('--rehacer');
+  const ids = arg('--ids', null) ? arg('--ids').split(',').map(s => s.trim()).filter(Boolean) : ultimasDelCanal(canal, n);
+  if (!ids.length) throw new Error(`No hay noticias del canal "${canal}"`);
+  const hoyLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, fecha = arg('--fecha', hoyLocal()), nombre = arg('--nombre', `compilado-${fecha}-${norm(youtube)}`), dir = path.join(DM, 'compilados', nombre), fGuion = path.join(dir, 'guion.json');
+  fs.mkdirSync(dir, { recursive: true });
+  const noticias = ids.map(cargarNoticia);
+  log(`Compilado "${nombre}" para YouTube "${youtube}" con ${noticias.length} noticias:\n` + noticias.map((x, i) => `  ${i + 1}. ${x.titulo} (${x.hechos.length} datos, carpeta ${x.carpeta || '?'})`).join('\n'));
+
+  // ---- 1) guion: una sola llamada; el largo sale de lo que haya (sin tope de tiempo)
+  let g = !rehacer ? leerJ(fGuion) : null;
+  if (!g) {
+    const GC = require('../edl/guionCompilado'), r = await GC.generar({ noticias, canalYoutube: youtube, fecha });
+    g = { ...r, nombre, youtube, canal, fecha, fuentes: ids, generado: new Date().toISOString() };
+    fs.writeFileSync(fGuion, JSON.stringify(g, null, 2));
+  } else log('Guion ya escrito; se reutiliza');
+  log(`\nGUION: ${g.palabras} palabras · ${g.script.length} caracteres de voz · ≈ ${(g.estimadaSeg / 60).toFixed(1)} min (${g.estimadaSeg.toFixed(0)} s)`);
+  (g.avisos || []).forEach(a => log('  AVISO:', a));
+  log(`Título: ${g.titulo}\n\n${g.script}\n`);
+  if (bandera('--hasta-guion')) { log(`Se detiene en el guion. Revísalo (puedes editar ${path.relative(RAIZ, fGuion)}) y sigue sin --hasta-guion.`); return; }
+
+  // ---- 2) voz (ElevenLabs, UN solo cobro por guion; si ya existe se reutiliza aunque se vuelva a renderizar)
+  const fVoz = path.join(dir, 'voz.mp3'), fPal = path.join(dir, 'palabras.json');
+  if (!(fs.existsSync(fVoz) && fs.existsSync(fPal)) || bandera('--rehacer-voz')) {
+    log(`Voz: ${g.script.length} caracteres (se cobra una vez)…`);
+    const el = require('../elevenlabs'), a = await el.generarAudioConTiempos(g.script, require('../ajustes').obtener().modeloVoz);
+    fs.copyFileSync(a.audioPath, fVoz);
+    const ch = a.caracteres, st = a.inicios, fi = a.fines || st.slice(1).concat([st[st.length - 1] + 0.3]), pal = []; let ini = -1;
+    for (let i = 0; i <= ch.length; i++) { const esp = i === ch.length || /\s/.test(ch[i]); if (!esp && ini < 0) ini = i; if (esp && ini >= 0) { pal.push({ w: ch.slice(ini, i).join(''), s: +st[ini].toFixed(3), e: +fi[i - 1].toFixed(3) }); ini = -1; } }
+    fs.writeFileSync(fPal, JSON.stringify({ duracion: await require('../video').obtenerDuracion(fVoz), modelo: a.modelo, palabras: pal }, null, 1));
+  } else log('Voz ya generada; se reutiliza');
+  const W = leerJ(fPal), palabras = W.palabras.map(p => ({ palabra: p.w, t0: p.s, t1: p.e })), durVoz = W.duracion, dur = durVoz + 1.0;
+  log(`VOZ: ${durVoz.toFixed(1)} s (estimada ${g.estimadaSeg.toFixed(0)} s) → video de ${dur.toFixed(1)} s`);
+
+  // ---- 3) tramos (intro, cada noticia, cierre) con sus tiempos reales, tomas por tramo y render 16:9
+  const partes = [g.intro, ...g.noticias.map(x => x.texto), g.cierre], cuenta = partes.map(t => (String(t).match(/\S+/g) || []).length), total = cuenta.reduce((s, x) => s + x, 0);
+  if (total !== palabras.length) throw new Error(`las palabras del guion (${total}) no coinciden con las de la voz (${palabras.length}); borra la voz o revisa el guion`);
+  let acum = 0; const inicios = cuenta.map(c => { const t = acum === 0 ? 0 : palabras[acum].t0; acum += c; return t; });
+  const segmentos = partes.map((_, i) => {
+    const t0 = inicios[i], t1 = i + 1 < partes.length ? inicios[i + 1] : dur;
+    if (i === 0) return { tipo: 'intro', t0, t1 };
+    if (i === partes.length - 1) return { tipo: 'cierre', t0, t1 };
+    const x = g.noticias[i - 1]; return { tipo: 'noticia', n: i, de: g.noticias.length, titular: x.titular, dato: x.dato, fuente: noticias[x.n - 1], t0, t1 };
+  });
+  segmentos.forEach(s => log(`  ${s.tipo}${s.n ? ' ' + s.n : ''}: ${s.t0.toFixed(1)}–${s.t1.toFixed(1)} s${s.titular ? ' · ' + s.titular : ''}${s.dato ? ' · dato: ' + s.dato : ''}`));
+
+  const CP = require('../lienzo/compilado'), BIB = require('../edl/biblioteca'), RB = BIB.RAIZ, RP = require('../edl/repartoTomas');
+  const locales = fs.readdirSync(RB).filter(f => f.endsWith('.clips.json')).map(f => f.replace(/\.clips\.json$/, ''));
+  const carpetaDe = nt => (nt.carpeta && locales.includes(nt.carpeta) ? nt.carpeta : locales.find(c => nt.personas.some(p => norm(c) === norm(p))) || null);
+  const datos = new Map(), de = c => { if (!datos.has(c)) datos.set(c, { clips: Object.fromEntries(leerJ(path.join(RB, `${c}.clips.json`), []).map(x => [x.id, x])), et: leerJ(path.join(RB, `${c}.etiquetas.json`), {}), cal: leerJ(path.join(RB, `${c}.calidad.json`), {}) }); return datos.get(c); };
+  // pool de cada noticia: primero las tomas que ya eligió el video corto (de la persona nombrada o relacionadas), luego las mejores de la carpeta por calidad; se pide de más para intro y cierre
+  const pools = segmentos.map(s => {
+    if (s.tipo !== 'noticia') return null;
+    const nt = s.fuente, c = carpetaDe(nt); if (!c) throw new Error(`no encuentro la carpeta de clips de "${nt.titulo}"`);
+    const n = Math.max(1, Math.ceil((s.t1 - s.t0) / CP.MAXC - 1e-9)), quiero = n + 2, d = de(c);
+    const viejas = (leerJ(path.join(NOT, nt.id, 'tomas.json'), []) || []).map(t => ({ id: t.clip, carpeta: t.carpeta || c }));
+    const ids = BIB.candidatosRelleno(Object.values(d.et).filter(t => t.rostro && d.clips[t.id])), buenos = RP.ordenarPorCalidad(ids, d.cal, { necesarias: quiero });
+    const lista = []; for (const x of [...viejas, ...buenos.map(id => ({ id, carpeta: c }))]) { if (lista.some(y => y.id === x.id)) continue; const cd = de(x.carpeta), q = cd.cal[x.id]; if (!cd.clips[x.id] || (q && q.apto === false)) continue; lista.push(x); if (lista.length >= quiero) break; }
+    return { n, lista, c };
+  });
+  const porCarpeta = new Map(); for (const p of pools.filter(Boolean)) for (const x of p.lista) { if (!porCarpeta.has(x.carpeta)) porCarpeta.set(x.carpeta, []); porCarpeta.get(x.carpeta).push(x.id); }
+  for (const [c, ids] of porCarpeta) { const faltan = ids.filter(id => !fs.existsSync(de(c).clips[id].ruta)); if (faltan.length) { try { const h = await require('../edl/clipsDrive').asegurar(c, faltan, { log: m => log('  ' + m) }); log(`DRIVE: ${h.bajados} clip(s) de ${c} bajados`); } catch (e) { log('no pude bajar clips de ' + c + ': ' + String(e.message).slice(0, 100)); } } }
+  const info = x => { const k = de(x.carpeta).clips[x.id]; return { id: x.id, ruta: k.ruta, duracion: k.duracion, carpeta: x.carpeta }; };
+  const listos = pools.map(p => p && p.lista.map(info).filter(x => fs.existsSync(x.ruta) && x.duracion >= 2.2));
+  const colas = (k) => listos.filter(Boolean).map(l => l[l.length - k] || l[0]); // intro: la última de cada noticia; cierre: la penúltima
+  const poolDe = (s, n, si) => (s.tipo === 'noticia' ? listos[si].slice(0, Math.max(n, 1)) : s.tipo === 'intro' ? colas(1) : colas(2).reverse());
+  const sinNegro = (ruta, ss) => { const FFM = process.env.FFMPEG_BIN || require('ffmpeg-static'); for (let i = 0; i < 8; i++) { try { const b = require('child_process').execFileSync(FFM, ['-v', 'error', '-ss', String(ss), '-i', ruta, '-frames:v', '1', '-vf', 'scale=16:16,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 20 }); if (!b.length || b.reduce((s, x) => s + x, 0) / b.length > 18) return ss; } catch { return ss; } ss += 0.4; } return ss; };
+  const cortes = CP.planificarTomas(segmentos, poolDe, { ajustarSs: sinNegro });
+  const maxVisto = Math.max(...cortes.map(c => c.t1 - c.t0 + CP.TRANS));
+  log(`TOMAS: ${cortes.length} cortes, el más largo se ve ${maxVisto.toFixed(2)} s (tope 3 s) · clips distintos: ${new Set(cortes.map(c => c.id)).size}`);
+  if (maxVisto > 3.001) throw new Error('una toma pasa de 3 s: no se renderiza');
+  fs.writeFileSync(path.join(dir, 'cortes.json'), JSON.stringify(cortes.map(c => ({ seg: c.seg, id: c.id, ss: +c.ss.toFixed(2), t0: +c.t0.toFixed(2), t1: +c.t1.toFixed(2) })), null, 1));
+
+  const { paletaDe } = require('../lienzo/portada'), estilo = require('../estilos/capitol'), paleta = paletaDe(youtube), MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+  const [aa, mm, dd] = g.fecha.split('-').map(Number), fechaTxt = `${dd} DE ${MESES[mm - 1]} DE ${aa}`;
+  let fondo = null; if (!bandera('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'); fondo = await mf.prepararFondo({ tono: arg('--tono', mf.tonoDeGuion(g.script)), duracion: dur, jobId: 'compilado' + process.pid, clave: nombre }); log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { log('sin música de fondo: ' + String(e.message).slice(0, 140)); } }
+  const escena = CP.crearEscena({ cortes, segmentos, marca: { paleta, logo: paleta.logo }, fecha: fechaTxt, estilo, t1: dur }), subtitulos = CP.crearSubtitulos({ palabras, estilo });
+  const salida = arg('--salida', path.join(dir, `${nombre}.mp4`)), ini = Date.now();
+  await require('../lienzo/render').renderizar({ w: CP.W, h: CP.H, fps: 30, duracion: dur, audio: fVoz, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: [escena], alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
+  log(`\nLISTO ${salida} (${Math.round((Date.now() - ini) / 1000)} s de render)\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion}`);
+})().catch(e => { console.error('FALLO', e.message); process.exit(1); });
