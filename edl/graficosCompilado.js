@@ -74,7 +74,7 @@ function construir(graficos, { palabras = [], lugares = lugaresConocidos() } = {
   const E = require('../lienzo/elementos');
   return graficos.map(g => {
     const base = { t0: g.t0, t1: g.t1, cy: 0.5 };
-    if (g.tipo === 'cifra') return { ...g, el: E.cifra({ valor: Number(g.valor), sufijo: g.sufijo || '', prefijo: g.prefijo || '', ...base }) };
+    if (g.tipo === 'cifra') return { ...g, escala: 1.5, el: E.cifra({ valor: Number(g.valor), sufijo: g.sufijo || '', prefijo: g.prefijo || '', ...base }) };
     if (g.tipo === 'cita') {
       const ws = String(g.texto).trim().split(/\s+/), idx = palabras.findIndex((_, i) => ws.every((w, k) => palabras[i + k] && norm(palabras[i + k].palabra) === norm(w)));
       return { ...g, el: E.cita({ texto: g.texto, autor: g.autor || '', palabras: idx >= 0 ? ws.map((_, k) => ({ t: palabras[idx + k].t0 })) : [], ...base }) };
@@ -82,7 +82,7 @@ function construir(graficos, { palabras = [], lugares = lugaresConocidos() } = {
     if (g.tipo === 'lista') { const n = g.items.length, paso = Math.max(0.6, (g.t1 - g.t0 - 1.0) / n); return { ...g, el: E.listaNumerada({ titulo: g.titulo || '', items: g.items.map((texto, i) => ({ texto, t: g.t0 + 0.5 + i * paso })), ...base }) }; }
     if (g.tipo === 'mapa') {
       const L = n => lugares[norm(n)];
-      return { ...g, el: g.desde ? E.mapa({ desde: L(g.desde), hasta: L(g.hasta), alto: 0.5, ...base }) : E.mapa({ pais: 'Ecuador', lugar: L(g.lugar), tPin: g.t0 + 1.0, alto: 0.5, ...base }) };
+      return { ...g, el: g.desde ? E.mapa({ desde: L(g.desde), hasta: L(g.hasta), alto: 0.68, ...base }) : E.mapa({ pais: 'Ecuador', lugar: L(g.lugar), tPin: g.t0 + 1.0, alto: 0.68, ...base }) };
     }
     throw new Error('tipo de gráfico desconocido: ' + g.tipo);
   });
