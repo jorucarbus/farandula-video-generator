@@ -24,7 +24,7 @@ function cargarNoticia(id) {
   return { id, titulo: g.titulo, hechos: (g.hechos && g.hechos.length ? g.hechos : l.hechos || []).filter(h => h && h.texto), cronica, personas: (g.personas || []).map(p => p.nombre), carpeta: r.carpeta || null, canal: g.canal };
 }
 
-(async () => {
+if (require.main === module) (async () => {
   const canal = arg('--canal', 'Embajadores del Chisme'), youtube = arg('--youtube', canal), n = Number(arg('--ultimas', 4)), rehacer = bandera('--rehacer');
   const ids = arg('--ids', null) ? arg('--ids').split(',').map(s => s.trim()).filter(Boolean) : ultimasDelCanal(canal, n);
   if (!ids.length) throw new Error(`No hay noticias del canal "${canal}"`);
@@ -70,32 +70,47 @@ function cargarNoticia(id) {
   });
   segmentos.forEach(s => log(`  ${s.tipo}${s.n ? ' ' + s.n : ''}: ${s.t0.toFixed(1)}–${s.t1.toFixed(1)} s${s.titular ? ' · ' + s.titular : ''}${s.dato ? ' · dato: ' + s.dato : ''}`));
 
-  const CP = require('../lienzo/compilado'), BIB = require('../edl/biblioteca'), RB = BIB.RAIZ, RP = require('../edl/repartoTomas');
+  const CP = require('../lienzo/compilado'), TC = require('../edl/tomasCompilado'), CO = require('../edl/clipsDeOtros'), BIB = require('../edl/biblioteca'), RB = BIB.RAIZ;
   const locales = fs.readdirSync(RB).filter(f => f.endsWith('.clips.json')).map(f => f.replace(/\.clips\.json$/, ''));
   const carpetaDe = nt => (nt.carpeta && locales.includes(nt.carpeta) ? nt.carpeta : locales.find(c => nt.personas.some(p => norm(c) === norm(p))) || null);
-  const datos = new Map(), de = c => { if (!datos.has(c)) datos.set(c, { clips: Object.fromEntries(leerJ(path.join(RB, `${c}.clips.json`), []).map(x => [x.id, x])), et: leerJ(path.join(RB, `${c}.etiquetas.json`), {}), cal: leerJ(path.join(RB, `${c}.calidad.json`), {}) }); return datos.get(c); };
-  // pool de cada noticia: primero las tomas que ya eligió el video corto (de la persona nombrada o relacionadas), luego las mejores de la carpeta por calidad; se pide de más para intro y cierre
-  const pools = segmentos.map(s => {
-    if (s.tipo !== 'noticia') return null;
+  let mapaDrive = {}; try { mapaDrive = process.env.RESPALDO_DRIVE === '0' ? {} : await require('../drive').obtenerCarpetasFamosos(); } catch { /* sin Drive: solo carpetas locales */ }
+  // la duración de un clip no siempre está en clips.json: también viene en las etiquetas y en la medición de calidad
+  const datos = new Map(), de = c => { if (!datos.has(c)) { const cl = Object.fromEntries(leerJ(path.join(RB, `${c}.clips.json`), []).map(x => [x.id, x])), et = leerJ(path.join(RB, `${c}.etiquetas.json`), {}), ca = leerJ(path.join(RB, `${c}.calidad.json`), {}); for (const [id, k] of Object.entries(cl)) k.duracion = k.duracion || (et[id] || {}).duracion || (ca[id] || {}).duracion || 0; datos.set(c, { clips: cl }); } return datos.get(c); };
+  const cargar = c => { let et = leerJ(path.join(RB, `${c}.etiquetas.json`), {}); const cal = leerJ(path.join(RB, `${c}.calidad.json`), null); if (cal && Object.keys(et).length) et = require('../edl/calidadClip').filtrarAptos(et, cal).etiquetas; const duraciones = {}; for (const x of leerJ(path.join(RB, `${c}.clips.json`), [])) if (x && x.duracion) duraciones[x.id] = x.duracion; for (const [id, q] of Object.entries(cal || {})) if (q && q.duracion && !duraciones[id]) duraciones[id] = q.duracion; return { etiquetas: et, duraciones, calidad: cal || {} }; };
+  const indexar = async c => { require('child_process').spawnSync(process.execPath, [path.join(__dirname, 'biblioteca-indexar-nuevos.js'), c], { stdio: 'inherit' }); };
+  const ctx = { locales, drive: Object.keys(mapaDrive), cargar, indexar, asignar: bandera('--sin-gemini-otros') ? null : CO.elegirCarpetas, log: m => log('  OTROS: ' + m) };
+  // tomas POR FRASE: cada oración de cada noticia recibe tomas de la carpeta que le toca (la protagonista o la persona/grupo nombrado), con el tiempo real de la frase repartido en tomas iguales
+  const ini0 = []; { let a = 0; for (const c of cuenta) { ini0.push(a); a += c; } }
+  const planes = new Map();
+  for (const [si, s] of segmentos.entries()) {
+    if (s.tipo !== 'noticia') continue;
     const nt = s.fuente, c = carpetaDe(nt); if (!c) throw new Error(`no encuentro la carpeta de clips de "${nt.titulo}"`);
-    const n = Math.max(1, Math.ceil((s.t1 - s.t0) / CP.MAXC - 1e-9)), quiero = n + 2, d = de(c);
-    const viejas = (leerJ(path.join(NOT, nt.id, 'tomas.json'), []) || []).map(t => ({ id: t.clip, carpeta: t.carpeta || c }));
-    const ids = BIB.candidatosRelleno(Object.values(d.et).filter(t => t.rostro && d.clips[t.id])), buenos = RP.ordenarPorCalidad(ids, d.cal, { necesarias: quiero });
-    const lista = []; for (const x of [...viejas, ...buenos.map(id => ({ id, carpeta: c }))]) { if (lista.some(y => y.id === x.id)) continue; const cd = de(x.carpeta), q = cd.cal[x.id]; if (!cd.clips[x.id] || (q && q.apto === false)) continue; lista.push(x); if (lista.length >= quiero) break; }
-    return { n, lista, c };
-  });
-  const porCarpeta = new Map(); for (const p of pools.filter(Boolean)) for (const x of p.lista) { if (!porCarpeta.has(x.carpeta)) porCarpeta.set(x.carpeta, []); porCarpeta.get(x.carpeta).push(x.id); }
-  for (const [c, ids] of porCarpeta) { const faltan = ids.filter(id => !fs.existsSync(de(c).clips[id].ruta)); if (faltan.length) { try { const h = await require('../edl/clipsDrive').asegurar(c, faltan, { log: m => log('  ' + m) }); log(`DRIVE: ${h.bajados} clip(s) de ${c} bajados`); } catch (e) { log('no pude bajar clips de ' + c + ': ' + String(e.message).slice(0, 100)); } } }
-  const info = x => { const k = de(x.carpeta).clips[x.id]; return { id: x.id, ruta: k.ruta, duracion: k.duracion, carpeta: x.carpeta }; };
-  const listos = pools.map(p => p && p.lista.map(info).filter(x => fs.existsSync(x.ruta) && x.duracion >= 2.2));
-  const colas = (k) => listos.filter(Boolean).map(l => l[l.length - k] || l[0]); // intro: la última de cada noticia; cierre: la penúltima
-  const poolDe = (s, n, si) => (s.tipo === 'noticia' ? listos[si].slice(0, Math.max(n, 1)) : s.tipo === 'intro' ? colas(1) : colas(2).reverse());
+    log(`NOTICIA ${s.n}: ${nt.titulo} (carpeta ${c})`);
+    const plan = await TC.planificarNoticia({ texto: partes[si], personas: nt.personas, carpeta: c, nombre: c.replace(/_/g, ' '), palabras: palabras.slice(ini0[si], ini0[si] + cuenta[si]), t0: s.t0, t1: s.t1 }, ctx);
+    plan.avisos.forEach(a => log('  ' + a)); planes.set(si, plan);
+  }
+  const info = x => { const k = de(x.carpeta).clips[x.id]; return k && k.duracion >= 2.2 ? { id: x.id, ruta: k.ruta, duracion: k.duracion, carpeta: x.carpeta } : null; };
   const sinNegro = (ruta, ss) => { const FFM = process.env.FFMPEG_BIN || require('ffmpeg-static'); for (let i = 0; i < 8; i++) { try { const b = require('child_process').execFileSync(FFM, ['-v', 'error', '-ss', String(ss), '-i', ruta, '-frames:v', '1', '-vf', 'scale=16:16,format=gray', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 20 }); if (!b.length || b.reduce((s, x) => s + x, 0) / b.length > 18) return ss; } catch { return ss; } ss += 0.4; } return ss; };
-  const cortes = CP.planificarTomas(segmentos, poolDe, { ajustarSs: sinNegro });
+  const faltantes = new Set();
+  const armar = () => { // tramos con tomas (las que no se pudieron bajar se excluyen) → cortes
+    const ok = x => info(x) && !faltantes.has(x.id), tramos = [];
+    for (const [si, p] of planes) for (const t of p.tramos) tramos.push({ t0: t.t0, t1: t.t1, seg: si, frase: t.frase, items: t.items.filter(ok).map(info) });
+    const inter = [...planes.values()].map(p => p.protIds.map(id => ({ id, carpeta: p.tramos[0].carpeta }))); const mezcla = []; for (let k = 0; mezcla.length < 40 && k < 40; k++) for (const l of inter) if (l[k]) mezcla.push(l[k]);
+    const pe = mezcla.filter(ok).map(info);
+    for (const [si, s] of segmentos.entries()) if (s.tipo !== 'noticia') tramos.push({ t0: s.t0, t1: s.t1, seg: si, frase: null, items: s.tipo === 'intro' ? pe : [...pe].reverse() });
+    return CP.planificarTomas(tramos, { ajustarSs: sinNegro });
+  };
+  let cortes = armar();
+  for (let vuelta = 0; vuelta < 2; vuelta++) { // bajar de Drive SOLO las tomas que se van a usar; si alguna no baja, se excluye y se reparte otra vez
+    const porCarpeta = new Map(); for (const c of cortes) { const carp = [...planes.values()].flatMap(p => p.tramos.flatMap(t => t.items)).concat(...[]).find(x => x.id === c.id); const cc = (carp && carp.carpeta) || null; if (!fs.existsSync(c.clip)) { const k = cc || locales.find(l => de(l).clips[c.id]); if (!porCarpeta.has(k)) porCarpeta.set(k, new Set()); porCarpeta.get(k).add(c.id); } }
+    if (!porCarpeta.size) break;
+    for (const [k, ids] of porCarpeta) { try { const h = await require('../edl/clipsDrive').asegurar(k, [...ids], { log: m => log('  ' + m) }); log(`DRIVE: ${h.bajados} clip(s) de ${k} bajados`); } catch (e) { log('no pude bajar clips de ' + k + ': ' + String(e.message).slice(0, 100)); } }
+    const aun = cortes.filter(c => !fs.existsSync(c.clip)).map(c => c.id); if (!aun.length) break; aun.forEach(id => faltantes.add(id)); cortes = armar();
+  }
   const maxVisto = Math.max(...cortes.map(c => c.t1 - c.t0 + CP.TRANS));
-  log(`TOMAS: ${cortes.length} cortes, el más largo se ve ${maxVisto.toFixed(2)} s (tope 3 s) · clips distintos: ${new Set(cortes.map(c => c.id)).size}`);
+  log(`TOMAS: ${cortes.length} cortes por frase, el más largo se ve ${maxVisto.toFixed(2)} s (tope 3 s) · clips distintos: ${new Set(cortes.map(c => c.id)).size}`);
   if (maxVisto > 3.001) throw new Error('una toma pasa de 3 s: no se renderiza');
-  fs.writeFileSync(path.join(dir, 'cortes.json'), JSON.stringify(cortes.map(c => ({ seg: c.seg, id: c.id, ss: +c.ss.toFixed(2), t0: +c.t0.toFixed(2), t1: +c.t1.toFixed(2) })), null, 1));
+  fs.writeFileSync(path.join(dir, 'cortes.json'), JSON.stringify(cortes.map(c => ({ seg: c.seg, frase: c.frase, id: c.id, ss: +c.ss.toFixed(2), t0: +c.t0.toFixed(2), t1: +c.t1.toFixed(2) })), null, 1));
 
   const { paletaDe } = require('../lienzo/portada'), estilo = require('../estilos/capitol'), paleta = paletaDe(youtube), MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
   const [aa, mm, dd] = g.fecha.split('-').map(Number), fechaTxt = `${dd} DE ${MESES[mm - 1]} DE ${aa}`;

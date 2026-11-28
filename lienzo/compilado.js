@@ -11,21 +11,22 @@ const USO_MAX_S = 3.0, TRANS = 0.3, MAXC = USO_MAX_S - TRANS - 0.1; // 2,6 s por
 const W = 1920, H = 1080, WH = Math.round(H * 0.80), WW = Math.round(WH * 9 / 16), VY = Math.round(H * 0.45); // ventana vertical: 486×864, centrada, sobre un fondo desenfocado
 const MARCAS = path.join(__dirname, '..', 'assets', 'marcas');
 
-// Reparto de tomas: cada tramo (intro, noticia k, cierre) se divide en n tomas parejas (n = lo mínimo para no pasar de MAXC). pool(seg, cuantas) → [{ruta, duracion, id}].
-// Un clip que se repite arranca más adelante (otro tramo del mismo clip), nunca desde el mismo punto.
-function planificarTomas(segmentos, poolDe, { ajustarSs = null } = {}) {
+// Reparto de tomas por TRAMO (una oración de una noticia, la intro o el cierre): el tiempo real del tramo se divide en n tomas parejas (n = lo mínimo para no pasar de MAXC).
+// tramo: { t0, t1, seg, items:[{id,ruta,duracion}] } con las tomas en orden de preferencia (la primera es la que mejor se relaciona con la frase). Cada toma se usa una vez en todo el video
+// mientras haya otras; si se acaban, vuelve la menos usada pero arranca más adelante (otro tramo del mismo clip), nunca desde el mismo punto.
+function planificarTomas(tramos, { ajustarSs = null } = {}) {
   const cortes = [], usos = new Map();
-  segmentos.forEach((s, si) => {
-    const L = Math.max(0.6, s.t1 - s.t0), n = Math.max(1, Math.ceil(L / MAXC - 1e-9)), dur = L / n, pool = poolDe(s, n, si);
-    if (!pool.length) throw new Error(`el tramo "${s.tipo}${s.n ? ' ' + s.n : ''}" no tiene clips`);
+  for (const s of tramos) {
+    const L = Math.max(0.6, s.t1 - s.t0), n = Math.max(1, Math.ceil(L / MAXC - 1e-9)), dur = L / n;
+    if (!s.items.length) throw new Error(`el tramo ${s.t0.toFixed(1)}–${s.t1.toFixed(1)} s no tiene clips`);
     for (let k = 0; k < n; k++) {
-      const c = pool[k % pool.length], v = usos.get(c.id) || 0; usos.set(c.id, v + 1);
+      const c = s.items.find(x => !usos.get(x.id)) || [...s.items].sort((a, b) => (usos.get(a.id) || 0) - (usos.get(b.id) || 0))[0], v = usos.get(c.id) || 0; usos.set(c.id, v + 1);
       const largo = dur + TRANS + 0.1, tope = Math.max(0, (c.duracion || 99) - largo - 0.1); let ss = Math.min(tope, 0.2 + v * (dur + 0.4));
       if (ajustarSs && v === 0) ss = Math.min(tope, ajustarSs(c.ruta, ss));
-      cortes.push({ clip: c.ruta, id: c.id, ss: Math.max(0, ss), t0: s.t0 + k * dur, t1: s.t0 + (k + 1) * dur, seg: si });
+      cortes.push({ clip: c.ruta, id: c.id, ss: Math.max(0, ss), t0: s.t0 + k * dur, t1: s.t0 + (k + 1) * dur, seg: s.seg, frase: s.frase || null });
     }
-  });
-  return cortes;
+  }
+  return cortes.sort((a, b) => a.t0 - b.t0);
 }
 
 const envolver = (ctx, texto, ancho) => { const pal = String(texto).split(/\s+/).filter(Boolean), out = []; let l = ''; for (const p of pal) { const t = l ? l + ' ' + p : p; if (ctx.measureText(t).width > ancho && l) { out.push(l); l = p; } else l = t; } if (l) out.push(l); return out; };
