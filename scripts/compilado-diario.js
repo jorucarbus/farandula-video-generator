@@ -126,7 +126,7 @@ if (require.main === module) (async () => {
   const graficos = GC.construir(grafSel || [], { palabras });
   log(`GRÁFICOS: ${graficos.length} → ${graficos.map(g => `${g.tipo}@noticia ${g.noticia + 1} (${g.t0.toFixed(1)}–${g.t1.toFixed(1)} s)`).join(', ') || 'ninguno'}`);
   const extras = segmentos.flatMap(s => [s.titular, s.dato]).join(' ').split(/\s+/).filter(Boolean);
-  const escena = CP.crearEscena({ cortes, segmentos, marca: { paleta, logo: paleta.logo }, fecha: fechaTxt, estilo, t1: dur, graficos }), subtitulos = CP.crearSubtitulos({ palabras, estilo, extras, columna: t => escena.layout(t).anim });
+  const escena = CP.crearEscena({ cortes, segmentos, marca: { paleta, logo: paleta.logo }, fecha: fechaTxt, estilo, t1: dur, graficos }), subtitulos = CP.crearSubtitulos({ palabras, estilo, extras, acento: paleta.acento, columna: t => escena.layout(t).anim });
   const salida = arg('--salida', path.join(dir, `${nombre}.mp4`)), ini = Date.now();
   await require('../lienzo/render').renderizar({ w: CP.W, h: CP.H, fps: 30, duracion: dur, audio: fVoz, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: [escena], alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
   log(`\nLISTO ${salida} (${Math.round((Date.now() - ini) / 1000)} s de render)\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion}`);

@@ -125,16 +125,19 @@ function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1, grafico
   };
 }
 
-// LETTERING: los subtítulos en la parte baja de la COLUMNA DE ANIMACIONES (debajo del gráfico), con las letras animadas: cada palabra entra con un rebote y un leve giro cuando se dice
-// (las que faltan se ven tenues); la que suena va en amarillo y un poco más grande; las PALABRAS CLAVE (cifras, nombres propios y las que se pasan en `extras`) quedan en amarillo con un
-// subrayado trazado a mano. palabras: [{palabra,t0,t1}]; columna(t) → { cx, dy, alpha } (la misma distribución que la escena, para que el lettering viaje con las animaciones).
+// LETTERING en tarjeta (estilo "tipografía cinética"): en la parte baja de la COLUMNA DE ANIMACIONES, una tarjeta crema con 3 a 6 palabras en MAYÚSCULAS, tipografía condensada gruesa
+// (Haettenschweiler), interlineado apretado y un MARCADOR de color que entra de izquierda a derecha detrás de la palabra clave cuando se dice. Cada palabra aparece (sube un poco y se
+// aclara) justo cuando suena; las que faltan no se ven. Sin giros ni contornos. palabras: [{palabra,t0,t1}]; columna(t) → { cx, dy, alpha } (la misma distribución que la escena,
+// para que el lettering viaje con las animaciones). Claves: cifras, nombres propios a mitad de frase y las palabras de `extras` (titular y dato); como mucho `maxClavesPorBloque` por tarjeta.
 const sinTildes = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ]/g, '');
 const SIGNOS = /[.,;:!?…»)]+$/;
-function crearSubtitulos({ palabras, estilo, columna, resalte = '#FFD21F', extras = [], maxClavesPorBloque = 2 }) {
-  require('../overlay/animacion').registrarFuentes(estilo); // sin la fuente registrada, measureText mide con otra y las palabras salen pegadas
-  const tam = 60, inter = 72, FOND = 1040, anchoMax = 590, fuente = `${tam}px ${estilo.tipografia.texto}`, med = createCanvas(8, 8).getContext('2d'); med.font = fuente;
+function crearSubtitulos({ palabras, estilo, columna, acento = '#F2B01E', extras = [], maxClavesPorBloque = 2 }) {
+  require('../overlay/animacion').registrarFuentes(estilo); // sin la fuente registrada, measureText mide con otra
+  const TAM = 100, LEAD = 0.9 * TAM, ANCHO = 520, PADX = 38, PADY = 34, CARD_W = 588, FOND = 1040, GAP = 0.22 * TAM, MAX_LINEAS = 4, TINTA = '#0E0C0A', CREMA = '#F4F1E9';
+  const FUENTE = `${TAM}px "Haettenschweiler", Impact, "Big Shoulders"`, med = createCanvas(8, 8).getContext('2d'); med.font = FUENTE;
+  const ancho = txt => med.measureText(txt).width, mayus = w => String(w).toUpperCase();
   const termina = p => SIGNOS.test(p), bloques = []; let act = [];
-  palabras.forEach((p, i) => { act.push(i); if ((termina(p.palabra) && act.length >= 3) || act.length >= 7) { bloques.push(act); act = []; } }); if (act.length) bloques.push(act);
+  palabras.forEach((p, i) => { act.push(i); if ((termina(p.palabra) && act.length >= 3) || act.length >= 6) { bloques.push(act); act = []; } }); if (act.length) bloques.push(act);
   const ex = new Set(extras.map(sinTildes).filter(w => w.length >= 5)), ARTICULOS = new Set(['este', 'esta', 'ante', 'cuando', 'desde', 'hasta', 'para', 'pero', 'como', 'todo', 'todos', 'mientras', 'recordemos', 'suscribete']);
   const esClave = (i, primeraDelBloque) => {
     const w = palabras[i].palabra, limpio = w.replace(/[^\p{L}\p{N}]/g, ''), prev = i > 0 ? palabras[i - 1].palabra : '.';
@@ -142,14 +145,22 @@ function crearSubtitulos({ palabras, estilo, columna, resalte = '#FFD21F', extra
     if (ex.has(sinTildes(w))) return true;
     return !primeraDelBloque && limpio.length >= 4 && /^\p{Lu}/u.test(limpio) && !/[.!?…¡¿]$/.test(prev) && !ARTICULOS.has(sinTildes(w)); // nombre propio a mitad de frase
   };
+  // Cada bloque → palabras con su posición dentro de la tarjeta. Las palabras clave seguidas forman una UNIDAD que no se parte entre líneas y lleva un solo marcador.
+  const armar = idx => {
+    const claves = new Set(); idx.forEach((i, k) => { if (claves.size < maxClavesPorBloque && esClave(i, k === 0)) claves.add(i); });
+    const unidades = []; for (const i of idx) { const u = unidades[unidades.length - 1], clave = claves.has(i); if (u && u.clave && clave) u.ids.push(i); else unidades.push({ ids: [i], clave }); }
+    for (const u of unidades) { u.txt = u.ids.map(i => mayus(palabras[i].palabra)).join(' '); u.w = ancho(u.txt); }
+    const lineas = []; let l = [], w = 0;
+    for (const u of unidades) { const ww = u.w + GAP; if (w + ww > ANCHO && l.length) { lineas.push(l); l = []; w = 0; } l.push(u); w += ww; }
+    if (l.length) lineas.push(l);
+    return lineas;
+  };
   const grupos = [];
   for (const idx of bloques) {
-    const lineas = []; let l = [], x = 0;
-    for (const i of idx) { const wp = med.measureText(palabras[i].palabra + ' ').width + 12; if (x + wp > anchoMax && l.length) { lineas.push(l); l = []; x = 0; } l.push({ i, ancho: wp, solo: med.measureText(palabras[i].palabra.replace(SIGNOS, '')).width }); x += wp; }
-    if (l.length) lineas.push(l);
-    for (let a = 0; a < lineas.length; a += 3) { // máximo 3 líneas por bloque: si salen más, se parte en otro bloque
-      const ls = lineas.slice(a, a + 3), ids = ls.flat().map(c => c.i), claves = new Set(); ids.forEach((i, k) => { if (claves.size < maxClavesPorBloque && esClave(i, k === 0)) claves.add(i); });
-      grupos.push({ idx: ids, lineas: ls, claves, t0: palabras[ids[0]].t0, t1: palabras[ids[ids.length - 1]].t1 });
+    const lineas = armar(idx);
+    for (let a = 0; a < lineas.length; a += MAX_LINEAS) { // si una tarjeta pide más de 4 líneas, se parte en otra
+      const ls = lineas.slice(a, a + MAX_LINEAS), ids = ls.flat().flatMap(u => u.ids);
+      grupos.push({ lineas: ls, ids, t0: palabras[ids[0]].t0, t1: palabras[ids[ids.length - 1]].t1 });
     }
   }
   grupos.forEach(g => { g.aparece = Math.max(0, g.t0 - 0.05); });
@@ -158,19 +169,25 @@ function crearSubtitulos({ palabras, estilo, columna, resalte = '#FFD21F', extra
     grupos,
     dibujar(ctx, t) {
       const g = grupos.find(x => t >= x.aparece && t < x.desaparece); if (!g) return;
-      const col = columna ? columna(t) : { cx: W / 2, dy: 0, alpha: 1 };
-      ctx.save(); ctx.globalAlpha = col.alpha * acotar((g.desaparece - t) / 0.1); ctx.font = fuente; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
-      g.lineas.forEach((l, li) => {
-        const total = l.reduce((s, c) => s + c.ancho, 0), y = FOND + col.dy - (g.lineas.length - 1 - li) * inter; let x = col.cx - total / 2;
-        for (const c of l) {
-          const p = palabras[c.i], dicha = t >= p.t0, activa = dicha && t < p.t1 + 0.04, clave = g.claves.has(c.i), tin = t - p.t0, palabra = p.palabra.replace(SIGNOS, '');
-          const k = dicha ? easeOutBack(acotar(tin / 0.22), 2.4) : 0, esc = dicha ? 0.7 + 0.3 * k + (activa ? 0.06 : 0) : 1, giro = dicha ? (((c.i * 37) % 7) - 3) * 0.012 * (1 - acotar(tin / 0.3)) : 0, sube = dicha ? (1 - acotar(tin / 0.18)) * 16 : 0, cx = x + c.solo / 2;
-          ctx.save(); ctx.globalAlpha *= dicha ? acotar(tin / 0.08) * 0.9 + 0.1 : 0.28; ctx.translate(cx, y - tam * 0.3 + sube); ctx.rotate(giro); ctx.scale(esc, esc);
-          ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.strokeText(palabra, 0, tam * 0.3); ctx.fillStyle = dicha && (activa || clave) ? resalte : '#fff'; ctx.fillText(palabra, 0, tam * 0.3);
-          ctx.restore();
-          if (clave && dicha) { const pr = easeOutCubic(tin / 0.25); B.trazar(ctx, B.puntosDeSubrayado(x, y + tam * 0.16, x + c.solo, y + tam * 0.16, c.i + 1), pr, { color: estilo.colores.verde, ancho: 7, u: 1080 }); }
-          const punt = p.palabra.match(SIGNOS); if (punt) { ctx.save(); ctx.globalAlpha *= dicha ? 1 : 0.28; ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.strokeText(punt[0], x + c.solo, y); ctx.fillText(punt[0], x + c.solo, y); ctx.restore(); }
-          x += c.ancho;
+      const col = columna ? columna(t) : { cx: W / 2, dy: 0, alpha: 1 }, tin = t - g.aparece, entra = easeOutCubic(tin / 0.22), sale = acotar((g.desaparece - t) / 0.12);
+      const n = g.lineas.length, alto = PADY * 2 + (n - 1) * LEAD + TAM * 0.78, yTop = FOND - alto, x0 = col.cx - CARD_W / 2;
+      ctx.save(); ctx.globalAlpha = col.alpha * acotar(tin / 0.12) * sale; ctx.translate(0, col.dy + (1 - entra) * 46);
+      // tarjeta crema con un papel apenas arrugado
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 34; ctx.shadowOffsetY = 12; ctx.fillStyle = CREMA; ctx.beginPath(); ctx.roundRect(x0, yTop, CARD_W, alto, 10); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.roundRect(x0, yTop, CARD_W, alto, 10); ctx.clip(); ctx.strokeStyle = 'rgba(0,0,0,0.045)'; ctx.lineWidth = 2; for (let k = 0; k < 10; k++) { ctx.beginPath(); ctx.moveTo(x0 + (k * 97) % CARD_W, yTop); ctx.lineTo(x0 + ((k * 211) % CARD_W), yTop + alto); ctx.stroke(); } ctx.restore();
+      ctx.font = FUENTE; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+      g.lineas.forEach((ln, li) => {
+        const y = yTop + PADY + TAM * 0.78 + li * LEAD; let px = x0 + PADX;
+        for (const u of ln) {
+          if (u.clave && t >= palabras[u.ids[0]].t0) { // marcador: entra de izquierda a derecha cuando suena la primera palabra clave, y se queda
+            const pr = easeOutCubic((t - palabras[u.ids[0]].t0) / 0.26); ctx.fillStyle = acento; ctx.fillRect(px - 15, y - TAM * 0.82, (u.w + 30) * pr, TAM * 1.0);
+          }
+          let wx = px; u.ids.forEach((i, k) => {
+            const p = palabras[i], txt = mayus(p.palabra), dicha = t >= p.t0, ta = t - p.t0;
+            ctx.save(); ctx.fillStyle = TINTA; if (dicha) { ctx.globalAlpha *= 0.16 + 0.84 * acotar(ta / 0.12); ctx.fillText(txt, wx, y + (1 - easeOutCubic(ta / 0.16)) * 18); } else { ctx.globalAlpha *= 0.16; ctx.fillText(txt, wx, y); } ctx.restore(); // las que faltan se ven muy tenues: la tarjeta se ve completa desde el inicio
+            wx += ancho(txt + ' ');
+          });
+          px += u.w + GAP;
         }
       });
       ctx.restore();
