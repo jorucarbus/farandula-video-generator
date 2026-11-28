@@ -4,7 +4,7 @@
 const fs = require('fs'), path = require('path'), os = require('os');
 const { execFile } = require('child_process');
 const { loadImage, createCanvas } = require('@napi-rs/canvas');
-const { acotar, easeOutCubic } = require('../overlay/animacion');
+const { acotar, easeOutCubic, easeOutBack } = require('../overlay/animacion');
 const B = require('./base');
 
 const USO_MAX_S = 3.0, TRANS = 0.3, MAXC = USO_MAX_S - TRANS - 0.1; // 2,6 s por toma como máximo
@@ -33,7 +33,8 @@ const envolver = (ctx, texto, ancho) => { const pal = String(texto).split(/\s+/)
 const pop = (t, d = 0.34) => { const x = acotar(t / d), c = 1.7; return 0.55 + 0.45 * (1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2)); }; // aparece con un pequeño rebote
 
 // segmentos: [{ tipo:'intro'|'noticia'|'cierre', n, de, titular, dato, t0, t1 }]; marca: { paleta (de lienzo/portada.paletaDe), logo (ruta png) }; fecha: texto "27 DE NOVIEMBRE"
-function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1 }) {
+// graficos: [{ t0, t1, noticia (0-based), el }] con los componentes animados de lienzo/elementos.js (cifra, cita, lista, mapa); se dibujan en el panel derecho (y flotan).
+function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1, graficos = [] }) {
   let dir = null, fps = 30; const cuadros = [], memo = new Map(); let logo = null;
   const pal = marca.paleta, num = estilo.tipografia.numero, txt = estilo.tipografia.texto;
   const chica = createCanvas(24, 42), cch = chica.getContext('2d'); // el fondo desenfocado: el cuadro reducido a 24×42 y estirado con suavizado
@@ -42,8 +43,20 @@ function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1 }) {
   const circuloLogo = (ctx, cx, cy, r) => { if (!logo) return; ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip(); ctx.fillStyle = pal.fondoLogo; ctx.fillRect(cx - r, cy - r, r * 2, r * 2); const e = (r * 2) / Math.min(logo.width, logo.height); ctx.drawImage(logo, cx - logo.width * e / 2, cy - logo.height * e / 2, logo.width * e, logo.height * e); ctx.restore(); ctx.save(); ctx.lineWidth = Math.max(3, r * 0.05); ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); };
   const rotulo = (ctx, texto, x, y, tam, fuente, color, borde = 0) => { ctx.font = `${tam}px ${fuente}`; if (borde) { ctx.lineJoin = 'round'; ctx.lineWidth = borde; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.strokeText(texto, x, y); } ctx.fillStyle = color; ctx.fillText(texto, x, y); };
 
+  // Panel derecho de gráficos: se dibuja en un lienzo aparte del tamaño del panel y se pega con un flote suave (sube/baja y leve giro, como las pegatinas del estilo).
+  const PX = Math.round((W - WW) / 2 + WW + 8 + 70), PW = W - PX - 60, PH = 720, PCY = 470, panel = createCanvas(PW, PH), pctx = panel.getContext('2d');
+  const flote = (t, fase = 0, amp = 7, giroG = 0.45) => ({ dy: Math.sin(Math.PI * 2 * (t / 3.4) + fase) * amp, giro: Math.sin(Math.PI * 2 * (t / 4.6) + fase + 1) * giroG * Math.PI / 180 });
+  // La ventana del video se MUEVE al cambiar de noticia: sale hacia un lado y la siguiente entra desde el otro (barrido), alternando lados. Entre cambios solo flota.
+  const dirDe = si => (si % 2 ? 1 : -1), ENTRA = 0.55, SALE = 0.28, LEJOS = W * 0.68;
+  const barrido = (tAbs, si) => {
+    let ox = 0, giro = 0; const S = segmentos[si], sig = segmentos[si + 1], ts = tAbs - S.t0, tr = S.t1 - tAbs;
+    if (si > 0 && ts < ENTRA) { const f = 1 - easeOutBack(ts / ENTRA, 1.2); ox = dirDe(si) * f * LEJOS; giro = dirDe(si) * f * 0.07; }
+    if (sig && tr < SALE) { const k = acotar(1 - tr / SALE), f = k * k; ox = -dirDe(si + 1) * f * LEJOS; giro = -dirDe(si + 1) * f * 0.06; }
+    return { ox, giro };
+  };
   return {
-    t0: 0, t1, flota: false, eventos: [],
+    t0: 0, t1, flota: false,
+    eventos: [...segmentos.slice(1).map(s => ({ t: Math.max(0, s.t0 - 0.12), sonido: 'whoosh', db: -9 })), ...graficos.flatMap(g => g.el.eventos || [])],
     async preparar({ fps: f }) {
       fps = f; dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compilado-'));
       const p = path.join(MARCAS, marca.logo || ''); if (marca.logo && fs.existsSync(p)) logo = await loadImage(fs.readFileSync(p));
@@ -51,6 +64,7 @@ function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1 }) {
       const hacer = (c, ci) => new Promise((res, rej) => { const dur = c.t1 - c.t0 + TRANS + 0.1; cuadros[ci] = Math.ceil((dur - 0.1) * fps);
         execFile(ffmpeg, ['-y', '-loglevel', 'error', '-ss', String(c.ss || 0), '-t', String(dur), '-i', c.clip, '-an', '-vf', `fps=${fps},scale=${WW}:${WH}:force_original_aspect_ratio=increase,crop=${WW}:${WH}`, '-q:v', '5', path.join(dir, `c${ci}_%04d.jpg`)], { timeout: 120000 }, e => (e ? rej(e) : res())); });
       let i = 0; await Promise.all(Array.from({ length: 4 }, async () => { while (i < cortes.length) { const ci = i++; await hacer(cortes[ci], ci); } }));
+      for (const g of graficos) if (g.el.preparar) await g.el.preparar({ w: PW, h: PH, fps });
     },
     async dibujar(ctx, { tAbs, w, h }) {
       let ci = 0; for (let k = 0; k < cortes.length; k++) if (cortes[k].t0 <= tAbs) ci = k;
@@ -63,22 +77,29 @@ function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1 }) {
       if (enTrans) fondo(imgP, 1); fondo(imgA, enTrans ? p : 1);
       const g = ctx.createLinearGradient(0, 0, w, 0); g.addColorStop(0, 'rgba(0,0,0,0.60)'); g.addColorStop(0.5, 'rgba(0,0,0,0.38)'); g.addColorStop(1, 'rgba(0,0,0,0.60)'); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
       // 2) ventana vertical con el clip
-      const X = (w - WW) / 2, Y = VY - WH / 2;
+      const X = (w - WW) / 2, Y = VY - WH / 2, mv = barrido(tAbs, si), fv = flote(tAbs, 0, 6, 0.35);
+      ctx.save(); ctx.translate(w / 2 + mv.ox, VY + fv.dy); ctx.rotate(mv.giro + fv.giro); ctx.translate(-w / 2, -VY);
       ctx.save(); B.sombraDeCapa(ctx, Math.min(w, h), 1.0, 0.5); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, X - 8, Y - 8, WW + 16, WH + 16, 26); ctx.fill(); B.sinSombra(ctx); ctx.restore();
       ctx.save(); B.rectRedondo(ctx, X, Y, WW, WH, 20); ctx.clip();
       if (enTrans && imgP) ctx.drawImage(imgP, X, Y, WW, WH); if (imgA) { ctx.globalAlpha = enTrans ? p : 1; ctx.drawImage(imgA, X, Y, WW, WH); } ctx.restore();
+      ctx.restore(); // fin de la ventana que se mueve
       // 3) rótulos laterales
       ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
       circuloLogo(ctx, 60 + 52, 40 + 52, 52); rotulo(ctx, (pal.nombre || '').toUpperCase(), 60 + 52 * 2 + 22, 40 + 52 + 14, 44, num, '#fff', 6);
       const LX = 60, LW = X - 8 - 70 - LX, RX = X + WW + 8 + 70, RW = w - RX - 60;
       const e = easeOutCubic(ts / 0.5), desl = (1 - e) * -90;
       if (S.tipo === 'noticia') {
-        ctx.save(); ctx.globalAlpha = e; ctx.translate(desl, 0);
+        const ft = flote(tAbs, 1.3, 5, 0.3); ctx.save(); ctx.globalAlpha = e; ctx.translate(desl, ft.dy); ctx.rotate(ft.giro);
         const etiqueta = `NOTICIA ${S.n} DE ${S.de}`; ctx.font = `34px ${txt}`; const ancho = ctx.measureText(etiqueta).width + 44;
         ctx.fillStyle = pal.acento; B.rectRedondo(ctx, LX, 200, ancho, 58, 29); ctx.fill(); rotulo(ctx, etiqueta, LX + 22, 241, 34, txt, '#fff');
         ctx.font = `124px ${num}`; const ls = envolver(ctx, String(S.titular || '').toUpperCase(), LW); ls.slice(0, 4).forEach((l, i) => rotulo(ctx, l, LX, 380 + i * 118, 124, num, i === 0 ? '#fff' : '#fff', 8));
         ctx.restore();
-        if (S.dato && ts > 1.6) { // recuadro con el dato más llamativo, a la derecha
+        const gAct = graficos.find(x => tAbs >= x.t0 && tAbs < x.t1), hay = graficos.some(x => x.noticia === S.n - 1);
+        if (gAct) { // gráfico animado del momento (cifra con conteo, cita, lista o mapa) en el panel derecho, con flote suave
+          pctx.clearRect(0, 0, PW, PH); pctx.save(); await gAct.el.dibujar(pctx, { t: tAbs - gAct.t0, tAbs, w: PW, h: PH, u: Math.min(PW, PH), estilo }); pctx.restore();
+          const fg = flote(tAbs, 2.1, 9, 0.5); ctx.save(); ctx.globalAlpha = acotar((gAct.t1 - tAbs) / 0.18); ctx.translate(PX + PW / 2, PCY + fg.dy); ctx.rotate(fg.giro); ctx.drawImage(panel, -PW / 2, -PH / 2); ctx.restore();
+        }
+        if (!hay && S.dato && ts > 1.6) { // sin gráficos en esta noticia: recuadro con el dato más llamativo, a la derecha
           const q = pop(ts - 1.6), cx = RX + RW / 2, cy = 470; ctx.save(); ctx.globalAlpha = acotar((ts - 1.6) / 0.15); ctx.translate(cx, cy); ctx.scale(q, q); ctx.translate(-cx, -cy);
           ctx.font = `104px ${num}`; const ds = envolver(ctx, String(S.dato).toUpperCase(), RW - 70), alto = 150 + ds.slice(0, 3).length * 100;
           ctx.save(); B.sombraDeCapa(ctx, Math.min(w, h), 0.8, 0.4); ctx.fillStyle = '#fff'; B.rectRedondo(ctx, RX, cy - alto / 2, RW, alto, 30); ctx.fill(); B.sinSombra(ctx); ctx.restore();
@@ -99,21 +120,48 @@ function crearEscena({ cortes, segmentos, marca, fecha = '', estilo, t1 }) {
   };
 }
 
-// Subtítulos grandes abajo, centrados, con borde negro; la palabra que se dice va en amarillo. palabras: [{palabra,t0,t1}]
-function crearSubtitulos({ palabras, estilo, resalte = '#FFD21F' }) {
+// SUBTÍTULOS ANIMADOS abajo, centrados, con borde negro. Cada palabra entra con un pequeño rebote cuando se dice (las que faltan se ven tenues); la que suena va en amarillo y un poco más grande;
+// las PALABRAS CLAVE (cifras, nombres propios y las que se pasan en `extras`) quedan en amarillo con un subrayado trazado a mano, como en el estilo de referencia. palabras: [{palabra,t0,t1}]
+const sinTildes = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ]/g, '');
+function crearSubtitulos({ palabras, estilo, resalte = '#FFD21F', extras = [], maxClavesPorBloque = 2 }) {
   require('../overlay/animacion').registrarFuentes(estilo); // sin la fuente registrada, measureText mide con otra y las palabras salen pegadas
-  const tam = 54, inter = 66, fuente = `${tam}px ${estilo.tipografia.texto}`, anchoMax = 1560, med = createCanvas(8, 8).getContext('2d'); med.font = fuente;
+  const tam = 54, inter = 68, fuente = `${tam}px ${estilo.tipografia.texto}`, anchoMax = 1560, med = createCanvas(8, 8).getContext('2d'); med.font = fuente;
   const termina = p => /[.,;:!?…»)]$/.test(p), bloques = []; let act = [];
   palabras.forEach((p, i) => { act.push(i); if ((termina(p.palabra) && act.length >= 3) || act.length >= 9) { bloques.push(act); act = []; } }); if (act.length) bloques.push(act);
-  const grupos = bloques.map(idx => { const lineas = []; let l = [], x = 0; for (const i of idx) { const wp = med.measureText(palabras[i].palabra + ' ').width; if (x + wp > anchoMax && l.length) { lineas.push(l); l = []; x = 0; } l.push({ i, ancho: wp }); x += wp; } if (l.length) lineas.push(l); return { idx, lineas: lineas.slice(0, 2), t0: palabras[idx[0]].t0, t1: palabras[idx[idx.length - 1]].t1 }; });
+  const ex = new Set(extras.map(sinTildes).filter(w => w.length >= 5)), ARTICULOS = new Set(['este', 'esta', 'ante', 'cuando', 'desde', 'hasta', 'para', 'pero', 'como', 'todo', 'todos', 'mientras', 'recordemos', 'suscribete']);
+  const esClave = (i, primeraDelBloque) => {
+    const w = palabras[i].palabra, limpio = w.replace(/[^\p{L}\p{N}]/g, ''), prev = i > 0 ? palabras[i - 1].palabra : '.';
+    if (/\d/.test(limpio)) return true;
+    if (ex.has(sinTildes(w))) return true;
+    return !primeraDelBloque && limpio.length >= 4 && /^\p{Lu}/u.test(limpio) && !/[.!?…¡¿]$/.test(prev) && !ARTICULOS.has(sinTildes(w)); // nombre propio a mitad de frase
+  };
+  const grupos = bloques.map(idx => {
+    const lineas = []; let l = [], x = 0;
+    for (const i of idx) { const wp = med.measureText(palabras[i].palabra + ' ').width + 14; if (x + wp > anchoMax && l.length) { lineas.push(l); l = []; x = 0; } l.push({ i, ancho: wp, solo: med.measureText(palabras[i].palabra.replace(/[.,;:!?…»)]+$/, '')).width }); x += wp; }
+    if (l.length) lineas.push(l);
+    const claves = new Set(); idx.forEach((i, k) => { if (claves.size < maxClavesPorBloque && esClave(i, k === 0)) claves.add(i); });
+    return { idx, lineas: lineas.slice(0, 2), claves, t0: palabras[idx[0]].t0, t1: palabras[idx[idx.length - 1]].t1 };
+  });
   grupos.forEach(g => { g.aparece = Math.max(0, g.t0 - 0.05); });
   grupos.forEach((g, k) => { g.desaparece = k + 1 < grupos.length ? grupos[k + 1].aparece : g.t1 + 0.4; });
   return {
+    grupos,
     dibujar(ctx, t) {
       const g = grupos.find(x => t >= x.aparece && t < x.desaparece); if (!g) return;
-      ctx.save(); ctx.font = fuente; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left'; ctx.lineJoin = 'round'; ctx.globalAlpha = acotar((t - g.aparece) / 0.12);
-      g.lineas.forEach((l, li) => { const total = l.reduce((s, c) => s + c.ancho, 0), y = H - 60 - (g.lineas.length - 1 - li) * inter; let x = (W - total) / 2;
-        for (const c of l) { const p = palabras[c.i], activa = t >= p.t0 && t < p.t1 + 0.04; ctx.lineWidth = 11; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText(p.palabra, x, y); ctx.fillStyle = activa ? resalte : '#fff'; ctx.fillText(p.palabra, x, y); x += c.ancho; } });
+      ctx.save(); ctx.font = fuente; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+      g.lineas.forEach((l, li) => {
+        const total = l.reduce((s, c) => s + c.ancho, 0), y = H - 60 - (g.lineas.length - 1 - li) * inter; let x = (W - total) / 2;
+        for (const c of l) {
+          const p = palabras[c.i], dicha = t >= p.t0, activa = dicha && t < p.t1 + 0.04, clave = g.claves.has(c.i), tin = t - p.t0;
+          const k = dicha ? easeOutBack(acotar(tin / 0.2), 2.2) : 0, esc = dicha ? 0.88 + 0.12 * k + (activa ? 0.05 : 0) : 1, cx = x + c.solo / 2;
+          ctx.save(); ctx.globalAlpha = dicha ? acotar(tin / 0.08) * 0.9 + 0.1 : 0.28; ctx.translate(cx, y - tam * 0.3); ctx.scale(esc, esc);
+          ctx.lineWidth = 11; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.strokeText(p.palabra.replace(/[.,;:!?…»)]+$/, ''), 0, tam * 0.3); ctx.fillStyle = dicha && (activa || clave) ? resalte : '#fff'; ctx.fillText(p.palabra.replace(/[.,;:!?…»)]+$/, ''), 0, tam * 0.3);
+          ctx.restore();
+          if (clave && dicha) { const pr = easeOutCubic(tin / 0.25); B.trazar(ctx, B.puntosDeSubrayado(x, y + tam * 0.16, x + c.solo, y + tam * 0.16, c.i + 1), pr, { color: estilo.colores.verde, ancho: 7, u: 1080 }); }
+          const punt = p.palabra.match(/[.,;:!?…»)]+$/); if (punt) { ctx.save(); ctx.globalAlpha = dicha ? 1 : 0.28; ctx.lineWidth = 11; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.strokeText(punt[0], x + c.solo, y); ctx.fillText(punt[0], x + c.solo, y); ctx.restore(); }
+          x += c.ancho;
+        }
+      });
       ctx.restore();
     },
   };

@@ -115,7 +115,18 @@ if (require.main === module) (async () => {
   const { paletaDe } = require('../lienzo/portada'), estilo = require('../estilos/capitol'), paleta = paletaDe(youtube), MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
   const [aa, mm, dd] = g.fecha.split('-').map(Number), fechaTxt = `${dd} DE ${MESES[mm - 1]} DE ${aa}`;
   let fondo = null; if (!bandera('--sin-musica')) { try { const mf = require('../lienzo/musicaFondo'); fondo = await mf.prepararFondo({ tono: arg('--tono', mf.tonoDeGuion(g.script)), duracion: dur, jobId: 'compilado' + process.pid, clave: nombre }); log(`MÚSICA: ${fondo.nombre} (tono ${fondo.tono}, ${fondo.gananciaDb} dB)`); } catch (e) { log('sin música de fondo: ' + String(e.message).slice(0, 140)); } }
-  const escena = CP.crearEscena({ cortes, segmentos, marca: { paleta, logo: paleta.logo }, fecha: fechaTxt, estilo, t1: dur }), subtitulos = CP.crearSubtitulos({ palabras, estilo });
+  // gráficos animados (cifra con conteo, cita, lista, mapa con avión): UNA llamada barata para todo el compilado, validada en local; se guarda en graficos.json y no se repite al re-renderizar
+  const GC = require('../edl/graficosCompilado'), fGraf = path.join(dir, 'graficos.json');
+  let grafSel = !bandera('--rehacer-graficos') ? leerJ(fGraf) : null;
+  if (!grafSel && !bandera('--sin-graficos')) {
+    const noticiasG = segmentos.map((s, si) => (s.tipo === 'noticia' ? { titular: s.titular, t0: s.t0, t1: s.t1, frases: planes.get(si).tramos.map(t => ({ frase: t.frase, t0: t.t0, t1: t.t1 })) } : null)).filter(Boolean);
+    try { const r = await GC.seleccionar(noticiasG); grafSel = r.graficos; r.avisos.forEach(a => log('  GRÁFICOS: ' + a)); fs.writeFileSync(fGraf, JSON.stringify(grafSel, null, 1)); }
+    catch (e) { log('sin gráficos animados (' + String(e.message).slice(0, 120) + '): se usa el recuadro "EL DATO"'); grafSel = []; }
+  }
+  const graficos = GC.construir(grafSel || [], { palabras });
+  log(`GRÁFICOS: ${graficos.length} → ${graficos.map(g => `${g.tipo}@noticia ${g.noticia + 1} (${g.t0.toFixed(1)}–${g.t1.toFixed(1)} s)`).join(', ') || 'ninguno'}`);
+  const extras = segmentos.flatMap(s => [s.titular, s.dato]).join(' ').split(/\s+/).filter(Boolean);
+  const escena = CP.crearEscena({ cortes, segmentos, marca: { paleta, logo: paleta.logo }, fecha: fechaTxt, estilo, t1: dur, graficos }), subtitulos = CP.crearSubtitulos({ palabras, estilo, extras });
   const salida = arg('--salida', path.join(dir, `${nombre}.mp4`)), ini = Date.now();
   await require('../lienzo/render').renderizar({ w: CP.W, h: CP.H, fps: 30, duracion: dur, audio: fVoz, musica: fondo && fondo.listo, salida, estilo, subtitulos, elementos: [escena], alCuadro: (i, n) => process.stdout.write(`\r${i}/${n}  `) });
   log(`\nLISTO ${salida} (${Math.round((Date.now() - ini) / 1000)} s de render)\nTítulo: ${g.titulo}\nDescripción: ${g.descripcion}`);
